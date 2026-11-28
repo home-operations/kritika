@@ -13,37 +13,29 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/upstream"
 )
 
 // What fetch_repo can take: a run makes at most the spec's fetches and writes
-// at most fetchWriteBytes of their files, beside its checkout. The run tool's
-// kept outputs share that budget. One fetch takes at most fetchWireBytes from
-// the server and fetchTimeout of wall time. It keeps at most fetchDiffBytes
-// of a diff, the same as for a kept output.
+// at most Runner.FetchWriteBytes of their files, beside its checkout. The run
+// tool's kept outputs share that budget. One fetch takes at most
+// Runner.FetchWireBytes from the server and Runner.FetchTimeout of wall time.
+// It keeps at most Runner.FetchDiffBytes of a diff, the same as for a kept
+// output.
 //
-// A run also lists tags at most listMax times. That count includes the
-// listing that a fetch naming a missing ref makes to name the closest. An
-// answer shows at most tagsShown names, and such an error at most closestMax.
-// A diff's answer names at most changedShown of the paths it changes before
-// the patches.
-const (
-	fetchWriteBytes = 256 << 20
-	fetchWireBytes  = 128 << 20
-	fetchTimeout    = 2 * time.Minute
-	fetchDiffBytes  = 4 << 20
-	listMax         = 8
-	tagsShown       = 200
-	closestMax      = 10
-	changedShown    = 100
-)
+// A run also lists tags at most Runner.MaxTagListings times. That count
+// includes the listing that a fetch naming a missing ref makes to name the
+// closest. An answer shows at most Runner.TagsShown names, and such an error
+// at most Runner.ClosestTagsShown. A diff's answer names at most
+// Runner.ChangedShown of the paths it changes before the patches.
 
 // upstreamDir is the scratch directory fetch_repo writes to, beside the
 // checkout, where the run tool keeps a cut output too. upstreamRel is the
@@ -107,7 +99,7 @@ func (t *fetchRepoTool) Def() model.ToolDef {
 		"branch or commit, and write its files to a directory read_file reads and the run tool's commands search. With from, it also " +
 		"returns the diff between the two, the paths it changes listed first. With tags instead of ref, it lists the repository's " +
 		fmt.Sprintf("tags, to find the tag of a version rather than guess its name. A review may fetch %d times and list tags %d times.",
-			t.fetchMax, listMax) +
+			t.fetchMax, tuning.Get().Runner.MaxTagListings) +
 		` For example, {"url": "https://github.com/cert-manager/cert-manager", "ref": "v1.17.0", "from": "v1.16.0", ` +
 		`"paths": ["deploy/charts"]} reads a chart's changes between two versions, and ` +
 		`{"url": "https://github.com/cert-manager/cert-manager", "tags": "1.17"} lists the tags with 1.17 in their names.` +
@@ -158,13 +150,14 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 	}
 	left := t.budget.Left()
 	if left <= 0 {
-		return "", fmt.Errorf("agent: fetch_repo: this review has written its %d MiB of fetched files", fetchWriteBytes>>20)
+		return "", fmt.Errorf("agent: fetch_repo: this review has written its %s of fetched files", sizeNote(tuning.Get().Runner.FetchWriteBytes))
 	}
 	t.fetches++
 	f := &upstream.Fetcher{Transport: t.transport, Limits: upstream.Limits{
-		WireBytes: fetchWireBytes, WriteBytes: left, BlobBytes: agent.MaxBlobBytes, DiffBytes: fetchDiffBytes,
+		WireBytes: int64(tuning.Get().Runner.FetchWireBytes), WriteBytes: left, BlobBytes: int64(tuning.Get().Agent.MaxBlobBytes),
+		DiffBytes: int(tuning.Get().Runner.FetchDiffBytes),
 	}}
-	fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	fctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.FetchTimeout)
 	defer cancel()
 	asked := req
 	res, req, err := t.fetch(fctx, f, req)
@@ -206,7 +199,7 @@ func (t *fetchRepoTool) answer(asked, req upstream.Request, res *upstream.Result
 	fmt.Fprintf(&b, "Fetched %s at %s, commit %s. Its files are under %s, from the checkout the run tool's commands run in: "+
 		"%d files, %d KiB.", req.URL, req.Ref, res.Commit[:12], rel, res.Files, (res.Bytes+1023)>>10)
 	if res.Skipped > 0 {
-		fmt.Fprintf(&b, " Left out: %d symlinks, submodules or files over %d MiB.", res.Skipped, agent.MaxBlobBytes>>20)
+		fmt.Fprintf(&b, " Left out: %d symlinks, submodules or files over %s.", res.Skipped, sizeNote(tuning.Get().Agent.MaxBlobBytes))
 	}
 	if res.Truncated {
 		b.WriteString(" The writing stopped at this review's limit, so the paths that sort last are missing.")
@@ -231,7 +224,7 @@ func (t *fetchRepoTool) answer(asked, req upstream.Request, res *upstream.Result
 	}
 	// The paths come before the patches. So a cut answer still says what
 	// the diff touches, and the agent can ask for the files it needs.
-	shown := res.Changed[:min(len(res.Changed), changedShown)]
+	shown := res.Changed[:min(len(res.Changed), tuning.Get().Runner.ChangedShown)]
 	fmt.Fprintf(&b, ":\n%s\n", strings.Join(shown, "\n"))
 	if rest := len(res.Changed) - len(shown); rest > 0 {
 		fmt.Fprintf(&b, "and %d more, which the diff names.\n", rest)
@@ -262,13 +255,14 @@ func (t *fetchRepoTool) answer(asked, req upstream.Request, res *upstream.Result
 // listTags answers a call that lists the tags of the repository at rawURL
 // whose names contain match.
 func (t *fetchRepoTool) listTags(ctx context.Context, rawURL, match string) (string, error) {
-	if t.listings >= listMax {
-		return "", fmt.Errorf("agent: fetch_repo: this review has listed tags %d times", listMax)
+	if most := tuning.Get().Runner.MaxTagListings; t.listings >= most {
+		return "", fmt.Errorf("agent: fetch_repo: this review has listed tags %d times", most)
 	}
 	t.listings++
-	lctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	lctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.FetchTimeout)
 	defer cancel()
-	tags, err := (&upstream.Fetcher{Transport: t.transport, Limits: upstream.Limits{WireBytes: fetchWireBytes}}).Tags(lctx, rawURL)
+	limits := upstream.Limits{WireBytes: int64(tuning.Get().Runner.FetchWireBytes)}
+	tags, err := (&upstream.Fetcher{Transport: t.transport, Limits: limits}).Tags(lctx, rawURL)
 	if err != nil {
 		return "", fmt.Errorf("agent: fetch_repo: %w", err)
 	}
@@ -277,7 +271,7 @@ func (t *fetchRepoTool) listTags(ctx context.Context, rawURL, match string) (str
 
 // tagList is the answer to a listing of tags, in the order the listing
 // gives them, which order words: those whose names contain match, at most
-// tagsShown of them.
+// Runner.TagsShown of them.
 func tagList(rawURL, match string, tags []string, order string) string {
 	if len(tags) == 0 {
 		return rawURL + " has no tags."
@@ -285,7 +279,7 @@ func tagList(rawURL, match string, tags []string, order string) string {
 	matched := withText(tags, match)
 	if len(matched) == 0 {
 		return fmt.Sprintf("None of the %d tags of %s contain %q. The first, %s: %s.", len(tags), rawURL, match, order,
-			strings.Join(tags[:min(len(tags), closestMax)], ", "))
+			strings.Join(tags[:min(len(tags), tuning.Get().Runner.ClosestTagsShown)], ", "))
 	}
 	var b strings.Builder
 	if match == "" {
@@ -293,9 +287,9 @@ func tagList(rawURL, match string, tags []string, order string) string {
 	} else {
 		fmt.Fprintf(&b, "%d of the %d tags of %s contain %q, %s", len(matched), len(tags), rawURL, match, order)
 	}
-	if len(matched) > tagsShown {
-		fmt.Fprintf(&b, "; the first %d, so narrow tags for the rest", tagsShown)
-		matched = matched[:tagsShown]
+	if most := tuning.Get().Runner.TagsShown; len(matched) > most {
+		fmt.Fprintf(&b, "; the first %d, so narrow tags for the rest", most)
+		matched = matched[:most]
 	}
 	b.WriteString(":\n" + strings.Join(matched, "\n"))
 	return b.String()
@@ -313,7 +307,7 @@ func (t *fetchRepoTool) fetch(ctx context.Context, f *upstream.Fetcher, req upst
 		return res, req, err
 	}
 	hint := ""
-	if t.listings < listMax {
+	if t.listings < tuning.Get().Runner.MaxTagListings {
 		t.listings++
 		if refs, lerr := f.Refs(ctx, req.URL, versioned(req)); lerr == nil && len(refs.Tags) > 0 {
 			if fixed, ok := resolveRefs(req, refs); ok {
@@ -404,11 +398,11 @@ func closest(req upstream.Request, tags []string) string {
 			continue
 		}
 		if near := withText(tags, v); len(near) > 0 {
-			fmt.Fprintf(&b, " Tags with %s: %s.", v, strings.Join(near[:min(len(near), closestMax)], ", "))
+			fmt.Fprintf(&b, " Tags with %s: %s.", v, strings.Join(near[:min(len(near), tuning.Get().Runner.ClosestTagsShown)], ", "))
 		}
 	}
 	if b.Len() == 0 {
-		fmt.Fprintf(&b, " Its newest tags: %s.", strings.Join(tags[:min(len(tags), closestMax)], ", "))
+		fmt.Fprintf(&b, " Its newest tags: %s.", strings.Join(tags[:min(len(tags), tuning.Get().Runner.ClosestTagsShown)], ", "))
 	}
 	return b.String()
 }
@@ -454,12 +448,9 @@ func (t *fetchRepoTool) record(rawURL, page string) {
 	}
 }
 
-// dirNameMax bounds a directory's name, well inside a file system's 255
-// bytes.
-const dirNameMax = 100
-
 // dirName names fetch n's directory after the repository and the ref, in
-// characters a command takes as given.
+// characters a command takes as given, cut to Runner.MaxDirNameBytes. The
+// cut spares the fetch's number, which keeps each fetch's directory its own.
 func dirName(n int, rawURL, ref string) string {
 	repo := "repo"
 	if u, err := url.Parse(rawURL); err == nil {
@@ -473,8 +464,9 @@ func dirName(n int, rawURL, ref string) string {
 			return r
 		}
 		return '-'
-	}, fmt.Sprintf("%d-%s@%s", n, repo, ref))
-	return name[:min(len(name), dirNameMax)]
+	}, repo+"@"+ref)
+	prefix := strconv.Itoa(n) + "-"
+	return prefix + name[:min(len(name), max(0, tuning.Get().Runner.MaxDirNameBytes-len(prefix)))]
 }
 
 // fetchedReadFile is read_file that also reads the files fetch_repo and the
@@ -533,9 +525,14 @@ func (r fetchedReadFile) Run(ctx context.Context, input json.RawMessage) (string
 
 // readFetched reads the file at rel under dir. The read stays inside dir
 // whatever rel or a link in it says. A fetch writes no file over
-// MaxBlobBytes, but keeps a diff of up to fetchDiffBytes, as the run tool
-// keeps an output. Such a file is read in line ranges.
+// Agent.MaxBlobBytes into a fetch's directory, but keeps a diff of up to
+// Runner.FetchDiffBytes beside those directories, as the run tool keeps an
+// output. Such a file is read in line ranges. Each is held to its own limit.
 func readFetched(dir, rel string) (string, error) {
+	limit := int64(tuning.Get().Agent.MaxBlobBytes)
+	if !strings.Contains(path.Clean(rel), "/") {
+		limit = int64(tuning.Get().Runner.FetchDiffBytes)
+	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return "", err
@@ -555,8 +552,8 @@ func readFetched(dir, rel string) (string, error) {
 		return "", err
 	case info.IsDir():
 		return "", errors.New("a directory: list it with the run tool's commands")
-	case info.Size() > fetchDiffBytes:
-		return "", fmt.Errorf("%d bytes, over the %d byte limit", info.Size(), fetchDiffBytes)
+	case info.Size() > limit:
+		return "", fmt.Errorf("%d bytes, over the %d byte limit", info.Size(), limit)
 	}
 	b, err := io.ReadAll(f)
 	return string(b), err

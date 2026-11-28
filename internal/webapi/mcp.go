@@ -3,10 +3,12 @@ package webapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/riverqueue/river/rivertype"
@@ -15,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // mcpPath is where the MCP endpoint is served, below the base path.
@@ -42,7 +45,7 @@ func (s *Server) mcpHandler() http.Handler {
 		tool(s, s.getReviewTool))
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_findings", Annotations: readOnly, Description: "The findings of an account, " +
 		"or of one repository, one per pull request and fingerprint, most recently reported first, as their latest review " +
-		"reported them. Pass nextCursor back as cursor for the next page."},
+		"reported them. Pass nextCursor back as cursor for the next page.", InputSchema: pagedSchema[findingsArgs]()},
 		tool(s, s.listFindingsTool))
 	mcp.AddTool(srv, &mcp.Tool{Name: "common_findings", Annotations: readOnly, Description: "What keeps coming up among " +
 		"the findings list_findings would list: how many there are, and their most common categories, rules, agents " +
@@ -54,7 +57,7 @@ func (s *Server) mcpHandler() http.Handler {
 		tool(s, s.listRulesTool))
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_followups", Annotations: readOnly, Description: "The bot's follow-ups to " +
 		"@-mentions in an account, or in one repository, newest first: who asked, where, and what came of it. " +
-		"Pass nextCursor back as cursor for the next page."},
+		"Pass nextCursor back as cursor for the next page.", InputSchema: pagedSchema[followupsArgs]()},
 		tool(s, s.listFollowupsTool))
 	sdk := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{
 		Stateless:    true,
@@ -177,19 +180,35 @@ func scopeAccount(file *configfile.File, p *auth.Principal, a scopeArgs) (*accou
 	return &accountScope{file: file, account: found, principal: p}, nil
 }
 
+// pagedSchema is the input schema of a tool whose In embeds pageArgs, as
+// the SDK infers it, with limit's description stating tuning's WebAPI page
+// sizes.
+func pagedSchema[In any]() *jsonschema.Schema {
+	s, err := jsonschema.For[In](&jsonschema.ForOptions{})
+	if err != nil {
+		// Only a type the package declares, which its tests list, fails.
+		panic(fmt.Sprintf("webapi: schema of %T: %v", *new(In), err))
+	}
+	t := tuning.Get().WebAPI
+	s.Properties["limit"].Description = fmt.Sprintf("how many to return: %d unless given, %d at most", t.DefaultLimit, t.MaxLimit)
+	return s
+}
+
 // pageArgs ask for one page of a list.
 type pageArgs struct {
-	Limit  int    `json:"limit,omitempty" jsonschema:"how many to return: 50 unless given, 200 at most"`
+	// Limit's description is set by pagedSchema.
+	Limit  int    `json:"limit,omitempty"`
 	Cursor string `json:"cursor,omitempty" jsonschema:"the nextCursor of the page before"`
 }
 
 func (a pageArgs) page() (store.Page, error) {
-	p := store.Page{Limit: defaultLimit}
+	t := tuning.Get().WebAPI
+	p := store.Page{Limit: t.DefaultLimit}
 	if a.Limit < 0 {
 		return p, errBadRequest(CodeBadRequest, "limit must be a positive integer")
 	}
 	if a.Limit > 0 {
-		p.Limit = min(a.Limit, maxLimit)
+		p.Limit = min(a.Limit, t.MaxLimit)
 	}
 	if a.Cursor != "" {
 		c, err := decodeCursor(a.Cursor)

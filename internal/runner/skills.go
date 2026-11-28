@@ -16,13 +16,14 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Notes the runner adds to the pack about the repository's skills.
 const (
 	noteSkillSkipped = "%s: skipped, %s"
 	noteSkillsCapped = "more than %d skills found; the rest were left out"
-	noteSkillsLeft   = "%d skill(s) left out, past the 4 KiB their names and descriptions are given"
+	noteSkillsLeft   = "%d skill(s) left out, past the %s their names and descriptions are given"
 )
 
 // discoverSkills reads the skills the merge-base tree keeps under dirs:
@@ -49,7 +50,7 @@ func discoverSkills(base *object.Tree, dirs []string) (skills []repoconfig.Skill
 				continue
 			case rerr != nil:
 				return nil, nil, rerr
-			case len(data) > repoconfig.MaxFileBytes:
+			case len(data) > int(tuning.Get().RepoConfig.MaxFileBytes):
 				notes = append(notes, repoconfig.TooLarge(file))
 				continue
 			}
@@ -59,8 +60,8 @@ func discoverSkills(base *object.Tree, dirs []string) (skills []repoconfig.Skill
 				notes = append(notes, fmt.Sprintf(noteSkillSkipped, file, perr))
 			case slices.ContainsFunc(skills, func(o repoconfig.Skill) bool { return o.Name == s.Name }):
 				notes = append(notes, fmt.Sprintf(noteSkillSkipped, file, "another skill is named "+s.Name))
-			case len(skills) == repoconfig.MaxSkills:
-				return skills, append(notes, fmt.Sprintf(noteSkillsCapped, repoconfig.MaxSkills)), nil
+			case len(skills) == tuning.Get().RepoConfig.MaxSkills:
+				return skills, append(notes, fmt.Sprintf(noteSkillsCapped, tuning.Get().RepoConfig.MaxSkills)), nil
 			default:
 				skills = append(skills, s)
 			}

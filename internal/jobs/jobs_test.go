@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/riverqueue/river"
 )
 
@@ -143,8 +144,8 @@ func TestReviewAttempts(t *testing.T) {
 	for kind, opts := range map[string]river.InsertOpts{
 		"review": ReviewArgs{}.InsertOpts(), "followup": FollowUpArgs{}.InsertOpts(), "thread": ThreadArgs{}.InsertOpts(),
 	} {
-		if opts.MaxAttempts != reviewAttempts {
-			t.Fatalf("%s: MaxAttempts = %d, want %d", kind, opts.MaxAttempts, reviewAttempts)
+		if opts.MaxAttempts != tuning.Get().Jobs.ReviewAttempts {
+			t.Fatalf("%s: MaxAttempts = %d, want %d", kind, opts.MaxAttempts, tuning.Get().Jobs.ReviewAttempts)
 		}
 	}
 }
@@ -155,12 +156,24 @@ func TestIndexArgsPriorities(t *testing.T) {
 	priority := map[string]int{}
 	for _, trigger := range []string{TriggerPush, TriggerReindex, TriggerOnboard} {
 		opts := IndexArgs{Trigger: trigger}.InsertOpts()
-		if opts.MaxAttempts != indexAttempts {
-			t.Fatalf("%s: MaxAttempts = %d, want %d", trigger, opts.MaxAttempts, indexAttempts)
+		if opts.MaxAttempts != tuning.Get().Jobs.IndexAttempts {
+			t.Fatalf("%s: MaxAttempts = %d, want %d", trigger, opts.MaxAttempts, tuning.Get().Jobs.IndexAttempts)
 		}
 		priority[trigger] = opts.Priority
 	}
 	if priority[TriggerPush] >= priority[TriggerReindex] || priority[TriggerReindex] >= priority[TriggerOnboard] {
 		t.Fatalf("priorities = %v, want push before reindex before onboard (lower runs first)", priority)
+	}
+}
+
+// TestAttemptsFollowTuning: a job's tries are tuning's as the process has
+// them when it is inserted.
+func TestAttemptsFollowTuning(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Jobs.ReviewAttempts, v.Jobs.IndexAttempts = 2, 5 })
+	if got := (ReviewArgs{}).InsertOpts().MaxAttempts; got != 2 {
+		t.Errorf("review MaxAttempts = %d, want 2", got)
+	}
+	if got := (IndexArgs{Trigger: TriggerPush}).InsertOpts().MaxAttempts; got != 5 {
+		t.Errorf("index MaxAttempts = %d, want 5", got)
 	}
 }

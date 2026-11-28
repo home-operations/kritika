@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Rule is a check that a review makes, written in the configuration. It has
@@ -30,9 +32,6 @@ type When struct {
 	Expr string `yaml:"expr" json:"expr"`
 }
 
-// MaxRuleChars bounds one rule's text.
-const MaxRuleChars = 2000
-
 // ruleIDRe is what a rule's id can be.
 var ruleIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
@@ -54,8 +53,8 @@ func CheckRules(rules []Rule) error {
 		if (strings.TrimSpace(r.Rule) == "") == (r.File == "") {
 			return fmt.Errorf("rules[%d]: set one of rule or file", i)
 		}
-		if n := utf8.RuneCountInString(r.Rule); n > MaxRuleChars {
-			return fmt.Errorf("rules[%d].rule is %d characters, over the %d allowed", i, n, MaxRuleChars)
+		if n, limit := utf8.RuneCountInString(r.Rule), tuning.Get().ConfigFile.MaxRuleChars; n > limit {
+			return fmt.Errorf("rules[%d].rule is %d characters, over the %d allowed", i, n, limit)
 		}
 		if r.File != "" {
 			if err := CheckRepoPath(r.File); err != nil {

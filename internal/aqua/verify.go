@@ -23,6 +23,8 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/fulcio/certificate"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/verify"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // trustedRootJSON is Sigstore's public-good trusted root, which
@@ -39,10 +41,6 @@ var sigstoreVerifier = sync.OnceValues(func() (*verify.Verifier, error) {
 	}
 	return verify.NewVerifier(tr, verify.WithSignedCertificateTimestamps(1), verify.WithTransparencyLog(1), verify.WithObserverTimestamps(1))
 })
-
-// maxSignatureBytes bounds what a signature is read from: a bundle, a
-// minisign signature, or the GitHub API's attestations of a download.
-const maxSignatureBytes = 16 << 20
 
 // ErrSignature is a download, or its checksum file, with a signature the
 // registry declares that does not verify.
@@ -237,7 +235,7 @@ func (in *Installer) bundle(ctx context.Context, p *Package, d *registry.Downloa
 	if err != nil {
 		return nil, false, err
 	}
-	data, err := get(ctx, in.Client, url, nil, maxSignatureBytes)
+	data, err := get(ctx, in.Client, url, nil, int64(tuning.Get().Aqua.MaxSignatureBytes))
 	if err != nil {
 		return nil, false, err
 	}
@@ -294,7 +292,7 @@ func (in *Installer) minisign(ctx context.Context, p *Package, m *registry.Minis
 	if err != nil {
 		return "", err
 	}
-	sig, err := get(ctx, in.Client, url, nil, maxSignatureBytes)
+	sig, err := get(ctx, in.Client, url, nil, int64(tuning.Get().Aqua.MaxSignatureBytes))
 	if err != nil {
 		return "", err
 	}
@@ -337,11 +335,12 @@ func (in *Installer) attestations(ctx context.Context, p *Package, a *registry.G
 	}
 	url := fmt.Sprintf("%s/repos/%s/%s/attestations/sha256:%x", strings.TrimSuffix(in.APIURL, "/"),
 		neturl.PathEscape(owner), neturl.PathEscape(name), f.sha256)
-	header := http.Header{"Accept": {"application/vnd.github+json"}, "X-Github-Api-Version": {"2022-11-28"}}
+	header := http.Header{"Accept": {tuning.GitHubAccept}}
+	header.Set(tuning.GitHubAPIVersionHeader, tuning.GitHubAPIVersion)
 	if in.Token != "" {
-		header.Set("Authorization", "Bearer "+in.Token)
+		header.Set("Authorization", tuning.BearerPrefix+in.Token)
 	}
-	body, err := get(ctx, in.Client, url, header, maxSignatureBytes)
+	body, err := get(ctx, in.Client, url, header, int64(tuning.Get().Aqua.MaxSignatureBytes))
 	if errors.Is(err, errNotFound) {
 		return "", fmt.Errorf("%w: %s has no attestation of it", ErrSignature, repo)
 	}
@@ -433,11 +432,11 @@ func (in *Installer) attestationBundle(ctx context.Context, inline json.RawMessa
 	if _, err := httpsURL(url); err != nil {
 		return nil, false, err
 	}
-	compressed, err := get(ctx, in.Client, url, nil, maxSignatureBytes)
+	compressed, err := get(ctx, in.Client, url, nil, int64(tuning.Get().Aqua.MaxSignatureBytes))
 	if err != nil {
 		return nil, false, fmt.Errorf("attestation bundle: %w", err)
 	}
-	if n, err := snappy.DecodedLen(compressed); err != nil || n > maxSignatureBytes {
+	if n, err := snappy.DecodedLen(compressed); err != nil || tuning.ByteSize(n) > tuning.Get().Aqua.MaxSignatureBytes {
 		return nil, true, fmt.Errorf("%w: an attestation's bundle is not snappy-compressed, or too large", ErrSignature)
 	}
 	data, err := snappy.Decode(nil, compressed)

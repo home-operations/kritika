@@ -10,6 +10,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/openai/openai-go/v3"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // failing answers every request with status, with no x-should-retry
@@ -88,7 +90,7 @@ func TestRetryAfter(t *testing.T) {
 		{"a negative wait", &openai.Error{StatusCode: 429, Response: with("Retry-After", "-3")}, 0},
 		{"NaN", &openai.Error{StatusCode: 429, Response: with("Retry-After", "NaN")}, 0},
 		{"infinity", &openai.Error{StatusCode: 429, Response: with("Retry-After-Ms", "Inf")}, 0},
-		{"a wait past any use", &openai.Error{StatusCode: 429, Response: with("Retry-After", "1e30")}, retryWaitCeiling},
+		{"a wait past any use", &openai.Error{StatusCode: 429, Response: with("Retry-After", "1e30")}, tuning.Get().Model.RetryWaitCeiling},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

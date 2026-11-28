@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Issue is an issue the pull request says the change closes or works on,
@@ -24,10 +25,6 @@ type Issue struct {
 // ForgeIssueID is the ID of the forge's issue numbered number.
 func ForgeIssueID(number int) string { return "#" + strconv.Itoa(number) }
 
-// MaxLinkedIssues bounds the issues a review reads: a description that
-// closes more is a batch, and the first few say what it is for.
-const MaxLinkedIssues = 3
-
 // closingKeyword is GitHub's set of keywords that link a pull request to
 // an issue it closes, each followed by a reference to the issue: its
 // number, the repository and its number, or its URL.
@@ -36,8 +33,9 @@ var closingKeyword = regexp.MustCompile(`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resol
 
 // LinkedIssues is the numbers of the issues of repository, "owner/name", that
 // body says the change closes. They are in order of first mention, and there
-// are at most MaxLinkedIssues of them. A reference to another repository's
-// issue is left out: the review reads only the repository it reviews.
+// are at most tuning's Review.MaxLinkedIssues of them. A reference to another
+// repository's issue is left out: the review reads only the repository it
+// reviews.
 func LinkedIssues(body, repository string) []int {
 	var out []int
 	for _, m := range closingKeyword.FindAllStringSubmatch(body, -1) {
@@ -51,7 +49,7 @@ func LinkedIssues(body, repository string) []int {
 		if !slices.Contains(out, n) {
 			out = append(out, n)
 		}
-		if len(out) == MaxLinkedIssues {
+		if len(out) == tuning.Get().Review.MaxLinkedIssues {
 			break
 		}
 	}

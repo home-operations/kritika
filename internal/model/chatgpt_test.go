@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/chatgpt"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // tokens is a TokenSource of one fixed token that counts Expire calls.
@@ -359,7 +360,8 @@ func TestChatGPTStreamFailuresRetry(t *testing.T) {
 }
 
 // TestChatGPTPause: after the plan refuses a step at its limit, the adapter
-// fails every step for PlanPause without a request, then sends again.
+// fails every step for tuning's Model.PlanPause without a request, then
+// sends again.
 func TestChatGPTPause(t *testing.T) {
 	var n atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -383,7 +385,7 @@ func TestChatGPTPause(t *testing.T) {
 	if n.Load() != 1 {
 		t.Fatalf("the plan got %d requests, want 1 before the pause", n.Load())
 	}
-	now = now.Add(PlanPause)
+	now = now.Add(tuning.Get().Model.PlanPause)
 	if _, err := c.Step(t.Context(), req); !errors.Is(err, ErrPlanLimit) || n.Load() != 2 {
 		t.Fatalf("after the pause: err = %v, %d requests", err, n.Load())
 	}

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -17,6 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // The commands a mention of the bot carries, and what each does: a review
@@ -343,10 +343,6 @@ func splitRequested(name string, settings configfile.Settings) (reviewer, reques
 	return "", name
 }
 
-// awaitInterval is how long the job of an answered review request sleeps
-// between looks at whether the review ended.
-const awaitInterval = 15 * time.Second
-
 // awaitingReview reports whether the comment is a review request answered
 // with the bot's eyes, whose job waits for the review to end them.
 func (f *followUp) awaitingReview(ctx context.Context) (bool, error) {
@@ -388,7 +384,7 @@ func (f *followUp) awaitReview(ctx context.Context) error {
 		return fmt.Errorf("worker: read the requested review: %w", err)
 	}
 	if queued {
-		return river.JobSnooze(cmp.Or(f.w.awaitEvery, awaitInterval))
+		return river.JobSnooze(cmp.Or(f.w.awaitEvery, tuning.Get().Worker.AwaitInterval))
 	}
 	f.logger.Info("requested review ended", "status", status)
 	f.marks().start(ctx)(requestOutcome(status), false)

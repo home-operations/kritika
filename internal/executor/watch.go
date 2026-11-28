@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,15 +13,13 @@ import (
 	batchv1listers "k8s.io/client-go/listers/batch/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // runnerSelector selects runner Jobs and their pods, by the role label a
 // NetworkPolicy selects them by too.
 const runnerSelector = "kritika.home-operations.com/role=" + runnerRole
-
-// watchSync bounds how long Start waits for its trial watches and its
-// first lists.
-const watchSync = time.Minute
 
 // watchCheck names the object Start's trial watches select, which no
 // runner Job or pod is.
@@ -43,12 +40,13 @@ type watches struct {
 // Start watches runner Jobs and their pods, which Run needs first, until
 // Stop. The API server sends each change as it happens, rather than the
 // replica asking after every run in flight. Start returns once the API lets
-// it watch both and both are listed, and it waits at most watchSync. ctx
-// bounds that wait alone: the watch outlasts ctx, which a signal ends while
-// runs still drain. It watches the role label's Jobs and pods alone, never a
-// Secret.
+// it watch both and both are listed, and it waits at most tuning's
+// Executor.WatchSync. ctx bounds that wait alone: the watch outlasts ctx,
+// which a signal ends while runs still drain. It watches the role label's
+// Jobs and pods alone, never a Secret.
 func (k *Kube) Start(ctx context.Context) error {
-	sctx, cancel := context.WithTimeout(ctx, watchSync)
+	within := tuning.Get().Executor.WatchSync
+	sctx, cancel := context.WithTimeout(ctx, within)
 	defer cancel()
 	// A refused watch will leave the informers relisting, and the success of
 	// their first lists does not show that. So each watch is tried once, for no
@@ -86,13 +84,13 @@ func (k *Kube) Start(ctx context.Context) error {
 	}
 	factory.StartWithContext(wctx)
 	if err := factory.WaitForCacheSyncWithContext(sctx).AsError(); err != nil {
-		return fmt.Errorf("executor: watch runner jobs: not listed within %s: %w", watchSync, err)
+		return fmt.Errorf("executor: watch runner jobs: not listed within %s: %w", within, err)
 	}
 	// The lists are handed to the handler before any run registers. So an
 	// event of a listed Job never stands in for the cache read that a
 	// registration asks for.
 	if !cache.WaitForCacheSync(sctx.Done(), handled...) {
-		return fmt.Errorf("executor: watch runner jobs: not handled within %s", watchSync)
+		return fmt.Errorf("executor: watch runner jobs: not handled within %s", within)
 	}
 	k.watch, watching = w, true
 	return nil

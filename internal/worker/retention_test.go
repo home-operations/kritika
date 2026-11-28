@@ -14,6 +14,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func retentionAccount(t *testing.T) *configfile.File {
@@ -183,7 +184,7 @@ func TestRetentionSweep(t *testing.T) {
 		{"modelCalls", older(current.Get().TranscriptRetention())},
 		{"diffs", older(current.Get().DiffRetention())},
 		{"sessions", nil},
-		{"conversations", older(conversationRetention)},
+		{"conversations", older(tuning.Get().Worker.ConversationRetention)},
 		{"egressRefusals", older(current.Get().TranscriptRetention())},
 		{"modelInvocations", older(current.Get().TranscriptRetention())},
 		{"similarExclusions", nil},

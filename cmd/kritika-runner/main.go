@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"golang.org/x/sync/errgroup"
@@ -24,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/server"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Build metadata, set via -ldflags at release time (see Dockerfile / release.yaml).
@@ -31,9 +31,6 @@ var (
 	version = "dev"
 	commit  = "unknown"
 )
-
-// memLimitRefresh is how often GOMEMLIMIT follows the cgroup memory limit.
-const memLimitRefresh = time.Minute
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -51,6 +48,7 @@ func run() (err error) {
 	if err != nil {
 		return err
 	}
+	tuning.Set(cfg.Tuning)
 	if err := cfg.ValidateRunner(); err != nil {
 		return err
 	}
@@ -75,7 +73,7 @@ func run() (err error) {
 	// failure. Set logs its own failure, which leaves the limit as it was.
 	memOpts := []memlimit.Option{memlimit.WithLogger(logger)}
 	if runtime.GOOS == "linux" {
-		memOpts = append(memOpts, memlimit.WithRefreshInterval(ctx, memLimitRefresh))
+		memOpts = append(memOpts, memlimit.WithRefreshInterval(ctx, tuning.Get().Process.MemLimitRefresh))
 	}
 	_, _ = memlimit.Set(memOpts...)
 

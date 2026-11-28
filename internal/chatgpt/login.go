@@ -15,6 +15,8 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // The sign-in's fixed parameters: the registration entrypoint, the name
@@ -64,7 +66,7 @@ func (l Login) Run(ctx context.Context, current Credentials) (Credentials, error
 		issuer = Issuer
 	}
 	if client == nil {
-		client = &http.Client{Timeout: clientTimeout}
+		client = &http.Client{Timeout: tuning.Get().ChatGPT.ClientTimeout}
 	}
 	if now == nil {
 		now = time.Now
@@ -210,11 +212,11 @@ func awaitCallback(ctx context.Context, listener net.Listener, state, clientID s
 		default:
 		}
 	})
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: tuning.Get().ChatGPT.CallbackReadHeaderTimeout}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(listener) }()
 	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().ChatGPT.CallbackCloseTimeout)
 		defer cancel()
 		if err := srv.Shutdown(closeCtx); err != nil {
 			_ = srv.Close() // best-effort cleanup after the shutdown deadline

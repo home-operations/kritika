@@ -19,6 +19,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/home-operations/kritika/internal/chatgpt"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TokenSource is where the ChatGPT adapter gets the bearer token each
@@ -33,10 +34,10 @@ type TokenSource interface {
 }
 
 // ErrPlanLimit is a step that the ChatGPT plan refused because its usage
-// limit is reached. The adapter then sends nothing on the plan for PlanPause,
-// as OpenAI asks. It fails every step the same way, and the fallback takes
-// those steps. The plan's owner sees the limit under ChatGPT's usage
-// settings.
+// limit is reached. The adapter then sends nothing on the plan for tuning's
+// Model.PlanPause, as OpenAI asks. It fails every step the same way, and the
+// fallback takes those steps. The plan's owner sees the limit under
+// ChatGPT's usage settings.
 var ErrPlanLimit = errors.New("model: chatgpt: the plan's usage limit is reached")
 
 // ErrUnavailable is a provider that failed to serve a request for a passing
@@ -44,11 +45,6 @@ var ErrPlanLimit = errors.New("model: chatgpt: the plan's usage limit is reached
 // usage. It is also a response that failed on a server error or a rate
 // limit after its stream opened. Transient.
 var ErrUnavailable = errors.New("model: provider unavailable")
-
-// PlanPause is how long the adapter sends nothing on the plan after
-// ErrPlanLimit. The error says nothing of when the limit resets, and a
-// step sent meanwhile costs the plan nothing but fails.
-const PlanPause = 15 * time.Minute
 
 // Error codes of the ChatGPT plan route.
 const (
@@ -120,7 +116,7 @@ func NewChatGPT(cfg ChatGPTConfig) (*ChatGPT, error) {
 	// request carries the plan's token instead.
 	opts := append(withoutEnvironment(),
 		option.WithBaseURL(baseURL), option.WithAPIKey(""), option.WithHeader("User-Agent", userAgent()),
-		option.WithMaxRetries(0), option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, DefaultStepTimeout)),
+		option.WithMaxRetries(0), option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, tuning.Get().Model.DefaultStepTimeout)),
 	)
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
@@ -334,7 +330,8 @@ func (c *ChatGPT) refused(ctx context.Context, token string, err error) error {
 		// A refusal before the Responses layer, admission or routing, comes
 		// as {"detail": "..."} rather than the API's error object, which
 		// the SDK keeps only as the response's body.
-		if body, rerr := io.ReadAll(io.LimitReader(apiErr.Response.Body, 4096)); rerr == nil && len(body) > 0 {
+		limit := int64(tuning.Get().Model.PlanErrorBodyBytes)
+		if body, rerr := io.ReadAll(io.LimitReader(apiErr.Response.Body, limit)); rerr == nil && len(body) > 0 {
 			return fmt.Errorf("%w %s", err, strings.TrimSpace(string(body)))
 		}
 	}
@@ -344,7 +341,7 @@ func (c *ChatGPT) refused(ctx context.Context, token string, err error) error {
 func (c *ChatGPT) pause() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.pausedUntil = c.now().Add(PlanPause)
+	c.pausedUntil = c.now().Add(tuning.Get().Model.PlanPause)
 }
 
 func (c *ChatGPT) paused() (time.Time, bool) {

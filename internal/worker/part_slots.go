@@ -13,9 +13,8 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-const partSlotInterval = 2 * time.Second
 
 // reviewSlots owns a split review's extra leases: those beyond the one slot
 // that admission took on the review model and on each lens's model, which
@@ -173,7 +172,7 @@ func (s *reviewSlots) watch(ctx context.Context) func() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ticker := time.NewTicker(partSlotInterval)
+		ticker := time.NewTicker(tuning.Get().Worker.PartSlotInterval)
 		defer ticker.Stop()
 		for {
 			select {

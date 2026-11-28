@@ -13,6 +13,7 @@ import (
 	"oras.land/oras-go/v2/registry/remote/auth"
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type accountKey struct{}
@@ -94,7 +95,8 @@ type ownHost struct {
 }
 
 func (o ownHost) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Scheme != upgradedScheme || r.URL.Port() != "" && r.URL.Port() != "443" || !strings.EqualFold(r.URL.Hostname(), o.host) {
+	if r.URL.Scheme != upgradedScheme || r.URL.Port() != "" && r.URL.Port() != tuning.HTTPSPort ||
+		!strings.EqualFold(r.URL.Hostname(), o.host) {
 		return nil, fmt.Errorf("egress: %s names a token endpoint at %s://%s, but its credential goes to https://%s alone",
 			o.host, r.URL.Scheme, r.URL.Host, o.host)
 	}
@@ -197,7 +199,7 @@ func plainOwnURLs(h http.Header, host string) {
 // host on 443, and raw as it is otherwise.
 func plainOwn(raw, host string) string {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != upgradedScheme || !strings.EqualFold(u.Hostname(), host) || u.Port() != "" && u.Port() != "443" {
+	if err != nil || u.Scheme != upgradedScheme || !strings.EqualFold(u.Hostname(), host) || u.Port() != "" && u.Port() != tuning.HTTPSPort {
 		return raw
 	}
 	u.Scheme, u.Host = plainScheme, host

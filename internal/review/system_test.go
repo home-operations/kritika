@@ -4,13 +4,15 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestSystemPrompt(t *testing.T) {
 	bare := SystemPrompt(nil, nil, nil, false, false, false, false)
 	for _, want := range []string{"read_file", "grep", "list_files", "read_description", "verify", "anchor only to lines of the pull request's diff",
 		"A file the prompt leaves out is as\nmuch a part of that diff", "read_diff numbers each line as a finding anchors to it",
-		"marks new is an added line", systemReport + systemRules,
+		"marks new is an added line", systemReport + withPraiseCap(systemRules),
 		"as the PR head has them, that a search of the repository found similar to the change",
 		"similar snippet can be unrelated to the change"} {
 		if !strings.Contains(bare, want) {
@@ -58,7 +60,7 @@ func TestSystemPrompt(t *testing.T) {
 	if !strings.Contains(withDiagram, gate) || strings.Contains(FollowUpSystemPrompt(nil, nil, false, false), gate) {
 		t.Fatal("a review is told of the evidence gate, a follow-up is not")
 	}
-	if want := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryDiagram + agenticTools + reviewTools; withDiagram != want {
+	if want := systemLead + agenticSees + "\n\n" + systemReport + withPraiseCap(systemRules) + summaryDiagram + agenticTools + reviewTools; withDiagram != want {
 		t.Fatalf("system prompt with a diagram:\n%s", withDiagram)
 	}
 	if strings.Contains(bare, "moves versions") {
@@ -125,12 +127,13 @@ func TestFollowUpSystemPrompt(t *testing.T) {
 }
 
 func TestUserBudget(t *testing.T) {
+	minUserBudget := tuning.Get().Review.MinUserBudget
 	tests := []struct {
 		name   string
 		budget int
 		want   int
 	}{
-		{name: "zero takes the default", budget: 0, want: DefaultBudgetTokens},
+		{name: "zero takes the default", budget: 0, want: tuning.Get().Review.DefaultBudgetTokens},
 		{name: "a configured budget", budget: 120_000, want: 120_000},
 	}
 	long := SystemPrompt([]Rule{{ID: "long", Text: strings.Repeat("x", 32<<10)}}, nil, nil, false, false, false, false)

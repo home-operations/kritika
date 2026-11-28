@@ -95,6 +95,15 @@ tests:
           path: data["config.yaml"]
           pattern: "clientId: NAMESPACE-8080"
 
+  - it: leaves a runner deadline past 7200 to kritika's check against its tuned job cap
+    set:
+      config.tuning.jobTimeout.maxJobTimeout: 4h
+      runner.jobTemplate.spec.activeDeadlineSeconds: 9000
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "activeDeadlineSeconds: 9000"
+
   - it: derives the runner configuration from runner values
     set:
       runner.jobTemplate.spec.activeDeadlineSeconds: 1200

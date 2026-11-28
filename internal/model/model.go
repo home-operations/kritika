@@ -11,16 +11,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/openai/openai-go/v3"
+
+	"github.com/home-operations/kritika/internal/retryafter"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // ProviderType selects the adapter a provider uses.
@@ -318,34 +319,26 @@ type Embedder interface {
 	Embed(ctx context.Context, inputs []string) (vectors [][]float32, tokens int64, err error)
 }
 
-// DefaultStepTimeout bounds one request to a provider for a step when the
-// provider sets no timeout of its own (configfile.Provider.Timeout). It is
-// long enough for a step's whole output from a slow model. If a provider
-// takes the request and never answers, the step fails as a timeout, which is
-// Transient. So the gateway's retries and its fallback provider still get
-// their turn.
-const DefaultStepTimeout = 5 * time.Minute
-
 // StepBudget bounds what the gateway spends on one step: its provider's
 // attempts, their backoff, and the fallback's, all together. primary bounds
 // a request to the step's provider and fallback one to its fallback's; a
 // step with no fallback on another provider gives fallback as primary. The
 // budget is one request to each and the waits between them. The step's
 // provider gets at most its share of it before the fallback takes over
-// (adapter.Call.Share).
+// (adapter.Call.Share). The waits are tuning's Model.StepBudgetWaits.
 func StepBudget(primary, fallback time.Duration) time.Duration {
-	return primary + fallback + 2*time.Minute
+	return primary + fallback + tuning.Get().Model.StepBudgetWaits
 }
 
 // GatewayRequestTimeout bounds the runner's request to the gateway for a
 // step of budget. It covers the budget, then the time that the gateway can
-// take to charge and record an answered step before it writes the answer.
-// The charge and the record are each bounded at two minutes on a context of
-// its own. So the gateway gives up on, retries, or replaces a provider that
+// take to charge and record an answered step before it writes the answer,
+// tuning's Model.GatewaySettle. The charge and the record are each bounded
+// within it on a context of their own. So the gateway gives up on, retries, or replaces a provider that
 // stalls, and the runner never cuts that provider off first. And the gateway
 // never abandons an answered step while it settles that step.
 func GatewayRequestTimeout(budget time.Duration) time.Duration {
-	return budget + gatewaySettle
+	return budget + tuning.Get().Model.GatewaySettle
 }
 
 // StepBudgetWithin is the budget a step gets when its runner waits
@@ -354,18 +347,14 @@ func GatewayRequestTimeout(budget time.Duration) time.Duration {
 // shorter timeouts, sized. Zero or less when the runner waits no longer
 // than the gateway settles a step.
 func StepBudgetWithin(requestTimeout time.Duration) time.Duration {
-	return requestTimeout - gatewaySettle
+	return requestTimeout - tuning.Get().Model.GatewaySettle
 }
-
-// gatewaySettle is what the gateway can take to charge and record an
-// answered step.
-const gatewaySettle = 5 * time.Minute
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
 // provider's default endpoint. headers and client can be nil. timeout bounds
-// one request, DefaultStepTimeout when zero. The adapter sends each request
-// once: the gateway and the workers retry a step with the provider's retries
-// (adapter.Step).
+// one request, tuning's Model.DefaultStepTimeout when zero. The adapter
+// sends each request once: the gateway and the workers retry a step with the
+// provider's retries (adapter.Step).
 func NewStepper(
 	t ProviderType, baseURL, apiKey string, headers map[string]string, pricing Pricing, timeout time.Duration, client *http.Client,
 ) (Stepper, error) {
@@ -417,7 +406,7 @@ func splitHeaders(h map[string]string) (static, session map[string]string) {
 // baseUrl.
 const (
 	OpenRouterBaseURL = "https://openrouter.ai/api/v1"
-	OpenAIBaseURL     = "https://api.openai.com/v1"
+	OpenAIBaseURL     = tuning.OpenAIBaseURL
 	OpenCodeBaseURL   = "https://opencode.ai/zen/go/v1"
 )
 
@@ -462,7 +451,7 @@ func Transient(err error) bool {
 	}
 	status, resp := providerResponse(err)
 	if status == http.StatusPaymentRequired {
-		return resp != nil && resp.Header.Get("Retry-After") != ""
+		return resp != nil && resp.Header.Get(retryafter.Header) != ""
 	}
 	if status != 0 {
 		return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
@@ -475,36 +464,14 @@ func Transient(err error) bool {
 // RetryAfter is how long the provider that failed a step asked to wait
 // before the next request, read as openai-go and anthropic-sdk-go read it:
 // Retry-After-Ms in milliseconds, else Retry-After in seconds, fractions
-// allowed, or as an HTTP date. Zero when it asked nothing usable.
+// allowed, or as an HTTP date, and at most tuning's Model.RetryWaitCeiling.
+// Zero when it asked nothing usable.
 func RetryAfter(err error) time.Duration {
 	_, resp := providerResponse(err)
 	if resp == nil {
 		return 0
 	}
-	if ms, err := strconv.ParseFloat(resp.Header.Get("Retry-After-Ms"), 64); err == nil {
-		return retryWait(ms / 1000)
-	}
-	v := resp.Header.Get("Retry-After")
-	if secs, err := strconv.ParseFloat(v, 64); err == nil {
-		return retryWait(secs)
-	}
-	if at, err := http.ParseTime(v); err == nil {
-		return max(time.Until(at), 0)
-	}
-	return 0
-}
-
-// retryWaitCeiling bounds a provider's wait before it becomes a Duration,
-// which a huge float overflows. Callers wait far less.
-const retryWaitCeiling = time.Hour
-
-// retryWait is secs as a Duration, zero unless it is a positive, finite
-// number.
-func retryWait(secs float64) time.Duration {
-	if !(secs > 0) || math.IsInf(secs, 1) {
-		return 0
-	}
-	return time.Duration(min(secs, retryWaitCeiling.Seconds()) * float64(time.Second))
+	return min(retryafter.ParseFractional(resp.Header, time.Now()), tuning.Get().Model.RetryWaitCeiling)
 }
 
 // ShouldRetry reports what the provider's answer in err says of retrying

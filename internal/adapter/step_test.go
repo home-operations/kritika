@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go/v3"
 
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // stepperFunc answers each step from the next error in errs, then the answer.
@@ -80,7 +81,7 @@ func TestStepRetries(t *testing.T) {
 					resp, attempts, err, len(waits), failed, tt.attempts, tt.waits, tt.wantErr)
 			}
 			for i, d := range waits {
-				if d < retryMin/2 || d > retryMax {
+				if a := tuning.Get().Adapter; d < a.RetryMin/2 || d > a.RetryMax {
 					t.Fatalf("wait %d = %s, outside the backoff", i, d)
 				}
 			}
@@ -111,8 +112,8 @@ func TestStepRetries(t *testing.T) {
 		if _, attempts, err := step(t.Context(), s, model.StepRequest{Model: "m"}, 1, wait, func(error) {}); err != nil || attempts != 2 {
 			t.Fatalf("step = %d attempts, %v; want an answer after two", attempts, err)
 		}
-		if waited != retryAfterMax {
-			t.Fatalf("waited %s, want the %s cap", waited, retryAfterMax)
+		if limit := tuning.Get().Adapter.RetryAfterMax; waited != limit {
+			t.Fatalf("waited %s, want the %s cap", waited, limit)
 		}
 	})
 
@@ -145,4 +146,33 @@ func TestStepRetries(t *testing.T) {
 			t.Fatalf("Step = %+v, %d attempts, %v; want the answer after two", resp, attempts, err)
 		}
 	})
+}
+
+// TestStepTunedRetries: the backoff and the Retry-After cap are tuning's
+// Adapter values.
+func TestStepTunedRetries(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		// The cap is past the longest backoff, so the rate-limited wait
+		// shows the cap rather than the backoff.
+		v.Adapter.RetryMin, v.Adapter.RetryMax, v.Adapter.RetryAfterMax = 10*time.Second, 10*time.Second, 15*time.Second
+	})
+	var waits []time.Duration
+	wait := func(_ context.Context, d time.Duration) bool { waits = append(waits, d); return true }
+	limited := &openai.Error{StatusCode: http.StatusTooManyRequests, Response: &http.Response{Header: http.Header{"Retry-After": {"3600"}}}}
+	transient := &openai.Error{StatusCode: http.StatusBadGateway}
+	s := &stepperFunc{errs: []error{transient, transient, limited}}
+	if _, attempts, err := step(t.Context(), s, model.StepRequest{Model: "m"}, 3, wait, func(error) {}); err != nil || attempts != 4 {
+		t.Fatalf("step = %d attempts, %v; want an answer after four", attempts, err)
+	}
+	if len(waits) != 3 {
+		t.Fatalf("waits = %v, want one after each failure", waits)
+	}
+	for i, d := range waits[:2] {
+		if d < 5*time.Second || d > 10*time.Second {
+			t.Fatalf("wait %d = %s, want 5s to 10s", i, d)
+		}
+	}
+	if waits[2] != 15*time.Second {
+		t.Fatalf("rate-limited wait = %s, want the 15s cap", waits[2])
+	}
 }

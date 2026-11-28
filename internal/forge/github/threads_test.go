@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // threadsAPI answers the review threads query with pages of threads and
@@ -65,7 +67,7 @@ func TestGraphQLErrorKeepsLittleOfTheBody(t *testing.T) {
 		_, _ = fmt.Fprint(w, "<html>"+strings.Repeat("x", 100<<10)+"</html>")
 	})
 	_, err := c.ResolveThread(t.Context(), "o", "r", 7, 1, true)
-	if err == nil || !strings.Contains(err.Error(), ": graphql: 502 Bad Gateway: <html>") || len(err.Error()) > maxGraphQLErrorBytes+128 {
+	if err == nil || !strings.Contains(err.Error(), ": graphql: 502 Bad Gateway: <html>") || len(err.Error()) > int(tuning.Get().GitHub.MaxGraphQLErrorBytes)+128 {
 		t.Fatalf("error = %.80v... (%d bytes)", err, len(fmt.Sprint(err)))
 	}
 }

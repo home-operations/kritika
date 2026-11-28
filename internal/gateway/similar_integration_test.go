@@ -30,6 +30,7 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type similarEmbedFunc func(context.Context, []string) ([][]float32, int64, error)
@@ -608,9 +609,10 @@ func similarRequests(t *testing.T, reg *prometheus.Registry) map[string]float64 
 }
 
 // TestSimilarAnswerLimit: an answer holds as many chunks as its request asks
-// for, up to contextpack.SimilarLimit, so that a run that drops some still
+// for, up to ContextPack.SimilarLimit, so that a run that drops some still
 // has ten to show, and the gateway's ten when the request asks for none.
 func TestSimilarAnswerLimit(t *testing.T) {
+	cp := tuning.Get().ContextPack
 	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_SECRET", "test-key")
@@ -703,10 +705,10 @@ apps:
 		limit int
 		want  int
 	}{
-		{"none asked for", 0, similarMax},
+		{"none asked for", 0, tuning.Get().Gateway.SimilarMax},
 		{"fewer", 3, 3},
-		{"the most", contextpack.SimilarLimit, contextpack.SimilarLimit},
-		{"past the most", contextpack.SimilarLimit + 10, contextpack.SimilarLimit},
+		{"the most", cp.SimilarLimit, cp.SimilarLimit},
+		{"past the most", cp.SimilarLimit + 10, cp.SimilarLimit},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			body, err := json.Marshal(contextpack.SimilarRequest{Queries: []string{"q0", "q1", "q2", "q3"}, Limit: tt.limit})
@@ -737,8 +739,8 @@ apps:
 	}
 	// Each request found sixteen chunks near its queries, four a query, and
 	// kept what it asked for: 10, 3, 16 and 16. Each query, searched
-	// similarDepth deep, also found four of another's, under the floor. Each
-	// query measured its best match.
+	// Gateway.SimilarDepth deep, also found four of another's, under the
+	// floor. Each query measured its best match.
 	hits := map[string]float64{}
 	var bests uint64
 	families, err := reg.Gather()
@@ -842,10 +844,11 @@ func TestSimilarSearchesTheGenerationActiveAtTheSearch(t *testing.T) {
 // TestSimilarSearchFillsItsLimit: a search_code request of one query keeps
 // as many chunks as it asks for whenever that many qualify. Its search finds
 // at least that many, and looks past the files that the file cap fills
-// until the query holds that many, not just similarPerQuery: q0's nearest
-// eight chunks are five of big.go's and three others, and seven more files
-// qualify past them; q1's twelve files of one chunk each all qualify.
+// until the query holds that many, not just Gateway.SimilarPerQuery: q0's
+// nearest eight chunks are five of big.go's and three others, and seven more
+// files qualify past them; q1's twelve files of one chunk each all qualify.
 func TestSimilarSearchFillsItsLimit(t *testing.T) {
+	gw := tuning.Get().Gateway
 	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_SECRET", "test-key")
@@ -954,7 +957,7 @@ apps:
 		want  int
 	}{
 		{"past a file that fills the first window", "q0", 8, 8},
-		{"a deeper first window", "q1", contextpack.SimilarLimit, 12},
+		{"a deeper first window", "q1", tuning.Get().ContextPack.SimilarLimit, 12},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			body, err := json.Marshal(contextpack.SimilarRequest{
@@ -981,8 +984,8 @@ apps:
 			if len(resp.Chunks) != tt.want {
 				t.Fatalf("%d chunks, want %d: %v", len(resp.Chunks), tt.want, perFile)
 			}
-			if n := perFile["q0/big.go"]; n > similarPerFile {
-				t.Fatalf("%d chunks of big.go, want at most %d", n, similarPerFile)
+			if n := perFile["q0/big.go"]; n > gw.SimilarPerFile {
+				t.Fatalf("%d chunks of big.go, want at most %d", n, gw.SimilarPerFile)
 			}
 		})
 	}

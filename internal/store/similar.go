@@ -9,6 +9,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // postingsIndexFormat is the first index format (runspec.IndexFormat) whose
@@ -73,7 +74,7 @@ func (s *Store) SweepSimilarExclusions(ctx context.Context) (int64, error) {
 	}
 	n, err := s.sweepBatches(ctx, `DELETE FROM similar_exclusions WHERE id IN (
 		SELECT e.id FROM similar_exclusions e JOIN runner_runs r ON r.id = e.runner_run_id
-		WHERE r.finished_at < now() - make_interval(secs => $1) LIMIT $2)`, 0, modelCallSweepBatch)
+		WHERE r.finished_at < now() - make_interval(secs => $1) LIMIT $2)`, 0, tuning.Get().Store.ModelCallSweepBatch)
 	if err != nil {
 		return n, fmt.Errorf("store: sweep similar exclusions: %w", err)
 	}

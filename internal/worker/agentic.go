@@ -19,17 +19,17 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // agentDeadline bounds a review's runner Job: the account's runner deadline,
 // unless the agent's timeout plus the fetch headroom needs longer.
 func agentDeadline(runnerDeadline, agentTimeout time.Duration) time.Duration {
-	return max(runnerDeadline, agentTimeout+jobtimeout.AgentFetchHeadroom)
+	return max(runnerDeadline, agentTimeout+tuning.Get().JobTimeout.AgentFetchHeadroom)
 }
 
 // stopError is nil for a run that submitted a review, and otherwise the
@@ -224,10 +224,6 @@ func (w *Review) agentCaps(
 	return budget, left, capped, nil
 }
 
-// minAgentTokens is the least monthly headroom a review starts with: below it
-// the agent cannot read the diff before running out.
-const minAgentTokens = 50_000
-
 // agentBudget is how many tokens one review can spend: the repository's agent
 // budget, cut to what is left of the account's monthly cap when one is set. A
 // non-empty reason caps the review instead, when too little is left for an
@@ -237,7 +233,7 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 		return agentMax, ""
 	}
 	left := tokensPerMonth - usedThisMonth
-	if left <= minAgentTokens {
+	if left <= tuning.Get().Worker.MinAgentTokens {
 		return 0, fmt.Sprintf("tokensPerMonth (%d) nearly reached: %d tokens left", tokensPerMonth, max(left, 0))
 	}
 	return min(agentMax, left), ""
@@ -354,7 +350,7 @@ func (w *Review) agentPrompt(
 		notes = append(notes, repoconfig.FileName+" lists linear.teams, but its account has no Linear key: no Linear issue was read")
 	default:
 		issues, more := linearIssues(ctx, &w.Linear, account.Linear.APIKeyValue().Value(), teams, p.PullRequest,
-			review.MaxLinkedIssues-len(p.Issues), logger)
+			tuning.Get().Review.MaxLinkedIssues-len(p.Issues), logger)
 		p.Issues, notes = append(p.Issues, issues...), append(notes, more...)
 	}
 	p.Below = stackBelow(ctx, client, pr, logger)
@@ -423,7 +419,7 @@ func (b *Base) runRunner(
 // as a step: a retry on a guess can pay for the model twice. ctx's
 // cancellation is not inherited, as readAgentRun's is not.
 func (b *Base) modelUntouched(ctx context.Context, accountID, runID string, logger *slog.Logger) bool {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Worker.ModelStepsReadTimeout)
 	defer cancel()
 	var begun bool
 	err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -445,13 +441,14 @@ func (b *Base) modelUntouched(ctx context.Context, accountID, runID string, logg
 //
 // A run that ended in error can still be writing its row: a deleted runner
 // pod records how its agent stopped while it terminates. await waits for
-// that, until the run settles or wait, agentRowWait when zero, passes. ctx's
-// cancellation is not inherited, so a job River cancels still reads the row.
+// that, until the run settles or wait, tuning's Worker.AgentRowWait when zero,
+// passes. ctx's cancellation is not inherited, so a job River cancels still
+// reads the row.
 func (b *Base) readAgentRun(
 	ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool, wait time.Duration,
 ) (*store.AgentRunRow, error) {
-	wait = cmp.Or(wait, agentRowWait)
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wait+10*time.Second)
+	wait = cmp.Or(wait, tuning.Get().Worker.AgentRowWait)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wait+tuning.Get().Worker.AgentRowReadSlack)
 	defer cancel()
 	run, found, err := b.loadAgentRun(ctx, accountID, runID)
 	if err == nil && !found && await {
@@ -530,19 +527,12 @@ func (w *Review) agentSpec(
 	return deadline, notes, nil
 }
 
-// diffBytesPerLine and diffBytesPerFile estimate a unified diff's size
-// from the forge's counts: a changed line with its share of the context
-// around it, and a file's header.
-const (
-	diffBytesPerLine = 64
-	diffBytesPerFile = 256
-)
-
 // estimateParts is how many parts the diff of a pull request of pr's size
 // is likely split into, at most maxParts.
 func estimateParts(pr forge.OpenPullRequest, maxParts int) int {
-	size := diffBytesPerLine*(pr.Additions+pr.Deletions) + diffBytesPerFile*pr.ChangedFiles
-	return min(max((size+review.PartBytes-1)/review.PartBytes, 1), max(maxParts, 1))
+	w, part := tuning.Get().Worker, int(tuning.Get().Review.PartBytes)
+	size := w.DiffBytesPerLine*(pr.Additions+pr.Deletions) + w.DiffBytesPerFile*pr.ChangedFiles
+	return min(max((size+part-1)/part, 1), max(maxParts, 1))
 }
 
 // splitParts is how many parts a review of pr is sized for, its grant and
@@ -566,7 +556,12 @@ func (w *Review) splitParts(ctx context.Context, client forge.Client, pr *pullRe
 // rounds rounds, each part within timeout. It is at most as much as a job can
 // run.
 func partsTimeout(rounds int, timeout time.Duration) time.Duration {
-	return min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout)
+	most := tuning.Get().JobTimeout.MaxAgentTimeout()
+	// rounds*timeout can overflow, and is most anyway once past it.
+	if timeout > 0 && int64(rounds) > int64(most/timeout) {
+		return most
+	}
+	return min(time.Duration(rounds)*timeout, most)
 }
 
 // sizing is what a review is sized for: the parts that its runner can split
@@ -601,7 +596,7 @@ func (s sizing) rounds() int {
 // context of its own, because the job's context can already be over. A token
 // that is not revoked still expires on its own.
 func (b *Base) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) bool {
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Worker.ReleaseTimeout)
 	defer cancel()
 	if err := b.Store.RevokeGatewayTokens(rctx, runID); err != nil {
 		logger.Warn("gateway token not revoked", "error", err)
@@ -615,13 +610,6 @@ func (b *Base) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, run
 func stopped(ctx context.Context, res executor.Result, cause error) bool {
 	return res.Err != nil && (cause != nil || ctx.Err() != nil || res.DeadlineExceeded)
 }
-
-// agentRowWait is how long a failed run's agent row is waited for: a
-// runner pod's termination grace period.
-const agentRowWait = 30 * time.Second
-
-// agentRowPoll is how often awaitAgentRun looks again.
-const agentRowPoll = time.Second
 
 // awaitAgentRun polls for a run's agent_runs row until it appears, the
 // run's phase settles without one, or wait passes.
@@ -648,7 +636,7 @@ func (b *Base) awaitAgentRun(ctx context.Context, accountID, runID string, wait 
 			return store.AgentRunRow{}, false, nil
 		case <-ctx.Done():
 			return store.AgentRunRow{}, false, nil
-		case <-time.After(agentRowPoll):
+		case <-time.After(tuning.Get().Worker.AgentRowPoll):
 		}
 	}
 }

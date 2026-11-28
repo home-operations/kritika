@@ -189,7 +189,7 @@ func parsePublicURL(name, raw string) (string, *url.URL, error) {
 // the values are valid. It fails fast on an invalid value so a misconfigured
 // process never starts serving.
 func Load() (*Config, error) {
-	cfg, err := LoadRunner()
+	cfg, err := loadEnv(false)
 	if err != nil {
 		return nil, err
 	}
@@ -200,12 +200,15 @@ func Load() (*Config, error) {
 }
 
 // LoadRunner is Load for a runner pod, which holds no database credential.
-func LoadRunner() (*Config, error) {
+// It leaves the retentions unchecked, which a runner does not read.
+func LoadRunner() (*Config, error) { return loadEnv(true) }
+
+func loadEnv(runner bool) (*Config, error) {
 	cfg, err := env.ParseAs[Config]()
 	if err != nil {
 		return nil, envError[Config](err)
 	}
-	if err := cfg.load(); err != nil {
+	if err := cfg.load(runner); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
@@ -233,15 +236,16 @@ func LoadFile(path string) (*Config, error) {
 		}
 	}
 	cfg := Config{Settings: s, ConfigFile: path}
-	if err := cfg.load(); err != nil {
+	if err := cfg.load(false); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
 }
 
 // load reads the configuration file, when there is one, and makes sure that
-// the configuration is valid.
-func (c *Config) load() error {
+// the configuration is valid: for a runner's process, without the checks
+// of what only serve reads.
+func (c *Config) load(runner bool) error {
 	if c.ConfigFile != "" {
 		raw, err := os.ReadFile(c.ConfigFile)
 		if err != nil {
@@ -251,11 +255,11 @@ func (c *Config) load() error {
 			return err
 		}
 	}
-	return c.validate()
+	return c.validate(runner)
 }
 
-func (c *Config) validate() error {
-	if err := c.Validate(); err != nil {
+func (c *Config) validate(runner bool) error {
+	if err := c.Settings.validate(!runner); err != nil {
 		return err
 	}
 	if c.GatewayURL != "" {
@@ -320,7 +324,7 @@ func (c *Config) Env() []EnvVar {
 	visit = func(v reflect.Value, prefix string) {
 		for i := range v.NumField() {
 			key, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("yaml"), ",")
-			if v.Type().Field(i).Anonymous {
+			if nests(v.Type().Field(i)) {
 				nested := prefix
 				if key != "" {
 					nested += key + "."

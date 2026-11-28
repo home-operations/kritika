@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -40,12 +39,12 @@ import (
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/poller"
 	"github.com/home-operations/kritika/internal/server"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/web"
 	"github.com/home-operations/kritika/internal/webapi"
 	"github.com/home-operations/kritika/internal/worker"
@@ -56,9 +55,6 @@ var (
 	version = "dev"
 	commit  = "unknown"
 )
-
-// memLimitRefresh is how often GOMEMLIMIT follows the cgroup memory limit.
-const memLimitRefresh = time.Minute
 
 func main() {
 	// A failure before run sets the configured logger logs as JSON on
@@ -82,6 +78,7 @@ func run() (err error) {
 	if err != nil {
 		return err
 	}
+	tuning.Set(cfg.Tuning)
 	if err := validate(command, cfg); err != nil {
 		return err
 	}
@@ -120,7 +117,7 @@ func run() (err error) {
 	// failure. Set logs its own failure, which leaves the limit as it was.
 	memOpts := []memlimit.Option{memlimit.WithLogger(logger)}
 	if runtime.GOOS == "linux" {
-		memOpts = append(memOpts, memlimit.WithRefreshInterval(ctx, memLimitRefresh))
+		memOpts = append(memOpts, memlimit.WithRefreshInterval(ctx, tuning.Get().Process.MemLimitRefresh))
 	}
 	_, _ = memlimit.Set(memOpts...)
 	if command == config.CommandChatGPTLogin {
@@ -166,7 +163,8 @@ func run() (err error) {
 		}
 		public = server.NewSwitch(server.Starting())
 		g.Go(func() error {
-			return server.Serve(server.Lingering(ctx, linger), cfg.Addr, public, publicDrain, logger.With("listener", "public"))
+			p := tuning.Get().Process
+			return server.Serve(server.Lingering(ctx, p.Linger), cfg.Addr, public, p.PublicDrain, logger.With("listener", "public"))
 		})
 	}
 
@@ -231,7 +229,7 @@ func serve(
 	// election, and the other replica only compares hashes.
 	current := configfile.NewCurrent(file)
 	g.Go(func() error {
-		return reportDrift(ctx, st, current, drift, driftInterval, logger)
+		return reportDrift(ctx, st, current, drift, tuning.Get().Process.DriftInterval, logger)
 	})
 	exec, err := newExecutor(ctx, cfg, logger)
 	if err != nil {
@@ -289,50 +287,6 @@ func loadConfig(cfg *config.Config) (*configfile.File, error) {
 	return f, nil
 }
 
-// checkConfig loads the configuration file that args name, or else the file
-// that KRITIKA_CONFIG_FILE names, as serve does at startup. It says on out
-// that serve will accept the file. It reads the environment as serve reads
-// it. That includes the variables that the file's secret references name. It
-// does not read the database, and it connects to nothing. The configuration
-// that a deployment gives serve besides the file, such as the chart's
-// gatewayUrl, is not required.
-//
-// checkConfig decodes the runner templates as the executor decodes them, but
-// it leaves the API's dry run of a runner Job to startup.
-func checkConfig(args []string, out io.Writer) error {
-	path := os.Getenv("KRITIKA_CONFIG_FILE")
-	if len(args) > 0 {
-		path = args[0]
-	}
-	if path == "" {
-		return errors.New("config: usage: kritika config check [<file>]: name a file or set KRITIKA_CONFIG_FILE")
-	}
-	cfg, err := config.LoadFile(path)
-	if err != nil {
-		return err
-	}
-	if _, err := loadConfig(cfg); err != nil {
-		return err
-	}
-	if cfg.WebURL == "" {
-		return errors.New("config: webUrl: KRITIKA_WEB_URL is required to serve")
-	}
-	if cfg.Executor == config.ExecutorKubernetes {
-		if _, err := executor.DecodeJobTemplate(cfg.RunnerJobTemplate); err != nil {
-			return fmt.Errorf("runner.jobTemplate: KRITIKA_RUNNER_JOB_TEMPLATE: %w", err)
-		}
-		// A pod template must name the runner's image, and the chart passes
-		// it besides an existingConfigMap's file, which then has none.
-		if len(cfg.RunnerPodTemplate) > 0 {
-			if _, err := executor.DecodePodTemplate(cfg.RunnerPodTemplate); err != nil {
-				return fmt.Errorf("runner.podTemplate: KRITIKA_RUNNER_POD_TEMPLATE: %w", err)
-			}
-		}
-	}
-	_, err = fmt.Fprintf(out, "%s: the configuration is valid\n", path)
-	return err
-}
-
 // startPublic hands the public listener what it serves until ctx ends: the
 // webhooks, and the dashboard with its sign-in and API, in place of the
 // starting page.
@@ -355,7 +309,7 @@ func startPublic(
 		Store: st, Current: current, Auth: authHandler, UI: web.FS(),
 		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: inserter}, Env: cfg.Env(),
 	})
-	g.Go(func() error { return api.Run(server.Lingering(ctx, linger)) })
+	g.Go(func() error { return api.Run(server.Lingering(ctx, tuning.Get().Process.Linger)) })
 	// The keys for the verification of every Forgejo connection's tokens. They
 	// are read from the configuration on each request, so a rotated key is
 	// served at once.
@@ -410,7 +364,7 @@ func startWorker(
 	}
 	gw.Proxy = proxy
 	g.Go(func() error {
-		return server.Serve(server.Lingering(ctx, linger), cfg.GatewayAddr, gw, gateway.Drain, gatewayLogger)
+		return server.Serve(server.Lingering(ctx, tuning.Get().Process.Linger), cfg.GatewayAddr, gw, tuning.Get().Gateway.Drain, gatewayLogger)
 	})
 	reviewer := &worker.Review{
 		Base: base, Executor: exec, Steppers: steppers,
@@ -432,7 +386,7 @@ func startWorker(
 	middleware := []rivertype.Middleware{
 		&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}, &worker.ForgeRateLimit{Logger: logger},
 	}
-	queue, err := river.NewClient(riverpgxv5.New(st.App()), riverConfig(cfg, workers, middleware, logger))
+	queue, err := river.NewClient(worker.NewRiverDriver(st.App()), riverConfig(cfg, workers, middleware, logger))
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
 	}
@@ -464,23 +418,6 @@ func startWorker(
 	return nil
 }
 
-// queueDrain is how long a stopping serve lets running jobs finish. A
-// review still running then is cut and retried. queueStopHeadroom covers
-// what a cut review does before it hands its job back, each step at its
-// own bound: deleting the runner Job and reading its pod (20s each),
-// revoking its token (10s) and waiting for its agent row (40s). A job
-// still at it when the process is killed is not recorded by River and
-// waits on the rescuer instead. Completed runner answers are checkpointed
-// before merge and confidence calls, so rescue can resume those answers.
-//
-// eventsDrain then lets the Events of the runs the stop cut be written. The
-// three waits fit in the chart's 200s termination grace period.
-const (
-	queueDrain        = 100 * time.Second
-	queueStopHeadroom = 90 * time.Second
-	eventsDrain       = 5 * time.Second
-)
-
 // validate makes sure that cfg has what command needs beyond the common set.
 func validate(command config.Command, cfg *config.Config) error {
 	if command == config.CommandChatGPTLogin {
@@ -498,33 +435,24 @@ func storeOptions(cfg *config.Config, logger *slog.Logger) store.Options {
 	return store.Options{AppURL: cfg.DatabaseURL, OwnerURL: cfg.DatabaseOwnerURL, Logger: logger}
 }
 
-// linger is how long the public listener and the gateway keep accepting
-// connections once serve is told to stop. Kubernetes and the proxies in
-// front of it take a moment to stop routing to a terminating pod. A
-// connection refused meanwhile is a webhook lost, because GitHub does not
-// redeliver on its own, or a runner's model step retried.
-const linger = 5 * time.Second
-
-// publicDrain is how long a stopping serve lets webhook and dashboard
-// requests finish. Event streams end at once, when the API's Run returns.
-const publicDrain = 10 * time.Second
-
 // riverConfig configures the working client, which runs on the
 // application role's pool.
 func riverConfig(cfg *config.Config, workers *river.Workers, middleware []rivertype.Middleware, logger *slog.Logger) *river.Config {
 	return &river.Config{
 		Logger: logger,
 		// Review and index workers set their own timeouts from the
-		// runner deadline. Rescue must wait out the longest of them.
-		RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
+		// runner deadline. Rescue must wait out the longest of them. A leader
+		// on an older release rescues at River's 4 hours, so jobs of a first
+		// rollout must end within that (tuning.md, Shutdown and rollouts).
+		RescueStuckJobsAfter: tuning.Get().JobTimeout.RescueStuckJobsAfter(),
 		// ctx ending starts a soft stop: running jobs get this long before
 		// their contexts end.
-		SoftStopTimeout: queueDrain,
+		SoftStopTimeout: tuning.Get().Process.QueueDrain,
 		// A job that its timeout cut ends its run on detached contexts, as a
-		// stopping job does. queueStopHeadroom covers this in the usual case.
-		// Without this value, River calls every such job stuck after ten
-		// seconds.
-		JobStuckThreshold: queueStopHeadroom,
+		// stopping job does. The queue stop headroom covers this in the usual
+		// case. Without this value, River calls every such job stuck after
+		// ten seconds.
+		JobStuckThreshold: tuning.Get().Process.QueueStopHeadroom,
 		// If enabled, River's reindexer runs REINDEX on this pool. The role of
 		// this pool owns none of River's indexes and has no MAINTAIN on its
 		// tables, so REINDEX can never succeed. An empty list keeps the
@@ -556,7 +484,8 @@ func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
 func workQueues(
 	ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx], cfg *config.Config, events *executor.Events, logger *slog.Logger,
 ) error {
-	if err := st.WaitForSchema(ctx, 2*time.Second); err != nil {
+	p := tuning.Get().Process
+	if err := st.WaitForSchema(ctx, p.SchemaPoll); err != nil {
 		return nil // shutdown while waiting
 	}
 	if err := startQueue(ctx, queue, logger); err != nil {
@@ -569,18 +498,23 @@ func workQueues(
 	case <-queue.Stopped():
 		// Every worker returned, so no run records an Event now. The Events of
 		// the runs that the stop cut can still be on their way.
-		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), eventsDrain)
+		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.EventsDrain)
 		defer cancel()
 		events.Wait(wctx)
-	case <-time.After(queueDrain + queueStopHeadroom):
-		logger.Warn("the queues did not stop in time", "drain", queueDrain)
+	case <-time.After(p.QueueDrain + p.QueueStopHeadroom):
+		logger.Warn("the queues did not stop in time", "drain", p.QueueDrain)
 	}
 	return nil
 }
 
-func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.Logger) error {
-	const retry = 5 * time.Second
-	const attempts = 24
+// starter is the part of River's client that startQueue starts.
+type starter interface {
+	Start(ctx context.Context) error
+}
+
+func startQueue(ctx context.Context, queue starter, logger *slog.Logger) error {
+	p := tuning.Get().Process
+	retry, attempts := p.QueueStartRetry, p.QueueStartAttempts
 	var err error
 	for i := 1; i <= attempts; i++ {
 		if err = queue.Start(ctx); err == nil {
@@ -588,6 +522,9 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 		}
 		if ctx.Err() != nil {
 			return nil
+		}
+		if i == attempts {
+			break
 		}
 		logger.Warn("queue start failed, retrying", "error", err, "attempt", i, "after", retry)
 		select {
@@ -617,7 +554,7 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 	if err != nil {
 		return nil, fmt.Errorf("runner.podTemplate: KRITIKA_RUNNER_POD_TEMPLATE: %w", err)
 	}
-	client, ns, err := executor.NewKubeInCluster("kritika/" + version)
+	client, ns, err := executor.NewKubeInCluster(tuning.UserAgent(version))
 	if err != nil {
 		return nil, err
 	}
@@ -758,10 +695,6 @@ func applyConfig(
 	events.PodEvent(ctx, false, "ConfigApplied", "ApplyConfiguration", "configuration "+h[:12]+" applied")
 	return onApplied(ctx)
 }
-
-// driftInterval is how often a replica compares its configuration with
-// the one the leader applied, which differ while a rollout is part done.
-const driftInterval = 10 * time.Second
 
 // reportDrift compares this replica's file with what the leader applied and
 // exposes a mismatch as a gauge. It is deliberately not on /readyz: a stale

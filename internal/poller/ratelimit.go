@@ -10,21 +10,18 @@ import (
 	gh "github.com/google/go-github/v93/github"
 
 	"github.com/home-operations/kritika/internal/configfile"
-	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
+	"github.com/home-operations/kritika/internal/retryafter"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// forgeRateLimitWait is how long the looks at an account's default branches
-// pause for a forge's 429 that names no wait.
-const forgeRateLimitWait = time.Minute
 
 // rateLimited reports how long to wait before asking the forge again after
 // err, when err is the forge's rate limit: GitHub's, as github.RetryAfter
 // reads it, GitLab's, as gitlab.RetryAfter reads it, or any forge's 429. A
 // GitHub, Forgejo or Gitea 429 waits for its Retry-After, and a 429 that
-// names no wait waits forgeRateLimitWait.
+// names no wait waits tuning's Poller.ForgeRateLimitWait.
 func rateLimited(err error, now time.Time) (time.Duration, bool) {
 	if wait, limited := github.RetryAfter(err, now); limited {
 		return wait, true
@@ -37,12 +34,12 @@ func rateLimited(err error, now time.Time) (time.Duration, bool) {
 	}
 	v := forgejo.RetryAfterHeader(err)
 	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil {
-		v = e.Response.Header.Get("Retry-After")
+		v = e.Response.Header.Get(retryafter.Header)
 	}
-	if wait, ok := forge.RetryAfter(v, now); ok {
+	if wait, ok := retryafter.Parse(v, now); ok {
 		return wait, true
 	}
-	return forgeRateLimitWait, true
+	return tuning.Get().Poller.ForgeRateLimitWait, true
 }
 
 // forgeStatus is the HTTP status of the forge's answer that err carries, 0

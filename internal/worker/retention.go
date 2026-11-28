@@ -8,18 +8,8 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// retentionSweepInterval is how often the leader deletes these items past
-// their retention window: model-call transcripts, egress refusals, settled
-// model invocations, review diffs, agent conversations, stopped repositories'
-// indexes, finished runs' similar-code exclusions and dashboard sessions.
-const retentionSweepInterval = time.Hour
-
-// conversationRetention is how long an agent's conversation is kept for a
-// re-review to carry on: well past any provider's cache window, after which
-// carrying it on costs more than starting afresh.
-const conversationRetention = 2 * time.Hour
 
 // retentionStore is the subset of *store.Store that Retention needs,
 // narrowed so it can be exercised in tests with a fake.
@@ -46,11 +36,12 @@ type retentionStore interface {
 // diffs past their own retention window, and the paths that finished runs'
 // similar-code searches left out. It also deletes the indexes of
 // repositories that the configuration did not run for longer than its index
-// grace, and agent conversations older than conversationRetention. It also
-// partitions an index table that a build before partitioning created. It
-// moves the chunks that its legacy partition holds to the hash partitions,
-// or deletes those that no build needs, and drops the emptied partition.
-// With the app pool, it deletes expired dashboard sessions. A leader duty.
+// grace, and agent conversations older than tuning's
+// Worker.ConversationRetention. It also partitions an index table that a build
+// before partitioning created. It moves the chunks that its legacy partition
+// holds to the hash partitions, or deletes those that no build needs, and
+// drops the emptied partition. With the app pool, it deletes expired dashboard
+// sessions. A leader duty.
 type Retention struct {
 	Store   retentionStore
 	Current *configfile.Current
@@ -64,20 +55,21 @@ type Retention struct {
 	// ensured, which can replace the table. The other sweeps run meanwhile,
 	// so a schema change that waits for a lock holds none of them up.
 	IndexReady <-chan struct{}
-	// every overrides retentionSweepInterval in tests.
+	// every overrides tuning's Worker.RetentionSweepInterval in tests.
 	every time.Duration
 }
 
-// Run sweeps once immediately, then every retentionSweepInterval until ctx
-// ends, and once more when IndexReady closes. A sweep failure is logged,
-// never fatal: it just leaves stale rows for the next tick.
+// Run sweeps once immediately, then every tuning's
+// Worker.RetentionSweepInterval until ctx ends, and once more when IndexReady
+// closes. A sweep failure is logged, never fatal: it just leaves stale rows
+// for the next tick.
 //
 // The legacy index partition's conversion and drain run in a loop of their
 // own (migrateIndex), which Run waits for before it returns. A drain goes on
 // until the legacy partition is empty or held, which can take longer than
 // the interval: the other sweeps keep to it meanwhile.
 func (r *Retention) Run(ctx context.Context) {
-	every := cmp.Or(r.every, retentionSweepInterval)
+	every := cmp.Or(r.every, tuning.Get().Worker.RetentionSweepInterval)
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	wg.Go(func() { r.migrateIndex(ctx, every) })
@@ -92,7 +84,7 @@ func (r *Retention) Run(ctx context.Context) {
 		r.report(ctx, "review diffs", "packs", n, err)
 		n, err = r.Store.SweepSessions(ctx, time.Now())
 		r.report(ctx, "dashboard sessions", "rows", n, err)
-		n, err = r.Store.SweepConversations(ctx, conversationRetention)
+		n, err = r.Store.SweepConversations(ctx, tuning.Get().Worker.ConversationRetention)
 		r.report(ctx, "agent conversations", "rows", n, err)
 		n, err = r.Store.SweepEgressRefusals(ctx, r.Current.Get().TranscriptRetention())
 		r.report(ctx, "egress refusals", "rows", n, err)

@@ -2,7 +2,6 @@ package runspec
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/home-operations/kritika/internal/model"
 )
@@ -43,21 +42,11 @@ const (
 // ReportCheckpointInput names a part input hash on ReportCheckpointsPath.
 const ReportCheckpointInput = "input"
 
-// A runner keeps a report going while the gateway is out of reach: a replica
-// restarts under the run in every rollout, and a lost report can be a model's
-// answer already paid for. ReportRetryWindow is how long it starts new attempts,
-// and ReportTimeout is how long one of them can then hang, since a replica that
-// dies mid-request answers nothing. A heartbeat takes the same route, so the
-// worker's patience with a silent run must outlast both.
-const (
-	ReportRetryWindow = 3 * time.Minute
-	ReportTimeout     = 2 * time.Minute
-)
-
-// IndexUploadTimeout is how long one upload of a run's index can take. The
-// indexer's limits allow hundreds of megabytes, so the gateway's usual bound
-// on reading a request does not hold for it.
-const IndexUploadTimeout = 30 * time.Minute
+// ReportLimitHeader is the header of a report refused as too large that
+// gives, in bytes, the limit of the replica that refused it. Replicas of a
+// rollout can hold different limits, so a runner fits a report it can cut,
+// the context report, to that limit and sends it again.
+const ReportLimitHeader = "Kritika-Report-Limit"
 
 // Index modes, as index_runs and index_packs spell them.
 const (

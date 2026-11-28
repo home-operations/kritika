@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -68,8 +69,8 @@ func CreateAPIToken(ctx context.Context, tx pgx.Tx, t APIToken) (token, id strin
 }
 
 // LookupAPIToken returns the token that a value names, with its user, unless
-// it expired by now, and records its use at most once a minute. Otherwise it
-// returns ErrSession.
+// it expired by now, and records its use at most once per tuning's
+// Store.APITokenUseInterval. Otherwise it returns ErrSession.
 func (s *Store) LookupAPIToken(ctx context.Context, token string, now time.Time) (APIToken, error) {
 	t, err := scanAPIToken(s.app.QueryRow(ctx, `SELECT `+apiTokenColumns+`
 		FROM api_tokens t JOIN users u ON u.id = t.user_id
@@ -80,7 +81,7 @@ func (s *Store) LookupAPIToken(ctx context.Context, token string, now time.Time)
 	if err != nil {
 		return APIToken{}, fmt.Errorf("store: look up api token: %w", err)
 	}
-	if t.LastUsedAt == nil || now.Sub(*t.LastUsedAt) >= time.Minute {
+	if t.LastUsedAt == nil || now.Sub(*t.LastUsedAt) >= tuning.Get().Store.APITokenUseInterval {
 		marked, err := markAPITokenUsed(ctx, s.app, t.ID, now)
 		if err != nil {
 			return APIToken{}, fmt.Errorf("store: look up api token: %w", err)
@@ -93,14 +94,15 @@ func (s *Store) LookupAPIToken(ctx context.Context, token string, now time.Time)
 }
 
 // markAPITokenUsed records the token's use at now, and reports whether it
-// did: not within a minute of the last recorded use, nor before it. The
-// condition is the update's own, so it holds against a concurrent lookup
-// that read the same last use.
+// did: not within tuning's Store.APITokenUseInterval of the last recorded
+// use, nor before it. The condition is the update's own, so it holds
+// against a concurrent lookup that read the same last use.
 func markAPITokenUsed(ctx context.Context, db interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }, id string, now time.Time) (bool, error) {
 	tag, err := db.Exec(ctx, `UPDATE api_tokens SET last_used_at = $2
-		WHERE id = $1 AND (last_used_at IS NULL OR last_used_at <= $2::timestamptz - interval '1 minute')`, id, now)
+		WHERE id = $1 AND (last_used_at IS NULL OR last_used_at <= $2::timestamptz - make_interval(secs => $3))`, id, now,
+		tuning.Get().Store.APITokenUseInterval.Seconds())
 	return tag.RowsAffected() == 1, err
 }
 

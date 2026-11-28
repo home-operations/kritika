@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
 
@@ -22,29 +21,14 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// similarTimeout bounds one similar-code request to the gateway, which
-// can wait for the account's embedding slot.
-const similarTimeout = time.Minute
-
-// maxSimilarBody bounds the gateway's answer: contextpack.SimilarLimit chunks.
-const maxSimilarBody = 1 << 20
-
-// searchCalls is how many times one run can call search_code.
-const searchCalls = 10
-
-// searchShown is the most chunks one search_code answer shows. It asks the
-// gateway for twice as many, as it leaves out those that the head no longer
-// has or that the run ignores, and the gateway caps one query's answer at
-// as many as this unless asked for more.
-const searchShown = 4
 
 // similarCode asks the gateway for the chunks of the repository's index
 // nearest each query, outside the paths that the run reported. It asks on
 // runspec.SimilarPath, which only a gateway that leaves them out serves.
 func similarCode(ctx context.Context, gatewayURL, token string, req contextpack.SimilarRequest) (contextpack.SimilarResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, similarTimeout)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.SimilarTimeout)
 	defer cancel()
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -55,14 +39,14 @@ func similarCode(ctx context.Context, gatewayURL, token string, req contextpack.
 	if err != nil {
 		return contextpack.SimilarResponse{}, fmt.Errorf("runner: similar code: %w", err)
 	}
-	hreq.Header.Set("Authorization", "Bearer "+token)
+	hreq.Header.Set("Authorization", tuning.BearerPrefix+token)
 	hreq.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(hreq)
 	if err != nil {
 		return contextpack.SimilarResponse{}, fmt.Errorf("runner: similar code: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxSimilarBody))
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, int64(tuning.Get().Runner.MaxSimilarAnswerBody)))
 	if err != nil {
 		return contextpack.SimilarResponse{}, fmt.Errorf("runner: similar code: %w", err)
 	}
@@ -86,7 +70,7 @@ var searchSchema = json.RawMessage(`{
 }`)
 
 // searchTool is search_code: the agent's own similar-code search, over
-// the same gateway route as stage 4, bounded to searchCalls per run.
+// the same gateway route as stage 4, bounded to Runner.SearchCalls per run.
 type searchTool struct {
 	gatewayURL, token string
 	// head is the tree that the answer is shown as (atHead). headLock, when
@@ -119,12 +103,13 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 	if strings.TrimSpace(req.Query) == "" {
 		return "", errors.New("agent: search_code: query is empty")
 	}
-	if s.calls >= searchCalls {
-		return "", fmt.Errorf("agent: search_code: the limit of %d searches per review is reached", searchCalls)
+	if most := tuning.Get().Runner.SearchCalls; s.calls >= most {
+		return "", fmt.Errorf("agent: search_code: the limit of %d searches per review is reached", most)
 	}
 	s.calls++
 	out, err := similarCode(ctx, s.gatewayURL, s.token, contextpack.SimilarRequest{
-		Queries: []string{textcut.Prefix(req.Query, contextpack.SimilarQueryChars)}, Kind: contextpack.SimilarKindSearch, Limit: 2 * searchShown,
+		Queries: []string{textcut.Prefix(req.Query, tuning.Get().ContextPack.SimilarQueryChars)},
+		Kind:    contextpack.SimilarKindSearch, Limit: 2 * tuning.Get().Runner.SearchShown,
 	})
 	if err != nil {
 		return "", fmt.Errorf("agent: search_code: %w", err)
@@ -134,7 +119,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 		return "", fmt.Errorf("agent: search_code: %w", err)
 	}
 	chunks := distinct(current)
-	chunks = chunks[:min(len(chunks), searchShown)]
+	chunks = chunks[:min(len(chunks), tuning.Get().Runner.SearchShown)]
 	if len(chunks) == 0 {
 		return "No similar code found.", nil
 	}
@@ -165,12 +150,13 @@ var _ agent.Tool = (*searchTool)(nil)
 // cut text is longer than MaxChunkBytes.
 func withoutOverlap(similar, others []contextpack.Chunk) []contextpack.Chunk {
 	var shown []contextpack.Chunk
+	limit := contextpack.DefaultOptions().MaxChunkBytes
 	for _, o := range others {
 		if o.Stage == contextpack.StageSimilar {
 			continue
 		}
 		text := o.Text
-		if len(text) > contextpack.DefaultOptions.MaxChunkBytes {
+		if len(text) > limit {
 			// A cut that ends at a newline shows none of the line after it.
 			text = strings.TrimSuffix(strings.TrimSuffix(text, "\n… (truncated)"), "\n")
 		}
@@ -223,7 +209,7 @@ func atHead(
 	ctx context.Context, head *object.Tree, headLock chan struct{}, ignore []string, chunks []contextpack.Chunk,
 ) ([]contextpack.Chunk, error) {
 	files := map[string]*headFile{}
-	parser := &chunk.Parser{Limits: chunk.Limits{MaxBytes: indexer.DefaultOptions.MaxFileBytes}}
+	parser := &chunk.Parser{Limits: chunk.Limits{MaxBytes: indexer.DefaultOptions().MaxFileBytes}}
 	var out []contextpack.Chunk
 	for _, c := range chunks {
 		if chunk.Matches(ignore, c.Path) || indexer.Unindexed(c.Path) {
@@ -276,7 +262,7 @@ type headFile struct {
 func readHeadFile(head *object.Tree, path string) *headFile {
 	f := &headFile{path: path}
 	file, err := head.File(path)
-	if err != nil || file.Size > int64(indexer.DefaultOptions.MaxFileBytes) {
+	if err != nil || file.Size > int64(indexer.DefaultOptions().MaxFileBytes) {
 		return f
 	}
 	src, err := file.Contents()
@@ -297,7 +283,7 @@ func (f *headFile) declares(parser *chunk.Parser, c contextpack.Chunk) bool {
 	if !f.parsed {
 		f.parsed = true
 		pf := parser.Parse(f.path, []byte(f.src))
-		f.decls, f.pieces = pf.Decls, indexer.Pieces(pf, indexer.DefaultOptions)
+		f.decls, f.pieces = pf.Decls, indexer.Pieces(pf, indexer.DefaultOptions())
 		pf.Close()
 	}
 	holds := func(d chunk.Decl) bool {
@@ -333,7 +319,7 @@ func findText(ctx context.Context, lines []string, text string, near, n int, acc
 	if text == "" || n < 1 {
 		return 0, 0, false
 	}
-	most := indexer.DefaultOptions.MaxChunkBytes
+	most := indexer.DefaultOptions().MaxChunkBytes
 	at := func(i int) (int, bool) {
 		if i < 0 {
 			return 0, false
@@ -386,13 +372,10 @@ func findText(ctx context.Context, lines []string, text string, near, n int, acc
 	return 0, 0, false
 }
 
-// maxSimilarShown is the most similar chunks a prompt shows.
-const maxSimilarShown = 10
-
 // similarShown is the similar chunks found that a prompt shows: as head has
 // them and outside ignore, none that others, the other stages' chunks,
 // mostly show or that an earlier one shown mostly shows, and the first
-// maxSimilarShown of the rest.
+// Runner.MaxSimilarShown of the rest.
 func similarShown(
 	ctx context.Context, head *object.Tree, ignore []string, found, others []contextpack.Chunk, logger *slog.Logger,
 ) []contextpack.Chunk {
@@ -406,10 +389,11 @@ func similarShown(
 
 // shownApart is what a prompt shows of current, the found similar chunks as
 // the head has them: none that others mostly show or that an earlier one
-// shown mostly shows, and the first maxSimilarShown of the rest.
+// shown mostly shows, and the first Runner.MaxSimilarShown of the rest.
 func shownApart(found int, current, others []contextpack.Chunk, logger *slog.Logger) []contextpack.Chunk {
 	shown := distinct(withoutOverlap(current, others))
+	most := tuning.Get().Runner.MaxSimilarShown
 	logger.Info("similar chunks shown", "found", found, "at_head", len(current), "apart", len(shown),
-		"shown", min(len(shown), maxSimilarShown))
-	return shown[:min(len(shown), maxSimilarShown)]
+		"shown", min(len(shown), most))
+	return shown[:min(len(shown), most)]
 }

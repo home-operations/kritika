@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // requestLog records the SQL of every request that a pool's connections
@@ -104,6 +105,7 @@ func TestPartitionIndexChunksLockedRoundTrips(t *testing.T) {
 // and so drops the empty legacy partition once the searches that hold it
 // end.
 func TestDropLegacyIndexChunksBesideSustainedSearches(t *testing.T) {
+	partitionTries := tuning.Get().Store.PartitionTries
 	slowLockWaits(t)
 	s := openStore(t)
 	ctx := t.Context()

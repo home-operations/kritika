@@ -4,18 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net/url"
 	"reflect"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/gookit/validate/v2"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
-)
 
-// minRetention keeps transcripts and diffs available for at least a day.
-const minRetention = 24 * time.Hour
+	"github.com/home-operations/kritika/internal/tuning"
+)
 
 // The comparison rules do not convert ByteSize, unlike time.Duration.
 func init() {
@@ -23,10 +22,17 @@ func init() {
 }
 
 // Validate makes sure that values meet the runtime bounds that the process
-// and file loaders share.
-func (s Settings) Validate() error {
+// and file loaders share, tuning's among them.
+func (s Settings) Validate() error { return s.validate(true) }
+
+// validate is Validate, with the retentions checked only with retention. A
+// runner reads neither retention, and serve hands it only the tuning: a
+// Worker.MinRetention that serve raised along with its retentions would
+// refuse the runner's default ones.
+func (s Settings) validate(retention bool) error {
 	s.LogLevel = strings.ToLower(s.LogLevel)
 	s.LogFormat = strings.ToLower(s.LogFormat)
+	minRetention := s.Tuning.Worker.MinRetention
 	v := validate.Struct(s)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
@@ -34,7 +40,9 @@ func (s Settings) Validate() error {
 	v.AddRule("ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow", "gt", 0)
 	v.AddRule("GatewayCacheStorage", "enum", []string{"filesystem", "s3"})
 	v.AddRule("PollInterval,PollLookback,IndexGrace", "gte", 0)
-	v.AddRule("TranscriptRetention,DiffRetention", "min", minRetention)
+	if retention {
+		v.AddRule("TranscriptRetention,DiffRetention", "min", minRetention)
+	}
 	v.AddRule("LogLevel", "enum", slices.Sorted(maps.Keys(logLevels)))
 	v.AddRule("LogFormat", "enum", []string{"json", "text"})
 	v.AddRule("Executor", "enum", []string{string(ExecutorKubernetes), string(ExecutorLocal)})
@@ -64,7 +72,7 @@ func (s Settings) Validate() error {
 	}
 	v.WithTranslates(labels)
 	var extra []string
-	if _, err := s.deadline(); err != nil {
+	if _, err := s.deadline(s.Tuning.JobTimeout); err != nil {
 		extra = append(extra, err.Error())
 	}
 	if u, err := url.Parse(s.AquaRegistryURL); err != nil || u.Host == "" || (u.Scheme != schemeHTTPS && u.Scheme != schemeHTTP) {
@@ -74,14 +82,24 @@ func (s Settings) Validate() error {
 		if s.GatewayCacheDir == "" {
 			extra = append(extra, "gatewayCacheDir: S3 needs a private local staging directory")
 		}
-		if s.GatewayCacheMaxEntrySize > 5<<30 {
-			extra = append(extra, "gatewayCacheMaxEntrySize: S3 single-request uploads must not exceed 5Gi")
+		if s.GatewayCacheMaxEntrySize > tuning.S3MaxPutBytes {
+			extra = append(extra, "gatewayCacheMaxEntrySize: S3 single-request uploads must not exceed "+
+				tuning.ByteSize(tuning.S3MaxPutBytes).String())
+		}
+		// The local spool holds an entry for each fill under way.
+		if n := int64(s.GatewayCacheMaxEntrySize); n > 0 && int64(s.Tuning.Egress.MaxFills) > math.MaxInt64/n {
+			extra = append(extra, "gatewayCacheMaxEntrySize: KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE times "+
+				"tuning.egress.maxFills: KRITIKA_TUNING_EGRESS_MAX_FILLS overflows the S3 cache's local spool")
 		}
 		if err := checkS3Bucket(s.GatewayCacheS3Endpoint, s.GatewayCacheS3Region, s.GatewayCacheS3Bucket); err != nil {
 			extra = append(extra, err.Error())
 		}
 	}
-	return validationError(v, extra...)
+	err := validationError(v, extra...)
+	if terr := s.Tuning.Validate(); terr != nil {
+		err = errors.Join(err, fmt.Errorf("config: %w", terr))
+	}
+	return err
 }
 
 // checkS3Bucket makes sure that the location of the gateway cache's bucket

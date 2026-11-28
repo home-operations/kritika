@@ -33,6 +33,7 @@ import (
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
@@ -635,12 +636,12 @@ func TestPollerPausesTipChecksAtAnInstallationsDiscoveryRateLimit(t *testing.T) 
 // TestPollerBacksOffAfterAnIndexJobThatPublishedNothing: an index job that
 // ended without bringing the index to the tip, failed or skipped because
 // the repository's .kritika.yaml turns indexing off, will end so again. So
-// the poll leaves the branch alone for jobs.OnboardRetryAfter after it, as
-// the onboarding feeder does a repository whose first index failed. A job
-// that published and then failed or found indexing off at a newer tip ended
-// so too, as did a forced rebuild's catch-up that failed. One that found the
-// index at the tip did not, whatever commit it was queued for. The last job
-// to end is the one that counts.
+// the poll leaves the branch alone for tuning's Jobs.OnboardRetryAfter after
+// it, as the onboarding feeder does a repository whose first index failed. A
+// job that published and then failed or found indexing off at a newer tip
+// ended so too, as did a forced rebuild's catch-up that failed. One that found
+// the index at the tip did not, whatever commit it was queued for. The last
+// job to end is the one that counts.
 func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	for _, tc := range []struct {
@@ -719,10 +720,10 @@ func TestPollerBacksOffAfterAnIndexJobThatPublishedNothing(t *testing.T) {
 
 // TestPollerChecksTipsHourlyWhileWebhooksArrive: while the connection's
 // webhooks arrive, a push webhook is rarely missed, so the default branches
-// are looked at once every tipCheckInterval, not every poll: a check costs a
-// request per indexed repository. A connection whose webhooks have been
-// silent for the poll lookback, or never arrived, has them looked at every
-// poll. A newly elected leader looks at once.
+// are looked at once every tuning's Poller.TipCheckInterval, not every poll:
+// a check costs a request per indexed repository. A connection whose webhooks
+// have been silent for the poll lookback, or never arrived, has them looked at
+// every poll. A newly elected leader looks at once.
 func TestPollerChecksTipsHourlyWhileWebhooksArrive(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	s.tf.tip = "indexed"
@@ -737,7 +738,7 @@ func TestPollerChecksTipsHourlyWhileWebhooksArrive(t *testing.T) {
 	}{
 		{name: "arriving, first poll", delivered: "now()", want: 1},
 		{name: "arriving, checked lately", delivered: "now()", checked: 10 * time.Minute},
-		{name: "arriving, checked over an interval ago", delivered: "now()", checked: tipCheckInterval + time.Minute, want: 1},
+		{name: "arriving, checked over an interval ago", delivered: "now()", checked: tuning.Get().Poller.TipCheckInterval + time.Minute, want: 1},
 		{name: "silent past the lookback", delivered: "now() - interval '25 hours'", checked: time.Minute, want: 2},
 		{name: "never arrived", delivered: "NULL", checked: time.Minute, want: 2},
 	} {
@@ -773,14 +774,14 @@ func TestPollerStopsTipChecksAtARateLimit(t *testing.T) {
 // TestPollerPausesTipChecksAtAForgejoRateLimit: a Forgejo instance's 429 is
 // its rate limit too. The look stops at the repository that it refused, and
 // the next asks for no branch until the 429's Retry-After has passed, or
-// forgeRateLimitWait when it names none, then resumes there.
+// tuning's Poller.ForgeRateLimitWait when it names none, then resumes there.
 func TestPollerPausesTipChecksAtAForgejoRateLimit(t *testing.T) {
 	for _, tc := range []struct {
 		name, retryAfter string
 		wait             time.Duration
 	}{
-		{name: "without a Retry-After", wait: forgeRateLimitWait},
-		{name: "with a Retry-After past forgeRateLimitWait", retryAfter: "300", wait: 5 * time.Minute},
+		{name: "without a Retry-After", wait: tuning.Get().Poller.ForgeRateLimitWait},
+		{name: "with a Retry-After past the default wait", retryAfter: "300", wait: 5 * time.Minute},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops")
@@ -985,7 +986,7 @@ func TestPollerPausesTipChecksOfAConnectionsAccountsAtItsRateLimit(t *testing.T)
 			labA.asked, labB.asked)
 	}
 	labA.err = nil
-	now = now.Add(forgeRateLimitWait - time.Second)
+	now = now.Add(tuning.Get().Poller.ForgeRateLimitWait - time.Second)
 	s.p.pollTipsAll(t.Context())
 	if len(labA.asked) != 1 {
 		t.Fatalf("a look within the limit's wait asked lab-a for %q, want nothing past its first", labA.asked)
@@ -1058,7 +1059,7 @@ func TestPollerResumesTheAccountASharedRateLimitRefused(t *testing.T) {
 	if want := []string{"acme/widgets", "globex/gadgets"}; !slices.Equal(labA.asked, want) {
 		t.Fatalf("a look with one lookup left asked lab-a for %q, want %q", labA.asked, want)
 	}
-	now = now.Add(forgeRateLimitWait + time.Second)
+	now = now.Add(tuning.Get().Poller.ForgeRateLimitWait + time.Second)
 	look()
 	if want := []string{"globex/gadgets", "acme/widgets"}; !slices.Equal(labA.asked[2:], want) {
 		t.Fatalf("the look past the limit's wait asked lab-a for %q, want %q: the refused account first", labA.asked[2:], want)
@@ -1081,9 +1082,10 @@ func TestPollerResumesTheAccountASharedRateLimitRefused(t *testing.T) {
 // that the rate limit cuts short waits the limit out, and then resumes at
 // the branch it stopped at, even while webhooks arrive. So looks that the
 // limit cuts short every time still come round to every repository. The
-// sweep ends at the last one, not round again, and the next waits
-// tipCheckInterval while webhooks arrive. The looks' clock is the test's, so
-// a look within the limit's wait is one however long the polls take.
+// sweep ends at the last one, not round again, and the next waits tuning's
+// Poller.TipCheckInterval while webhooks arrive. The looks' clock is the
+// test's, so a look within the limit's wait is one however long the polls
+// take.
 func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/flux", "onedr0p/home-ops", "onedr0p/talos")
 	s.webhooks(t, true)
@@ -1112,7 +1114,7 @@ func TestPollerResumesTipChecksCutByARateLimit(t *testing.T) {
 	lf.now = lf.now.Add(1100 * time.Millisecond)
 	look()
 	if len(lf.asked) != 5 {
-		t.Fatalf("a look after the sweep ended asked for %q, want none within tipCheckInterval", lf.asked[5:])
+		t.Fatalf("a look after the sweep ended asked for %q, want none within the tip check interval", lf.asked[5:])
 	}
 }
 
@@ -1883,10 +1885,10 @@ func TestPollerGivesLaterAccountsATurnAfterALookRunsOut(t *testing.T) {
 }
 
 // TestPollerReadsNoRepositoryForALookNotDue: a look at an account's default
-// branches that is not due, while webhooks arrive and within
-// tipCheckInterval of the last sweep, reads neither the repositories nor
-// their index jobs. A lock that holds every reader of the jobs back must not
-// hold it back.
+// branches that is not due, while webhooks arrive and within tuning's
+// Poller.TipCheckInterval of the last sweep, reads neither the repositories
+// nor their index jobs. A lock that holds every reader of the jobs back must
+// not hold it back.
 func TestPollerReadsNoRepositoryForALookNotDue(t *testing.T) {
 	s := newTipPoll(t, "onedr0p/home-ops")
 	s.webhooks(t, true)

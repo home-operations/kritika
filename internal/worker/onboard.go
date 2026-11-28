@@ -12,10 +12,8 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// onboardInterval is how often the feeder tops the window up.
-const onboardInterval = 30 * time.Second
 
 // Onboarder feeds onboarding index jobs to the index queue a few at a time.
 // After a first install, or a model change that drops every index, all
@@ -32,10 +30,10 @@ type Onboarder struct {
 	Logger  *slog.Logger
 }
 
-// Run tops the window up every onboardInterval until ctx ends. A failed
-// top-up is logged and tried again on the next tick.
+// Run tops the window up every tuning's Worker.OnboardInterval until ctx ends.
+// A failed top-up is logged and tried again on the next tick.
 func (o *Onboarder) Run(ctx context.Context) {
-	t := time.NewTicker(onboardInterval)
+	t := time.NewTicker(tuning.Get().Worker.OnboardInterval)
 	defer t.Stop()
 	for {
 		select {
@@ -65,7 +63,8 @@ func (o *Onboarder) Offer(ctx context.Context) error {
 	if room <= 0 {
 		return nil
 	}
-	refs, err := o.Store.OnboardCandidates(ctx, room, jobs.OnboardRetryAfter, func(accountID string, t configfile.RepoTraits) bool {
+	retry := tuning.Get().Jobs.OnboardRetryAfter
+	refs, err := o.Store.OnboardCandidates(ctx, room, retry, func(accountID string, t configfile.RepoTraits) bool {
 		a, ok := f.AccountByID(accountID)
 		return ok && f.Runs(a, t)
 	})

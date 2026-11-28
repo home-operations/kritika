@@ -20,6 +20,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/udiff"
 )
 
@@ -42,7 +43,7 @@ func readRepoConfig(ctx context.Context, client forge.Client, owner, repo, ref s
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, nil, nil
-	case errors.Is(err, forge.ErrFileTooLarge) || err == nil && len(doc) > repoconfig.MaxFileBytes:
+	case errors.Is(err, forge.ErrFileTooLarge) || err == nil && len(doc) > int(tuning.Get().RepoConfig.MaxFileBytes):
 		return nil, []string{repoconfig.TooLarge(repoconfig.FileName)}, nil
 	case err != nil:
 		return nil, nil, err

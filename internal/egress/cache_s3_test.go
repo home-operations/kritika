@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type s3TestObject struct {
@@ -355,5 +357,50 @@ func TestS3CacheCanceledRead(t *testing.T) {
 	if f, _, err := c.load(ctx, keyOf("tool archive")); err == nil {
 		_ = f.Close()
 		t.Fatal("canceled read succeeded")
+	}
+}
+
+// TestUseS3SpoolSize: fills of the S3 entry limit that would overflow the
+// local spool's size are refused, and one fewer is taken.
+func TestUseS3SpoolSize(t *testing.T) {
+	const entry = 5 << 30
+	opts := S3Options{Endpoint: "https://s3.example", Region: "test", Bucket: "cache", AccessKey: "key", SecretKey: "secret"}
+	for _, tt := range []struct {
+		fills int
+		fails bool
+	}{{math.MaxInt64 / entry, false}, {math.MaxInt64/entry + 1, true}} {
+		tuning.Override(t, func(v *tuning.Values) { v.Egress.MaxFills = tt.fills })
+		c := &Cache{Dir: t.TempDir(), MaxEntryBytes: entry}
+		if err := c.UseS3(opts); (err != nil) != tt.fails || !tt.fails && c.MaxBytes <= 0 {
+			t.Fatalf("UseS3 with %d fills = %v, spool %d; want a failure: %v", tt.fills, err, c.MaxBytes, tt.fails)
+		}
+	}
+}
+
+// TestS3UploadOutlastsTheLookupTimeout: an upload whose answer comes later
+// than egress.s3LookupTimeout, which bounds a lookup's, is held to its own
+// deadline alone.
+func TestS3UploadOutlastsTheLookupTimeout(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Egress.S3LookupTimeout, v.Egress.S3UploadTimeout = 100*time.Millisecond, 10*time.Second
+	})
+	store := &s3TestStore{objects: make(map[string]s3TestObject)}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			time.Sleep(300 * time.Millisecond)
+		}
+		store.serve(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	c := &Cache{Dir: t.TempDir(), MaxEntryBytes: 1 << 20}
+	if err := c.UseS3(S3Options{Endpoint: srv.URL, Region: "test-region", Bucket: "cache", AccessKey: "a", SecretKey: "s", ForcePathStyle: true}); err != nil {
+		t.Fatal(err)
+	}
+	key := keyOf("abc")
+	if err := c.store(key, entryOf("https://example.com/tool", "abc"), strings.NewReader("abc"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.upload(t.Context(), key); err != nil {
+		t.Fatalf("upload = %v, want it to wait for the answer", err)
 	}
 }

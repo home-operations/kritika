@@ -31,6 +31,7 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestIndexIgnoreHash(t *testing.T) {
@@ -211,9 +212,11 @@ func TestIndexContentHashPinned(t *testing.T) {
 }
 
 // TestForgeWait: an index job waits out a forge failing transiently for
-// longer each time, up to forgeWaits times, without spending an attempt.
-// Then, or for any other failure, the failure spends one.
+// longer each time, up to tuning's Worker.ForgeWaits times, without spending
+// an attempt. Then, or for any other failure, the failure spends one.
 func TestForgeWait(t *testing.T) {
+	w := tuning.Get().Worker
+	forgeWaitMin, forgeWaitMax, forgeWaits := w.ForgeWaitMin, w.ForgeWaitMax, w.ForgeWaits
 	transient := &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection reset")}
 	for _, tc := range []struct {
 		name      string
@@ -245,6 +248,7 @@ func TestForgeWait(t *testing.T) {
 // an attempt. A forge down for longer than that drops the push rather than
 // holding the repository's unique key for good.
 func TestForgeWaitsEndWithinAnHour(t *testing.T) {
+	forgeWaits := tuning.Get().Worker.ForgeWaits
 	transient := &url.Error{Op: "Get", URL: "https://api.github.com", Err: errors.New("connection reset")}
 	var total time.Duration
 	for waits := 0; ; waits++ {
@@ -275,14 +279,14 @@ func TestWaitOutGitLabRateLimit(t *testing.T) {
 		Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: h,
 			Request: &http.Request{URL: &url.URL{Scheme: "https", Host: "gitlab.example.com", Path: "/api/v4/projects/o%2Fr/repository/branches/main"}}},
 	})
-	for _, metadata := range []string{`{}`, fmt.Sprintf(`{"forge_waits": %d}`, forgeWaits)} {
+	for _, metadata := range []string{`{}`, fmt.Sprintf(`{"forge_waits": %d}`, tuning.Get().Worker.ForgeWaits)} {
 		t.Run(metadata, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
 			w := &Index{Metrics: metrics.New(reg)}
 			job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{Metadata: []byte(metadata)}}
 			err := w.waitOutForge(t.Context(), job, "acme", slog.New(slog.DiscardHandler), limited)
 			snooze, ok := errors.AsType[*river.JobSnoozeError](err)
-			if !ok || snooze.Duration <= forgeWaitMax || snooze.Duration > 2*time.Hour {
+			if !ok || snooze.Duration <= tuning.Get().Worker.ForgeWaitMax || snooze.Duration > 2*time.Hour {
 				t.Fatalf("waitOutForge = %v, want a snooze until the reset two hours away", err)
 			}
 			want := "# HELP kritika_index_snoozes_total Index jobs put back on the queue to wait, by reason.\n" +
@@ -319,7 +323,7 @@ func giteaRateLimited(t *testing.T, retryAfter string) error {
 // refuses with a 429 whose Retry-After, in seconds or as a date, names a
 // wait two hours away snoozes until then, past the longest forge wait, and
 // spends no forge wait, as a GitLab one does. Its check of the branch tip
-// after publication asks again then too, not at tipCheckWait.
+// after publication asks again then too, not at tuning's Worker.TipCheckWait.
 func TestIndexWaitsOutForgejoRateLimit(t *testing.T) {
 	for _, retryAfter := range []string{"7200", time.Now().Add(2 * time.Hour).UTC().Format(http.TimeFormat)} {
 		t.Run(retryAfter, func(t *testing.T) {
@@ -327,12 +331,12 @@ func TestIndexWaitsOutForgejoRateLimit(t *testing.T) {
 			if d := tipCheckDelay(limited); d <= time.Hour || d > 2*time.Hour {
 				t.Fatalf("tipCheckDelay = %s, want the two hours that Retry-After names", d)
 			}
-			for _, metadata := range []string{`{}`, fmt.Sprintf(`{"forge_waits": %d}`, forgeWaits)} {
+			for _, metadata := range []string{`{}`, fmt.Sprintf(`{"forge_waits": %d}`, tuning.Get().Worker.ForgeWaits)} {
 				w := &Index{Metrics: metrics.New(prometheus.NewRegistry())}
 				job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{Metadata: []byte(metadata)}}
 				err := w.waitOutForge(t.Context(), job, "acme", slog.New(slog.DiscardHandler), limited)
 				snooze, ok := errors.AsType[*river.JobSnoozeError](err)
-				if !ok || snooze.Duration <= forgeWaitMax || snooze.Duration > 2*time.Hour {
+				if !ok || snooze.Duration <= tuning.Get().Worker.ForgeWaitMax || snooze.Duration > 2*time.Hour {
 					t.Fatalf("waitOutForge with %s = %v, want a snooze until Retry-After two hours away", metadata, err)
 				}
 			}
@@ -374,15 +378,17 @@ func TestIndexRepoConfigWaitsOutGitLabRateLimit(t *testing.T) {
 	repo := store.IndexRepo{Name: "acme/widgets", DefaultBranch: "main", Enabled: true}
 	_, _, err = w.repoConfig(ctx, job, "acme", client, repo, commit, 0, configfile.Settings{}, slog.New(slog.DiscardHandler))
 	snooze, ok := errors.AsType[*river.JobSnoozeError](err)
-	if !ok || snooze.Duration <= forgeWaitMax || reads.Load() != 1 {
+	if !ok || snooze.Duration <= tuning.Get().Worker.ForgeWaitMax || reads.Load() != 1 {
 		t.Fatalf("repoConfig past GitLab's rate limit = %v after %d reads, want a snooze until the reset after one", err, reads.Load())
 	}
 }
 
 // TestAwaitAppliedBuild: an index job on a pod whose embedder or index format
 // the leader did not apply is snoozed, counted on the metric, and logged as a
-// warning once it has waited buildWaitWarn times.
+// warning once it has waited tuning's Worker.BuildWaitWarn times.
 func TestAwaitAppliedBuild(t *testing.T) {
+	appliedBuildWait := tuning.Get().Worker.AppliedBuildWait
+	buildWaitWarn := tuning.Get().Worker.BuildWaitWarn
 	for _, tc := range []struct {
 		name     string
 		metadata string

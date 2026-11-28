@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type mergeCase struct {
@@ -45,7 +46,7 @@ func loadMergeCases(path string) ([]stageCase, error) {
 		seen[f.ID] = true
 		cases = append(cases, stageCase{id: f.ID, request: model.CompletionRequest{
 			System: review.MergeSystemPrompt(f.Diagram),
-			User:   review.BuildMerge(f.Title, f.Body, f.Parts, f.Findings, review.DefaultBudgetTokens),
+			User:   review.BuildMerge(f.Title, f.Body, f.Parts, f.Findings, tuning.Get().Review.DefaultBudgetTokens),
 			Schema: review.MergeSchema(f.Diagram), SchemaName: "summary",
 		}, check: func(raw string) error { return checkMerge(f, raw) }})
 	}

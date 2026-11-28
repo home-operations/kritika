@@ -21,6 +21,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // defaultCommands are the commands the -tools image carries on its PATH.
@@ -142,7 +143,7 @@ func commandTool(
 		}
 		defer release()
 		started := time.Now()
-		stats, err := tree.Checkout(ctx, dir, agent.MaxCheckoutBytes)
+		stats, err := tree.Checkout(ctx, dir, int64(tuning.Get().Agent.MaxCheckoutBytes))
 		if err != nil {
 			logger.Warn("checkout not written", "error", err)
 			// What a stopped checkout wrote will otherwise be in the way of
@@ -158,15 +159,16 @@ func commandTool(
 			logger.Warn("checkout not marked as a repository", "error", err)
 		}
 		if stats.Truncated {
-			return fmt.Sprintf("[the checkout stopped at %d MiB, so the paths that sort last are missing]", agent.MaxCheckoutBytes>>20), nil
+			return fmt.Sprintf("[the checkout stopped at %s, so the paths that sort last are missing]",
+				sizeNote(tuning.Get().Agent.MaxCheckoutBytes)), nil
 		}
 		return "", nil
 	}
 	// Ignored paths are left out for the commands' sake, not the agent's: a
 	// lockfile the change touches is still the head's and the diff's.
 	note := fmt.Sprintf("The checkout leaves out ignored paths, lockfiles and vendored or generated trees among them, symlinks and "+
-		"files over %d MiB; read_file still reads a left-out file at the head, and read_diff its part of the pull request's diff.",
-		agent.MaxBlobBytes>>20)
+		"files over %s; read_file still reads a left-out file at the head, and read_diff its part of the pull request's diff.",
+		sizeNote(tuning.Get().Agent.MaxBlobBytes))
 	var resolve func(context.Context, string) (string, []string, error)
 	if tools != nil {
 		resolve = tools.resolveWith(found, append(slices.Clone(env), admin...))
@@ -177,20 +179,21 @@ func commandTool(
 	// A cut output is kept beside the checkout, where fetch_repo writes,
 	// within the budget that the two share. One file holds at most what
 	// read_file reads of a diff, in line ranges.
-	budget := agent.NewWriteBudget(fetchWriteBytes)
+	budget := agent.NewWriteBudget(int64(tuning.Get().Runner.FetchWriteBytes))
 	run = agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: append(env, admin...), CommandEnv: commandEnvs, Commands: found, Resolve: resolve, Prepare: prepare,
-		Timeout:        cmp.Or(time.Duration(p.Agent.CommandTimeoutSeconds)*time.Second, configfile.DefaultCommandTimeout),
+		Timeout:        cmp.Or(time.Duration(p.Agent.CommandTimeoutSeconds)*time.Second, tuning.Get().ConfigFile.DefaultCommandTimeout),
 		MaxOutputBytes: maxOutput, Proxied: proxied, Hosts: p.Agent.Hosts, Note: note, Logger: logger,
 		Mask: secrets.Mask,
-		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: budget},
+		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: int(tuning.Get().Runner.FetchDiffBytes), Budget: budget},
 	})
 	// An operator who allows only rg or fd has not let the agent reach the
 	// network, so fetch_repo comes with a command that does.
 	_, gh := found["gh"]
 	if gh || curl {
 		fetch = &fetchRepoTool{
-			dir: up, budget: budget, fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), maxBytes: maxOutput, hosts: p.Agent.Hosts,
+			dir: up, budget: budget, fetchMax: cmp.Or(p.Agent.Fetches, tuning.Get().ConfigFile.DefaultFetches), maxBytes: maxOutput,
+			hosts: p.Agent.Hosts,
 		}
 	}
 	return run, fetch, notes, cleanup

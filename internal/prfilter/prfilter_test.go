@@ -3,10 +3,13 @@ package prfilter
 import (
 	"fmt"
 	"maps"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestCompileConcurrent(t *testing.T) {
@@ -218,5 +221,28 @@ func TestUses(t *testing.T) {
 				t.Fatalf("Uses(lines) = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestEvalFollowsTheTunedCostLimit: a filter is held to tuning's
+// PRFilter.EvalCostLimit as the process has it when it compiles: the same
+// filter over the same pull request matches at the default and exceeds a
+// ceiling of one.
+func TestEvalFollowsTheTunedCostLimit(t *testing.T) {
+	const expr = `pr.labels.exists(l, l.name == "dependencies") && !pr.draft`
+	pr := sampleVars(map[string]any{"labels": []any{map[string]any{"name": "dependencies", "color": "0"}}})
+	p, err := Compile(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := p.Eval(pr); err != nil || !ok {
+		t.Fatalf("at the default limit: Eval = %v, %v; want a match", ok, err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.PRFilter.EvalCostLimit = 1 })
+	if p, err = Compile(expr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Eval(pr); err == nil || !strings.Contains(err.Error(), "cost limit exceeded") {
+		t.Fatalf("at a limit of 1: Eval = %v, want the cost limit exceeded", err)
 	}
 }

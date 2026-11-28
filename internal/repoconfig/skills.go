@@ -15,22 +15,12 @@ import (
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // SkillFile is the file that makes a folder a skill: frontmatter with the
 // skill's name and description, then its instructions.
 const SkillFile = "SKILL.md"
-
-// Bounds on a repository's skills: how many are read and how long a
-// description can be. They also bound how much of the system prompt their
-// names and descriptions can take together. They also bound how much the
-// instructions of the loaded ones can take.
-const (
-	MaxSkills            = 50
-	MaxSkillDescription  = 1024
-	MaxSkillListingBytes = 4 << 10
-	MaxSkillLoadedBytes  = 32 << 10
-)
 
 // skillNameRe is what a skill's name can be, as the format has it.
 var skillNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$`)
@@ -69,13 +59,14 @@ func ParseSkill(dir string, data []byte) (Skill, error) {
 	if s.Name == "" {
 		s.Name = path.Base(dir)
 	}
+	maxDescription := tuning.Get().RepoConfig.MaxSkillDescription
 	switch {
 	case !skillNameRe.MatchString(s.Name):
 		return Skill{}, fmt.Errorf("name %q must be lowercase letters, digits and hyphens, at most 64 characters", s.Name)
 	case s.Description == "":
 		return Skill{}, errors.New("description is required")
-	case utf8.RuneCountInString(s.Description) > MaxSkillDescription:
-		return Skill{}, fmt.Errorf("description is over %d characters", MaxSkillDescription)
+	case utf8.RuneCountInString(s.Description) > maxDescription:
+		return Skill{}, fmt.Errorf("description is over %d characters", maxDescription)
 	}
 	return s, nil
 }
@@ -84,7 +75,7 @@ func ParseSkill(dir string, data []byte) (Skill, error) {
 // name and description, to read on demand, and Loaded whole, in the system
 // prompt. Left counts the skills that applied and did not fit the listing.
 // Unloaded counts the ones that their scope loads that did not fit
-// MaxSkillLoadedBytes and were listed instead.
+// tuning's RepoConfig.MaxSkillLoadedBytes and were listed instead.
 type Offered struct {
 	Listed, Loaded []Skill
 	Left, Unloaded int
@@ -94,12 +85,14 @@ type Offered struct {
 // changed paths is given, in order. Those are all the skills that scope does
 // not keep from the review. Scope keeps a skill out by its paths, or because
 // the worker found none of its conditions to hold (off). One that its scope
-// loads is given whole while the instructions of those fit
-// MaxSkillLoadedBytes. The rest, and a loaded one that did not fit, are
-// listed while their names and descriptions fit MaxSkillListingBytes.
+// loads is given whole while the instructions of those fit tuning's
+// RepoConfig.MaxSkillLoadedBytes. The rest, and a loaded one that did not
+// fit, are listed while their names and descriptions fit
+// RepoConfig.MaxSkillListingBytes.
 func OfferedSkills(found []Skill, scope map[string]configfile.SkillScope, off, changed []string) Offered {
 	var out Offered
-	room, loadRoom := MaxSkillListingBytes, MaxSkillLoadedBytes
+	t := tuning.Get().RepoConfig
+	room, loadRoom := int(t.MaxSkillListingBytes), int(t.MaxSkillLoadedBytes)
 	for _, s := range found {
 		sc := scope[s.Name]
 		if slices.Contains(off, s.Name) {

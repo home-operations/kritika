@@ -17,6 +17,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // JobTemplate is what the configuration's runner.jobTemplate sets on every
@@ -199,7 +200,7 @@ func decodeTemplate(m map[string]any, v any) error {
 // that cannot take a dry run, a quota, or a run's Job of the same name.
 func (k *Kube) CheckJob(ctx context.Context, deadline time.Duration) error {
 	job := k.job(Spec{Job: runspec.Spec{RunID: "00000000-0000-0000-0000-000000000000"}, Deadline: deadline})
-	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, tuning.Get().Executor.APITimeout)
 	defer cancel()
 	_, err := k.Client.BatchV1().Jobs(k.Namespace).Create(cctx, job, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
 	switch {

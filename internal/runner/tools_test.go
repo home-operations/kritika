@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/agent"
-	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestToolsTakeZeroValuesAsLeftOut: a model can send every property of a
@@ -45,10 +45,10 @@ func TestToolsTakeZeroValuesAsLeftOut(t *testing.T) {
 			})
 		}},
 		{"fetch_repo fetching", map[string]any{"url": url, "ref": "v2"}, func() agent.Tool {
-			return &fetchRepoTool{dir: t.TempDir(), transport: served.transport, budget: agent.NewWriteBudget(fetchWriteBytes), fetchMax: configfile.DefaultFetches}
+			return &fetchRepoTool{dir: t.TempDir(), transport: served.transport, budget: agent.NewWriteBudget(int64(tuning.Get().Runner.FetchWriteBytes)), fetchMax: tuning.Get().ConfigFile.DefaultFetches}
 		}},
 		{"fetch_repo listing tags", map[string]any{"url": url, "tags": "v"}, func() agent.Tool {
-			return &fetchRepoTool{dir: t.TempDir(), transport: served.transport, budget: agent.NewWriteBudget(fetchWriteBytes), fetchMax: configfile.DefaultFetches}
+			return &fetchRepoTool{dir: t.TempDir(), transport: served.transport, budget: agent.NewWriteBudget(int64(tuning.Get().Runner.FetchWriteBytes)), fetchMax: tuning.Get().ConfigFile.DefaultFetches}
 		}},
 		{"load_skill", map[string]any{"name": "go"}, func() agent.Tool {
 			return &skillTool{base: head, maxBytes: limit, skills: []repoconfig.Skill{{Name: "go", Description: "Go.", Dir: ".agents/skills/go"}}}

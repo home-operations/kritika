@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // describeQuote is the contract's description of a finding's quote.
@@ -152,20 +154,14 @@ func quotes(text, quote string) bool {
 	return q != "" && (utf8.RuneCountInString(q) >= minQuoteChars || q == t) && strings.Contains(t, q)
 }
 
-// MaxQuoteRefusals is how many times a run's submission is sent back for
-// its quotes before one is taken as it is, its misquoted findings
-// dropped: a model that does not correct a quote twice over will not,
-// and the rest of its review is worth more than the citations.
-const MaxQuoteRefusals = 2
-
 // QuoteGate holds a run's submissions to what a finding that cites one of its
 // rules must carry: a quote that is a passage of a rule it cites, as quotes
 // says. Check refuses a submission with a finding that lacks this quote. It
 // names every such finding so that a run told to submit can correct them all
-// in the steps left to it. It does this up to MaxQuoteRefusals times. Drop
-// then removes them from the submission that the run ends with. So a finding
-// that enforces a rule that the model made up, or misread, goes back to the
-// model rather than to the author. It never posts.
+// in the steps left to it. It does this up to tuning's Review.MaxQuoteRefusals
+// times. Drop then removes them from the submission that the run ends with. So
+// a finding that enforces a rule that the model made up, or misread, goes back
+// to the model rather than to the author. It never posts.
 type QuoteGate struct {
 	rules   []Rule
 	refused int
@@ -234,7 +230,7 @@ func (g *QuoteGate) wrap(check func(json.RawMessage) error, count bool) func(jso
 			return err
 		}
 		_, why := g.misquoted(raw)
-		if len(why) == 0 || g.refused >= MaxQuoteRefusals {
+		if len(why) == 0 || g.refused >= tuning.Get().Review.MaxQuoteRefusals {
 			return nil
 		}
 		if count {

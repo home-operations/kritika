@@ -2,11 +2,14 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +18,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestPartInputIdentity(t *testing.T) {
@@ -49,6 +53,70 @@ func TestPartInputIdentity(t *testing.T) {
 				t.Fatalf("same identity = %v, want %v: %v", before == after, tt.same, err)
 			}
 		})
+	}
+}
+
+// TestPartInputIdentityFollowsTuning: the same spec, prompts and tools under
+// another search budget are another input, so its checkpoints are not
+// reused.
+func TestPartInputIdentityFollowsTuning(t *testing.T) {
+	s := reviewSpec()
+	parts := []reviewPart{{paths: []string{"a.go"}, prompt: loopPrompt(s, false)}}
+	before, err := partInputHash(s, parts, agentTools{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.SearchCalls++ })
+	after, err := partInputHash(s, parts, agentTools{})
+	if err != nil || before == after {
+		t.Fatalf("identity unchanged by runner.searchCalls: %v", err)
+	}
+}
+
+// TestPartInputIdentityIgnoresOtherTuning: an override that no part's agent
+// reads, the server's idle timeout, leaves the identity, and the parts
+// already paid for, as they were.
+func TestPartInputIdentityIgnoresOtherTuning(t *testing.T) {
+	s := reviewSpec()
+	parts := []reviewPart{{paths: []string{"a.go"}, prompt: loopPrompt(s, false)}}
+	before, err := partInputHash(s, parts, agentTools{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Server.IdleTimeout += time.Second })
+	after, err := partInputHash(s, parts, agentTools{})
+	if err != nil || before != after {
+		t.Fatalf("identity changed by server.idleTimeout: %v", err)
+	}
+}
+
+// TestPartInputIdentityAtDefaults: at default tuning the identity is the
+// hash of the spec, prompts and tools alone, as a build before tuning keyed
+// its checkpoints, so those are still reused.
+func TestPartInputIdentityAtDefaults(t *testing.T) {
+	s := reviewSpec()
+	s.RunID, s.Agent.Slots, s.Agent.MaxTokens, s.Prompt.Continue = "", nil, 0, nil
+	parts := []reviewPart{{paths: []string{"a.go"}, reviewer: "default", prompt: loopPrompt(s, false)}}
+	got, err := partInputHash(s, parts, agentTools{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type prompt struct {
+		Paths        []string
+		Reviewer     string
+		System, User string
+		Submit       model.ToolDef
+	}
+	b, err := json.Marshal(struct {
+		Spec    runspec.Spec
+		Prompts []prompt
+		Tools   []model.ToolDef
+	}{Spec: s, Prompts: []prompt{{parts[0].paths, parts[0].reviewer, parts[0].prompt.system, parts[0].prompt.user, parts[0].prompt.submit}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum := sha256.Sum256(b); got != hex.EncodeToString(sum[:]) {
+		t.Fatalf("identity %s at default tuning, want the hash of the spec, prompts and tools alone", got)
 	}
 }
 
@@ -257,5 +325,21 @@ func TestPartsCancellationWhileCheckpointing(t *testing.T) {
 		if res.Stop != agent.StopSubmitted {
 			t.Fatalf("part %d: %+v", i+1, res)
 		}
+	}
+}
+
+// TestLoadPartsOverTheAnswerLimit: checkpoints whose answer is over
+// runner.maxReportAnswer are not reused, and every part runs again, rather
+// than the review failing on an answer cut short.
+func TestLoadPartsOverTheAnswerLimit(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxReportAnswer = 64 })
+	rows := []runspec.PartCheckpoint{{Part: 1, SourceRun: "run", Payload: json.RawMessage(`{"pad":"` + strings.Repeat("x", 200) + `"}`)}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(rows)
+	}))
+	defer srv.Close()
+	saved, err := loadParts(t.Context(), &reporter{gatewayURL: srv.URL}, "hash", make([]reviewPart, 2), slog.New(slog.DiscardHandler))
+	if err != nil || len(saved) != 2 || saved[0].SourceRun != "" || saved[1].SourceRun != "" {
+		t.Fatalf("loadParts = %+v, %v; want no checkpoints and no error", saved, err)
 	}
 }

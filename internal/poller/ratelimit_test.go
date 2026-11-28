@@ -14,6 +14,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestRateLimited(t *testing.T) {
@@ -50,14 +51,19 @@ func TestRateLimited(t *testing.T) {
 		{name: "GitLab's 429 for its Retry-After in seconds", err: gitlab429("120"), wait: 2 * time.Minute, limited: true},
 		{name: "GitLab's 429 for its Retry-After as a date", err: gitlab429(now.Add(90 * time.Second).Format(http.TimeFormat)),
 			wait: 90 * time.Second, limited: true},
-		{name: "GitLab's 429 without a Retry-After", err: gitlab429(""), wait: forgeRateLimitWait, limited: true},
-		{name: "GitLab's 429 with a Retry-After that does not parse", err: gitlab429("soon"), wait: forgeRateLimitWait, limited: true},
+		{name: "GitLab's 429 without a Retry-After", err: gitlab429(""), wait: tuning.Get().Poller.ForgeRateLimitWait, limited: true},
+		{name: "GitLab's 429 with a Retry-After that does not parse", err: gitlab429("soon"), wait: tuning.Get().Poller.ForgeRateLimitWait, limited: true},
 		{name: "GitLab's 429 until its Ratelimit-Reset, past its Retry-After", err: gitlabReset(now.Add(2*time.Hour).Unix(), "60"),
 			wait: 2 * time.Hour, limited: true},
 		{name: "GitLab's 429 for its Retry-After, past its Ratelimit-Reset", err: gitlabReset(now.Add(30*time.Second).Unix(), "120"),
 			wait: 2 * time.Minute, limited: true},
 		{name: "GitLab's 429 with a Ratelimit-Reset that has passed", err: gitlabReset(now.Add(-time.Minute).Unix(), "60"),
 			wait: time.Minute, limited: true},
+		// go-github v93 reads an HTTP date as no wait at all.
+		{name: "GitHub's secondary limit until its Retry-After date", err: &gh.AbuseRateLimitError{
+			RetryAfter: new(time.Duration),
+			Response:   &http.Response{StatusCode: http.StatusForbidden, Header: header(now.Add(10 * time.Minute).Format(http.TimeFormat))},
+		}, wait: 10 * time.Minute, limited: true},
 		{name: "GitHub's 429 that is no limit it knows", err: &gh.ErrorResponse{
 			Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: header("30")},
 		}, wait: 30 * time.Second, limited: true},
@@ -133,5 +139,15 @@ gitlab:
 	}
 	if got := ids(p.tipsOrder(file)); !slices.Equal(got, before) {
 		t.Fatalf("order after the refused account's look = %q, want %q", got, before)
+	}
+}
+
+// TestRateLimitedFallbackIsTunable: a 429 that names no wait waits tuning's
+// Poller.ForgeRateLimitWait as it is when the poll reads it.
+func TestRateLimitedFallbackIsTunable(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Poller.ForgeRateLimitWait = 7 * time.Minute })
+	err := &gl.ErrorResponse{StatusCode: http.StatusTooManyRequests, Response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}}}
+	if wait, limited := rateLimited(err, time.Now()); wait != 7*time.Minute || !limited {
+		t.Fatalf("rateLimited = %s %t, want the overridden 7m", wait, limited)
 	}
 }

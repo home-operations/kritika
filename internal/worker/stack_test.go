@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // stackForge answers StackBelow alone.
@@ -61,6 +62,7 @@ func TestStackBelow(t *testing.T) {
 // TestStackBelowStalled: a forge that never answers costs the read's own
 // time, not its caller's.
 func TestStackBelowStalled(t *testing.T) {
+	stackTimeout := tuning.Get().Worker.StackTimeout
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 		defer cancel()

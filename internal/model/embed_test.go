@@ -136,3 +136,29 @@ func TestOpenAIEmbedderPreservesPartialUsage(t *testing.T) {
 		})
 	}
 }
+
+// TestOpenAIEmbedderItemWithinBatchChars: an input within MaxItemChars but
+// past MaxBatchChars is cut to MaxBatchChars.
+func TestOpenAIEmbedderItemWithinBatchChars(t *testing.T) {
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Input []string `json:"input"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &req)
+		sent = append(sent, req.Input...)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","model":"emb","data":[{"object":"embedding","index":0,"embedding":[0.1]}],` +
+			`"usage":{"prompt_tokens":1,"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+	e := NewOpenAIEmbedder(srv.URL, "k", "emb", 1)
+	e.MaxBatchChars, e.MaxItemChars = 4, 16
+	if _, _, err := e.Embed(t.Context(), []string{strings.Repeat("x", 10)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 1 || sent[0] != "xxxx" {
+		t.Fatalf("sent = %q, want [xxxx]", sent)
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // githubAuth is an auth block with a GitHub sign-in whose client id is
@@ -181,7 +182,7 @@ func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 	if hits.Load() != 1 {
 		t.Fatalf("discovery requests = %d within the retry window, want 1", hits.Load())
 	}
-	now = now.Add(failedBuildTTL)
+	now = now.Add(tuning.Get().Auth.FailedBuildTTL)
 	_, _, _ = ps.get(t.Context(), auth, "oidc")
 	if hits.Load() != 2 {
 		t.Fatalf("discovery requests = %d after the retry window, want 2", hits.Load())

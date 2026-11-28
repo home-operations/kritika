@@ -1,21 +1,25 @@
 package gateway
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"math"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestKeepSimilar(t *testing.T) {
+	gw := tuning.Get().Gateway
 	hit := func(path string, line int, sim float64) store.SimilarHit {
 		return store.SimilarHit{Chunk: contextpack.Chunk{Path: path, StartLine: line}, Similarity: sim}
 	}
@@ -29,12 +33,12 @@ func TestKeepSimilar(t *testing.T) {
 	}
 	// Query 0 finds best.go twice, and five more queries two candidates
 	// each, so that the answer's limit, not a query's, is what cuts.
-	best := make([]store.SimilarHit, 0, 3+similarMax)
+	best := make([]store.SimilarHit, 0, 3+gw.SimilarMax)
 	best = append(best, hit("best.go", 1, 0.55), hit("other.go", 1, 0.80), hit("best.go", 1, 0.99))
-	for i := range similarMax {
+	for i := range gw.SimilarMax {
 		best = append(best, near(1+i/2, fmt.Sprintf("candidate%d.go", i), 0.70))
 	}
-	wantBest := make([]string, 0, similarMax)
+	wantBest := make([]string, 0, gw.SimilarMax)
 	wantBest = append(wantBest, "best.go:1:similarity 0.99")
 	for _, i := range []int{0, 2, 4, 6, 8} {
 		wantBest = append(wantBest, fmt.Sprintf("candidate%d.go:1:similarity 0.70", i))
@@ -100,11 +104,12 @@ func TestKeepSimilar(t *testing.T) {
 // TestKeepSimilarCounts: each hit is counted once, kept or dropped, by the
 // first thing that drops it.
 func TestKeepSimilarCounts(t *testing.T) {
+	gw := tuning.Get().Gateway
 	hit := func(path string, line int, sim float64) store.SimilarHit {
 		return store.SimilarHit{Chunk: contextpack.Chunk{Path: path, StartLine: line}, Similarity: sim}
 	}
-	many := make([]store.SimilarHit, 0, similarMax+2)
-	for i := range similarMax + 2 {
+	many := make([]store.SimilarHit, 0, gw.SimilarMax+2)
+	for i := range gw.SimilarMax + 2 {
 		h := hit(fmt.Sprintf("f%d.go", i), 1, 0.9)
 		h.Query = i % 3
 		many = append(many, h)
@@ -118,7 +123,7 @@ func TestKeepSimilarCounts(t *testing.T) {
 			hit("a.go", 1, 0.9), hit("a.go", 1, 0.9), hit("f.go", 1, 0.85), hit("f.go", 10, 0.84), hit("f.go", 20, 0.83),
 			hit("c.go", 1, 0.3), hit("d.go", 1, 0.7),
 		}, map[string]int{hitKept: 3, hitDuplicate: 1, hitFileCap: 1, hitFloor: 1, hitMargin: 1}},
-		{"past the limit", many, map[string]int{hitKept: similarMax, hitLimit: 2}},
+		{"past the limit", many, map[string]int{hitKept: gw.SimilarMax, hitLimit: 2}},
 		{"none", nil, map[string]int{}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -137,16 +142,19 @@ func TestKeepSimilarCounts(t *testing.T) {
 
 // keepSimilar is what the gateway keeps of vector hits alone.
 func keepSimilar(hits []store.SimilarHit, floor, margin float64) ([]contextpack.Chunk, map[hitKey]int) {
+	gw := tuning.Get().Gateway
 	kept, counts, _ := gateCandidates(fuse(hits, nil), floor, margin)
-	return keepCandidates(kept, counts, similarMax, similarPerQuery), counts
+	return keepCandidates(kept, counts, gw.SimilarMax, gw.SimilarPerQuery), counts
 }
 
 // TestSimilarLimit: an answer holds the chunks its request asks for, up to
-// contextpack.SimilarLimit, and similarMax when it asks for none.
+// ContextPack.SimilarLimit, and Gateway.SimilarMax when it asks for none.
 func TestSimilarLimit(t *testing.T) {
+	cp := tuning.Get().ContextPack
+	gw := tuning.Get().Gateway
 	for _, tt := range []struct{ asked, want int }{
-		{0, similarMax}, {-1, similarMax}, {3, 3}, {contextpack.SimilarLimit, contextpack.SimilarLimit},
-		{contextpack.SimilarLimit + 1, contextpack.SimilarLimit},
+		{0, gw.SimilarMax}, {-1, gw.SimilarMax}, {3, 3}, {cp.SimilarLimit, cp.SimilarLimit},
+		{cp.SimilarLimit + 1, cp.SimilarLimit},
 	} {
 		t.Run(fmt.Sprint(tt.asked), func(t *testing.T) {
 			if got := answerLimit(tt.asked); got != tt.want {
@@ -154,22 +162,24 @@ func TestSimilarLimit(t *testing.T) {
 			}
 		})
 	}
-	hits := make([]store.SimilarHit, 0, contextpack.SimilarLimit)
-	for i := range contextpack.SimilarLimit {
+	hits := make([]store.SimilarHit, 0, cp.SimilarLimit)
+	for i := range cp.SimilarLimit {
 		hits = append(hits, store.SimilarHit{Chunk: contextpack.Chunk{Path: fmt.Sprintf("f%d.go", i), StartLine: 1}, Similarity: 0.9,
 			Query: i % 4})
 	}
 	kept, counts, _ := gateCandidates(fuse(hits, nil), 0.5, 0.1)
-	if got := keepCandidates(kept, counts, contextpack.SimilarLimit, similarPerQuery); len(got) != contextpack.SimilarLimit {
-		t.Fatalf("kept %d, want %d", len(got), contextpack.SimilarLimit)
+	if got := keepCandidates(kept, counts, cp.SimilarLimit, gw.SimilarPerQuery); len(got) != cp.SimilarLimit {
+		t.Fatalf("kept %d, want %d", len(got), cp.SimilarLimit)
 	}
 }
 
-// TestQueryLimit: a query keeps similarPerQuery chunks, but for a search of
-// one query that asks for more, which no other query shares the answer with:
-// search_code asks for spares, as it leaves out those the head no longer
-// has.
+// TestQueryLimit: a query keeps Gateway.SimilarPerQuery chunks, but for a
+// search of one query that asks for more, which no other query shares the
+// answer with: search_code asks for spares, as it leaves out those the head
+// no longer has.
 func TestQueryLimit(t *testing.T) {
+	cp := tuning.Get().ContextPack
+	gw := tuning.Get().Gateway
 	for _, tt := range []struct {
 		name           string
 		kind           string
@@ -177,11 +187,11 @@ func TestQueryLimit(t *testing.T) {
 		want           int
 	}{
 		{"a search that asks for spares", contextpack.SimilarKindSearch, 1, 8, 8},
-		{"a search that asks for past the most", contextpack.SimilarKindSearch, 1, contextpack.SimilarLimit + 1, contextpack.SimilarLimit},
-		{"a search that asks for fewer", contextpack.SimilarKindSearch, 1, 2, similarPerQuery},
-		{"a search that asks for none", contextpack.SimilarKindSearch, 1, 0, similarPerQuery},
-		{"a search of two queries", contextpack.SimilarKindSearch, 2, 8, similarPerQuery},
-		{"a diff of one query", contextpack.SimilarKindDiff, 1, 8, similarPerQuery},
+		{"a search that asks for past the most", contextpack.SimilarKindSearch, 1, cp.SimilarLimit + 1, cp.SimilarLimit},
+		{"a search that asks for fewer", contextpack.SimilarKindSearch, 1, 2, gw.SimilarPerQuery},
+		{"a search that asks for none", contextpack.SimilarKindSearch, 1, 0, gw.SimilarPerQuery},
+		{"a search of two queries", contextpack.SimilarKindSearch, 2, 8, gw.SimilarPerQuery},
+		{"a diff of one query", contextpack.SimilarKindDiff, 1, 8, gw.SimilarPerQuery},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := queryLimit(tt.kind, tt.queries, tt.asked); got != tt.want {
@@ -189,20 +199,22 @@ func TestQueryLimit(t *testing.T) {
 			}
 		})
 	}
-	hits := make([]store.SimilarHit, 0, 2*similarPerQuery)
-	for i := range 2 * similarPerQuery {
+	hits := make([]store.SimilarHit, 0, 2*gw.SimilarPerQuery)
+	for i := range 2 * gw.SimilarPerQuery {
 		hits = append(hits, store.SimilarHit{Chunk: contextpack.Chunk{Path: fmt.Sprintf("f%d.go", i), StartLine: 1}, Similarity: 0.9})
 	}
 	kept, counts, _ := gateCandidates(fuse(hits, nil), 0.5, 0.1)
-	if got := keepCandidates(kept, counts, similarMax, 2*similarPerQuery); len(got) != 2*similarPerQuery {
-		t.Fatalf("kept %d of one query, want %d", len(got), 2*similarPerQuery)
+	if got := keepCandidates(kept, counts, gw.SimilarMax, 2*gw.SimilarPerQuery); len(got) != 2*gw.SimilarPerQuery {
+		t.Fatalf("kept %d of one query, want %d", len(got), 2*gw.SimilarPerQuery)
 	}
 }
 
 // TestHybridSimilar: the lexical search's hits join the vector search's.
 // Either search can vouch for a chunk, which is labelled by what vouched
-// for it, and each query keeps its similarPerQuery best by fused rank.
+// for it, and each query keeps its Gateway.SimilarPerQuery best by fused
+// rank.
 func TestHybridSimilar(t *testing.T) {
+	gw := tuning.Get().Gateway
 	vec := func(query int, path string, sim float64) store.SimilarHit {
 		return store.SimilarHit{Chunk: contextpack.Chunk{Path: path, StartLine: 1}, Similarity: sim, Query: query}
 	}
@@ -261,7 +273,7 @@ func TestHybridSimilar(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			kept, counts, _ := gateCandidates(fuse(tt.hits, tt.named), 0.5, 0.1)
-			got := keepCandidates(kept, counts, similarMax, similarPerQuery)
+			got := keepCandidates(kept, counts, gw.SimilarMax, gw.SimilarPerQuery)
 			var keys []string
 			for _, c := range got {
 				keys = append(keys, c.Path+":"+c.Ref)
@@ -276,10 +288,12 @@ func TestHybridSimilar(t *testing.T) {
 	}
 }
 
-// TestGateRanks: a candidate scores 1 / (rrfK + rank) for each search that
-// found it, ranked among those of its query that the search found, whether
-// or not that search vouches for it.
+// TestGateRanks: a candidate scores 1 / (Gateway.RRFK + rank) for each
+// search that found it, ranked among those of its query that the search
+// found, whether or not that search vouches for it.
 func TestGateRanks(t *testing.T) {
+	const k = 10
+	tuning.Override(t, func(v *tuning.Values) { v.Gateway.RRFK = k })
 	hits := []store.SimilarHit{
 		{Chunk: contextpack.Chunk{Path: "low.go"}, Similarity: 0.6},
 		{Chunk: contextpack.Chunk{Path: "high.go"}, Similarity: 0.9},
@@ -291,8 +305,8 @@ func TestGateRanks(t *testing.T) {
 		{Chunk: contextpack.Chunk{Path: "under.go"}, Similarity: 0.2, Lexical: 3, Matched: []string{"y"}},
 	}
 	want := map[string]float64{
-		"low.go": 1.0/(rrfK+2) + 1.0/(rrfK+2), "high.go": 1.0 / (rrfK + 1), "other.go": 1.0 / (rrfK + 1),
-		"under.go": 1.0/(rrfK+3) + 1.0/(rrfK+1),
+		"low.go": 1.0/(k+2) + 1.0/(k+2), "high.go": 1.0 / (k + 1), "other.go": 1.0 / (k + 1),
+		"under.go": 1.0/(k+3) + 1.0/(k+1),
 	}
 	got, _, best := gateCandidates(fuse(hits, named), 0.5, 0.5)
 	if wantBest := map[int]float64{0: 0.9, 1: 0.8}; !maps.Equal(best, wantBest) {
@@ -320,7 +334,7 @@ func TestGateRanksTies(t *testing.T) {
 	for _, c := range got {
 		scores[c.Chunk.Path] = c.score
 	}
-	if want := 1.0 / (rrfK + 1); scores["near.go"] != want || scores["far.go"] >= want {
+	if want := 1.0 / float64(tuning.Get().Gateway.RRFK+1); scores["near.go"] != want || scores["far.go"] >= want {
 		t.Fatalf("scores = %v, want near.go first at %g", scores, want)
 	}
 }
@@ -366,7 +380,7 @@ func TestKeepCandidatesTurns(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			counts := map[hitKey]int{}
 			got := make([]string, 0, tt.limit)
-			for _, c := range keepCandidates(tt.cands, counts, tt.limit, similarPerQuery) {
+			for _, c := range keepCandidates(tt.cands, counts, tt.limit, tuning.Get().Gateway.SimilarPerQuery) {
 				got = append(got, c.Path)
 			}
 			if !slices.Equal(got, tt.want) {
@@ -384,6 +398,7 @@ func TestKeepCandidatesTurns(t *testing.T) {
 // reranker rank after them, in their fused order. A query that the reranker
 // did not answer keeps all of its candidates in their fused order.
 func TestRerankBackfill(t *testing.T) {
+	gw := tuning.Get().Gateway
 	cand := func(query int, path string, fused float64) candidate {
 		c := candidate{vector: true, close: true, score: fused, shared: fused}
 		c.Chunk, c.Similarity, c.Query = contextpack.Chunk{Path: path, StartLine: 1}, 0.9, query
@@ -401,7 +416,7 @@ func TestRerankBackfill(t *testing.T) {
 	// left query 1 out, queries are still compared on the fused scale.
 	rescore(cands, 0, batches[0], []float64{-3, -2})
 	got := make([]string, 0, len(cands))
-	for _, c := range keepCandidates(cands, map[hitKey]int{}, similarMax, similarPerQuery) {
+	for _, c := range keepCandidates(cands, map[hitKey]int{}, gw.SimilarMax, gw.SimilarPerQuery) {
 		got = append(got, c.Path)
 	}
 	if want := []string{"e.go", "b.go", "a.go", "f.go", "g.go", "c.go", "d.go"}; !slices.Equal(got, want) {
@@ -409,18 +424,19 @@ func TestRerankBackfill(t *testing.T) {
 	}
 }
 
-// TestLexicalWithin: the search by name takes lexicalTimeout, or what is
-// left before the answer is due when that is less, in the whole
+// TestLexicalWithin: the search by name takes Gateway.LexicalTimeout, or
+// what is left before the answer is due when that is less, in the whole
 // milliseconds a statement timeout takes, and none under a millisecond.
 func TestLexicalWithin(t *testing.T) {
+	gw := tuning.Get().Gateway
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	for _, tt := range []struct {
 		name string
 		left time.Duration
 		want time.Duration
 	}{
-		{"plenty left", time.Minute, lexicalTimeout},
-		{"exactly the timeout left", lexicalTimeout, lexicalTimeout},
+		{"plenty left", time.Minute, gw.LexicalTimeout},
+		{"exactly the timeout left", gw.LexicalTimeout, gw.LexicalTimeout},
 		{"less than the timeout left", 2*time.Second + 500*time.Microsecond, 2 * time.Second},
 		{"a millisecond left", time.Millisecond, time.Millisecond},
 		{"under a millisecond left", 999 * time.Microsecond, 0},
@@ -448,7 +464,7 @@ func TestRerankDeadline(t *testing.T) {
 	}{
 		{name: "the configured timeout", timeout: time.Second, answerBy: now.Add(time.Hour), want: now.Add(time.Second)},
 		{name: "a configured timeout past the default", timeout: time.Minute, answerBy: now.Add(time.Hour), want: now.Add(time.Minute)},
-		{name: "the default timeout", answerBy: now.Add(time.Hour), want: now.Add(configfile.DefaultRerankTimeout)},
+		{name: "the default timeout", answerBy: now.Add(time.Hour), want: now.Add(tuning.Get().ConfigFile.DefaultRerankTimeout)},
 		{name: "an answer due first", timeout: time.Minute, answerBy: now.Add(time.Second), want: now.Add(time.Second)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -463,18 +479,19 @@ func TestRerankDeadline(t *testing.T) {
 // searched again past the files that fill it, and a search that fails ends
 // the looking but keeps every hit found until then.
 func TestPastFull(t *testing.T) {
+	gw := tuning.Get().Gateway
 	hit := func(query int, path string, line int) store.SimilarHit {
 		return store.SimilarHit{Query: query, Chunk: contextpack.Chunk{Path: path, StartLine: line}}
 	}
-	hits := make([]store.SimilarHit, 0, 2*similarDepth+1)
+	hits := make([]store.SimilarHit, 0, 2*gw.SimilarDepth()+1)
 	for q := range 2 {
-		for i := range similarDepth {
+		for i := range gw.SimilarDepth() {
 			hits = append(hits, hit(q, "a.go", i+1))
 		}
 	}
 	hits = append(hits, hit(2, "c.go", 1))
 	full := func(found, window []store.SimilarHit) []string {
-		return fullFiles(found, window, similarDepth, similarPerQuery, func([]store.SimilarHit, store.SimilarHit) bool { return true })
+		return fullFiles(found, window, gw.SimilarDepth(), gw.SimilarPerQuery, func([]store.SimilarHit, store.SimilarHit) bool { return true })
 	}
 	failed := errors.New("search failed")
 	for _, tt := range []struct {
@@ -489,7 +506,7 @@ func TestPastFull(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var searched []int
-			got, err := pastFull(hits, 3, similarPerQuery, full, func(q int, files []string) ([]store.SimilarHit, error) {
+			got, err := pastFull(hits, 3, gw.SimilarPerQuery, full, func(q int, files []string) ([]store.SimilarHit, error) {
 				searched = append(searched, q)
 				if !slices.Equal(files, []string{"a.go"}) {
 					t.Errorf("query %d searched past %q, want a.go", q, files)
@@ -525,14 +542,15 @@ func TestPastFull(t *testing.T) {
 // files splits the query by its own file's language, as its first search
 // did, so a minus in Go joins no name there either.
 func TestPastFullNamesLanguage(t *testing.T) {
-	named := make([]store.SimilarHit, 0, similarDepth)
-	for i := range similarDepth {
+	gw := tuning.Get().Gateway
+	named := make([]store.SimilarHit, 0, gw.SimilarDepth())
+	for i := range gw.SimilarDepth() {
 		named = append(named, store.SimilarHit{Query: 1, Lexical: 1, Chunk: contextpack.Chunk{Path: "a.go", StartLine: i + 1}})
 	}
 	type searched struct{ texts, languages []string }
 	var got []searched
 	_, err := pastFullNames(named, []string{"key-name: 1", "d := end-start"}, []string{"yaml", "go"}, [][]float32{{1}, {1}},
-		store.Exclusions{}, similarDepth, similarPerQuery, func(texts, languages []string, _ [][]float32, _ store.Exclusions) ([]store.SimilarHit, error) {
+		store.Exclusions{}, gw.SimilarDepth(), gw.SimilarPerQuery, func(texts, languages []string, _ [][]float32, _ store.Exclusions) ([]store.SimilarHit, error) {
 			got = append(got, searched{texts, languages})
 			return nil, nil
 		})
@@ -544,5 +562,81 @@ func TestPastFullNamesLanguage(t *testing.T) {
 		return slices.Equal(a.texts, b.texts) && slices.Equal(a.languages, b.languages)
 	}) {
 		t.Fatalf("looked past the full files with %q, want %q", got, want)
+	}
+}
+
+// TestSimilarFollowsTuning: the file cap, an answer's default size and a
+// query's share come from tuning, as the process configured it.
+func TestSimilarFollowsTuning(t *testing.T) {
+	hits := []store.SimilarHit{
+		{Chunk: contextpack.Chunk{Path: "a.go", StartLine: 1}, Similarity: 0.95},
+		{Chunk: contextpack.Chunk{Path: "a.go", StartLine: 10}, Similarity: 0.94},
+		{Chunk: contextpack.Chunk{Path: "a.go", StartLine: 20}, Similarity: 0.93},
+		{Chunk: contextpack.Chunk{Path: "b.go", StartLine: 1}, Similarity: 0.92},
+	}
+	perFile := func() map[string]int {
+		got, _ := keepSimilar(hits, 0.5, 0.1)
+		n := map[string]int{}
+		for _, c := range got {
+			n[c.Path]++
+		}
+		return n
+	}
+	for _, tt := range []struct {
+		name                 string
+		mutate               func(*tuning.Values)
+		perFile              map[string]int
+		answer, query, depth int
+	}{
+		{"defaults", func(*tuning.Values) {}, map[string]int{"a.go": 2, "b.go": 1}, 10, 4, 8},
+		{"one chunk of a file", func(v *tuning.Values) { v.Gateway.SimilarPerFile = 1 }, map[string]int{"a.go": 1, "b.go": 1}, 10, 4, 8},
+		{"a smaller answer", func(v *tuning.Values) { v.Gateway.SimilarMax = 2 }, map[string]int{"a.go": 2}, 2, 4, 8},
+		{"a smaller share", func(v *tuning.Values) { v.Gateway.SimilarPerQuery = 2 }, map[string]int{"a.go": 2}, 10, 2, 4},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tuning.Override(t, tt.mutate)
+			if got := perFile(); !maps.Equal(got, tt.perFile) {
+				t.Errorf("kept per file = %v, want %v", got, tt.perFile)
+			}
+			if got := answerLimit(0); got != tt.answer {
+				t.Errorf("answerLimit(0) = %d, want %d", got, tt.answer)
+			}
+			if got := queryLimit(contextpack.SimilarKindDiff, 1, 0); got != tt.query {
+				t.Errorf("queryLimit = %d, want %d", got, tt.query)
+			}
+			if got := tuning.Get().Gateway.SimilarDepth(); got != tt.depth {
+				t.Errorf("SimilarDepth = %d, want %d", got, tt.depth)
+			}
+		})
+	}
+}
+
+// TestKeepCandidatesFitTheRunnersRead: candidates whose answer would pass
+// runner.maxSimilarAnswerBody, encoded, are kept only while it fits, best
+// first, and those left out count as cut by the limit.
+func TestKeepCandidatesFitTheRunnersRead(t *testing.T) {
+	cands := make([]candidate, 0, 4)
+	for i := range 4 {
+		chunk := contextpack.Chunk{Stage: "similar", Path: fmt.Sprintf("pkg/%d.go", i), StartLine: 1, EndLine: 2, Text: strings.Repeat("<", 1000)}
+		score := 1 - float64(i)/10
+		cands = append(cands, candidate{
+			Chunk: chunk, Similarity: 0.9, Query: i, vector: true, close: true, score: score, shared: score,
+		})
+	}
+	all := keepCandidates(cands, map[hitKey]int{}, 4, 1)
+	two, err := json.Marshal(contextpack.SimilarResponse{Chunks: all[:2]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxSimilarAnswerBody = tuning.ByteSize(len(two)) })
+	counts := map[hitKey]int{}
+	got := keepCandidates(cands, counts, 4, 1)
+	out, err := json.Marshal(contextpack.SimilarResponse{Chunks: got})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) > len(two) || len(got) != 2 || got[0].Path != "pkg/0.go" || got[1].Path != "pkg/1.go" ||
+		counts[hitKey{hitKept, sourceVector}] != 2 || counts[hitKey{hitLimit, sourceVector}] != 2 {
+		t.Fatalf("kept %d chunks in %d bytes (limit %d), counts %v", len(got), len(out), len(two), counts)
 	}
 }

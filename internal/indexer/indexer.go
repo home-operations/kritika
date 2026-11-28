@@ -20,6 +20,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Chunk is one staged piece of a file.
@@ -38,10 +39,6 @@ type Chunk struct {
 	Signature string
 }
 
-// maxSignatureBytes bounds a signature, which a minified or generated
-// declaration can make one long line.
-const maxSignatureBytes = 200
-
 // Options bound the work.
 type Options struct {
 	// MaxDeclLines is the largest declaration stored whole. Larger ones are
@@ -56,10 +53,15 @@ type Options struct {
 	MaxFileBytes, MaxFiles, MaxBytes, MaxChunks int
 }
 
-// DefaultOptions suit code and configuration repositories alike.
-var DefaultOptions = Options{
-	MaxDeclLines: 150, WindowLines: 60, WindowOverlap: 10, MaxChunkBytes: 6000,
-	MaxFileBytes: 1 << 20, MaxFiles: 50_000, MaxBytes: 500 << 20, MaxChunks: 100_000,
+// DefaultOptions are the options as tuning's Indexer has them, which suit
+// code and configuration repositories alike.
+func DefaultOptions() Options {
+	t := tuning.Get().Indexer
+	return Options{
+		MaxDeclLines: t.MaxDeclLines, WindowLines: t.WindowLines, WindowOverlap: t.WindowOverlap,
+		MaxChunkBytes: int(t.MaxChunkBytes), MaxFileBytes: int(t.MaxFileBytes),
+		MaxFiles: t.MaxFiles, MaxBytes: int(t.MaxBytes), MaxChunks: t.MaxChunks,
+	}
 }
 
 // Stats says what Build did.
@@ -78,7 +80,7 @@ func Build(
 	ctx context.Context, head, base *object.Tree, ignore []string, opts Options,
 ) (chunks []Chunk, changed []string, stats Stats, err error) {
 	if opts.MaxDeclLines == 0 {
-		opts = DefaultOptions
+		opts = DefaultOptions()
 	}
 	start := time.Now()
 	b := &builder{opts: opts, ignore: ignore, parser: &chunk.Parser{Limits: chunk.Limits{MaxBytes: opts.MaxFileBytes}}}
@@ -131,7 +133,7 @@ func Unindexed(path string) bool { return chunk.Matches(unindexed, path) }
 
 // Indexable is HunkQueries' indexable for a diff whose files head has: it
 // refuses each of paths whose blob at head is over
-// DefaultOptions.MaxFileBytes, which Build skips. It reads a blob's size the
+// DefaultOptions().MaxFileBytes, which Build skips. It reads a blob's size the
 // first time it is asked about its path, and only then: HunkQueries asks at
 // a file's first turn, so a file that takes none costs no read, which in a
 // pack can mean rebuilding the blob from its deltas. The reads hold a lock,
@@ -140,6 +142,7 @@ func Unindexed(path string) bool { return chunk.Matches(unindexed, path) }
 // paths.
 func Indexable(head *object.Tree, paths []string) func(path string) bool {
 	const unread, fits, over = 0, 1, 2
+	limit := int64(tuning.Get().Indexer.MaxFileBytes)
 	var mu sync.Mutex
 	state := make(map[string]int, len(paths))
 	for _, p := range paths {
@@ -154,7 +157,7 @@ func Indexable(head *object.Tree, paths []string) func(path string) bool {
 		}
 		if s == unread {
 			s = fits
-			if size, err := head.Size(path); err == nil && size > int64(DefaultOptions.MaxFileBytes) {
+			if size, err := head.Size(path); err == nil && size > limit {
 				s = over
 			}
 			state[path] = s
@@ -262,7 +265,8 @@ func (b *builder) file(f *object.File) error {
 			// each window of a declaration carries its own signature, and
 			// a copy of the whole line would keep it alive in every one.
 			head := bytes.TrimSpace(pf.Bytes(d.HeadLine, d.HeadLine))
-			signature = textcut.Prefix(string(head[:min(len(head), maxSignatureBytes+1)]), maxSignatureBytes)
+			most := int(tuning.Get().Indexer.MaxSignatureBytes)
+			signature = textcut.Prefix(string(head[:min(len(head), most+1)]), most)
 		}
 		b.chunks = append(b.chunks, Chunk{
 			Path: f.Name, Language: pf.Language, Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
@@ -428,12 +432,6 @@ func nesting(ds []chunk.Decl) [][]int {
 	return kids
 }
 
-// minGapLines is the fewest worded lines that a gap between an oversized
-// declaration's nested ones needs to be stored by itself. A smaller gap, such
-// as a field or a class's opening line, joins the nested declaration next to
-// it when the two fit one piece.
-const minGapLines = 3
-
 type cutter struct {
 	f    *chunk.File
 	opts Options
@@ -509,8 +507,12 @@ func (c *cutter) cover(i int, out []chunk.Decl) []chunk.Decl {
 	fits := func(start, end int) bool {
 		return end-start < c.opts.MaxDeclLines && len(c.f.Bytes(start, end)) <= c.opts.MaxChunkBytes
 	}
+	// A gap of fewer worded lines than tuning's Indexer.MinGapLines, such as
+	// a field or a class's opening line, joins the nested declaration next
+	// to it when the two fit one piece, rather than being stored by itself.
+	minGap := tuning.Get().Indexer.MinGapLines
 	for j, s := range segs {
-		if s.gap && c.words(s.StartLine, s.EndLine) < minGapLines {
+		if s.gap && c.words(s.StartLine, s.EndLine) < minGap {
 			if j+1 < len(segs) && segs[j+1].whole && fits(s.StartLine, segs[j+1].EndLine) {
 				segs[j+1].StartLine = s.StartLine
 				continue

@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Account returns the running account name on forge.
@@ -60,8 +61,8 @@ func (f *File) Settings(a *Account) Settings {
 	s := Settings{
 		Enabled:     true,
 		Ignore:      slices.Clone(DefaultIgnore),
-		Agent:       DefaultAgent,
-		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
+		Agent:       DefaultAgent(),
+		Incremental: IncrementalSettings{MaxDeltaFiles: tuning.Get().ConfigFile.DefaultMaxDeltaFiles},
 		Review:      Review{InlineComments: true, Dashboard: true},
 		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow},
 		Skills:      Skills{Paths: slices.Clone(DefaultSkillPaths)},

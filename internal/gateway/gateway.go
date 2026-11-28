@@ -28,7 +28,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/adapter"
-	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -37,17 +36,12 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // ModelName is the name that a runner calls its run's model by. The gateway
 // maps it to the provider model that the run was granted.
 const ModelName = "review"
-
-// Drain is how long a stopping gateway lets model steps in flight finish. A
-// step that it cuts is paid for and not recorded, and the runner's retry is
-// paid for again. So Drain covers a long step, not the usual few seconds. The
-// chart's grace period outlasts it.
-const Drain = 2 * time.Minute
 
 // Server serves the gateway listener.
 type Server struct {
@@ -70,17 +64,10 @@ type Server struct {
 	AquaRegistry *AquaRegistry
 }
 
-// maxBody bounds one step's request: the whole conversation so far, every
-// tool output in it capped.
-const maxBody = 16 << 20
-
-// detachTimeout bounds the writes that settle a step once the provider
-// answers. These writes must land even if the request's ctx ends.
-const detachTimeout = 2 * time.Minute
-
-// detach is ctx without its cancellation, bounded by detachTimeout.
+// detach is ctx without its cancellation, bounded by tuning's
+// Gateway.DetachTimeout.
 func detach(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(ctx), detachTimeout)
+	return context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Gateway.DetachTimeout)
 }
 
 // ServeHTTP implements http.Handler.
@@ -152,13 +139,8 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 }
 
 // What Refused keeps of a refused destination: the host alone, within what a
-// name can be, and how long its write can take. The write time is bounded so
-// that a looping agent's refusals are answered at the pace of the database
-// and no slower.
-const (
-	refusedHostBytes    = 253
-	refusedWriteTimeout = 5 * time.Second
-)
+// name can be.
+const refusedHostBytes = 253
 
 // Refused records a refused proxy request against the run whose token
 // admitted it, for the dashboard. It is the proxy's Refused hook. Refused
@@ -172,7 +154,7 @@ func (g *Server) Refused(ctx context.Context, kind, host, reason string) {
 		return
 	}
 	host = refusedHost(host)
-	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refusedWriteTimeout)
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Gateway.RefusedWriteTimeout)
 	defer cancel()
 	err := g.Store.WithAccount(wctx, grant.AccountID, func(tx pgx.Tx) error {
 		_, err := store.RecordEgressRefusal(wctx, tx, store.EgressRefusal{
@@ -309,7 +291,7 @@ func (c runCall) usageReview() string {
 // Otherwise, it refuses r and reports false.
 func (g *Server) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) {
 	ctx := r.Context()
-	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), tuning.BearerPrefix)
 	grant, err := g.Store.LookupGatewayToken(ctx, token)
 	if errors.Is(err, store.ErrGatewayToken) {
 		refuse(w, http.StatusUnauthorized, "invalid_token", "the run token is not valid")
@@ -354,7 +336,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(tuning.Get().Gateway.MaxConversationBytes)))
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())
 		return
@@ -401,7 +383,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	// The answer to one step is capped at the agent loop's own cap,
 	// whatever the runner asks.
-	if limit := agent.DefaultLimits.MaxOutputTokensPerStep; req.MaxTokens <= 0 || req.MaxTokens > limit {
+	if limit := tuning.Get().Agent.MaxOutputTokensPerStep; req.MaxTokens <= 0 || req.MaxTokens > limit {
 		req.MaxTokens = limit
 	}
 	// The step is reserved before it runs. Its actual spend replaces the

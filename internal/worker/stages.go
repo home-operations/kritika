@@ -11,8 +11,8 @@ import (
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // publicationWorker owns preparation and delivery without runner admission or execution.
@@ -52,8 +52,8 @@ func (w *Prepare) Work(ctx context.Context, job *river.Job[jobs.PrepareArgs]) er
 	return err
 }
 
-func (*Prepare) Timeout(*river.Job[jobs.PrepareArgs]) time.Duration {
-	return jobtimeout.LeaseWaitHeadroom + jobtimeout.PublishHeadroom
+func (*Prepare) Timeout(job *river.Job[jobs.PrepareArgs]) time.Duration {
+	return riverTimeout(job.JobRow, tuning.Get().JobTimeout.LeaseWaitHeadroom+tuning.Get().JobTimeout.PublishHeadroom)
 }
 
 // Publish consumes finalized answers independently of model capacity.
@@ -71,8 +71,8 @@ func (w *Publish) Work(ctx context.Context, job *river.Job[jobs.PublishArgs]) er
 	return err
 }
 
-func (*Publish) Timeout(*river.Job[jobs.PublishArgs]) time.Duration {
-	return jobtimeout.PublishHeadroom
+func (*Publish) Timeout(job *river.Job[jobs.PublishArgs]) time.Duration {
+	return riverTimeout(job.JobRow, tuning.Get().JobTimeout.PublishHeadroom)
 }
 
 // advance transfers cancellation and rescue ownership with the checkpoint and

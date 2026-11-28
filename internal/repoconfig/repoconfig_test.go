@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestParse_Invalid(t *testing.T) {
@@ -131,11 +132,11 @@ func TestActiveRules(t *testing.T) {
 	t.Parallel()
 	rules := []configfile.Rule{
 		{ID: "any", Rule: "Check errors."}, {ID: "sql", Rule: "Use placeholders.", Paths: []string{"**/*.sql"}},
-		{ID: "big", Rule: strings.Repeat("x", MaxRulesBytes)}, {ID: "style", File: "docs/style.md"},
+		{ID: "big", Rule: strings.Repeat("x", int(tuning.Get().RepoConfig.MaxRulesBytes))}, {ID: "style", File: "docs/style.md"},
 		{ID: "gone", File: "docs/gone.md"}, {ID: "blank", File: "docs/blank.md"},
 		{ID: "huge", File: "docs/huge.md"}, {ID: "last", Rule: "Name things."},
 	}
-	files := Files{"docs/style.md": " Short names. \n", "docs/blank.md": "\n", "docs/huge.md": strings.Repeat("y", MaxRuleFileBytes)}
+	files := Files{"docs/style.md": " Short names. \n", "docs/blank.md": "\n", "docs/huge.md": strings.Repeat("y", int(tuning.Get().RepoConfig.MaxRuleFileBytes))}
 	got, left := ActiveRules(rules, files, []string{"main.go"})
 	want := []review.Rule{{ID: "any", Text: "Check errors."}, {ID: "style", Text: "Short names.", File: "docs/style.md"}, {ID: "last", Text: "Name things."}}
 	if !reflect.DeepEqual(got, want) || !slices.Equal(left, []string{"big", "huge"}) {
@@ -202,8 +203,9 @@ func mapReader(files map[string][]byte) func(string) ([]byte, error) {
 
 func TestCollect(t *testing.T) {
 	t.Parallel()
-	big := strings.Repeat("a", MaxFileBytes+1)
-	// Four of these fit under MaxTotalBytes. A fifth does not.
+	big := strings.Repeat("a", int(tuning.Get().RepoConfig.MaxFileBytes)+1)
+	// Four of these fit under tuning's RepoConfig.MaxTotalBytes. A fifth
+	// does not.
 	chunk := strings.Repeat("c", 220_000)
 	tests := []struct {
 		name      string
@@ -238,7 +240,7 @@ func TestCollect(t *testing.T) {
 			src:       map[string]string{"1.md": chunk, "2.md": chunk, "3.md": chunk, "4.md": chunk, "5.md": chunk},
 			paths:     []string{"1.md", "2.md", "3.md", "4.md", "5.md"},
 			wantFiles: []string{"1.md", "2.md", "3.md", "4.md"},
-			wantNotes: []string{fmt.Sprintf("5.md: skipped, would exceed the %d byte total limit", MaxTotalBytes)},
+			wantNotes: []string{fmt.Sprintf("5.md: skipped, would exceed the %d byte total limit", int(tuning.Get().RepoConfig.MaxTotalBytes))},
 		},
 		{
 			name:      "an escaping path is noted, not read",

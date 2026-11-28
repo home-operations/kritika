@@ -12,17 +12,7 @@ import (
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// SSE tuning: how often an idle stream carries a comment so that proxies and
-// the browser keep it open. Also, how many events a slow client can fall
-// behind before it is told to resync instead.
-const (
-	heartbeatInterval = 25 * time.Second
-	clientBuffer      = 64
-	// writeTimeout bounds each write to a stream, so a client that stops
-	// reading is dropped rather than holding its goroutine forever.
-	writeTimeout = 30 * time.Second
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // hub fans the store's row events out to the server-sent event streams of
@@ -35,10 +25,11 @@ type hub struct {
 	// resyncFrame is the frame every stream opens with, and is sent again
 	// when it missed events.
 	resyncFrame []byte
-	// stands, when set, is asked at every heartbeat whether the stream's
-	// session still stands. A stream whose session ended is closed, and the
-	// browser's reconnect is refused.
-	stands func(*http.Request) bool
+	// stands, when set, is asked at every heartbeat, and at least every
+	// recheck, whether the stream's session still stands. A stream whose
+	// session ended is closed, and the browser's reconnect is refused.
+	stands  func(*http.Request) bool
+	recheck time.Duration
 
 	mu      sync.Mutex
 	clients map[*client]struct{}
@@ -56,6 +47,10 @@ type client struct {
 	resync    chan struct{}
 }
 
+// sessionRecheck is the longest that a stream goes on after its session
+// ended, whatever the heartbeat: the default heartbeat's 25 seconds.
+const sessionRecheck = 25 * time.Second
+
 // newHub builds a hub whose resyncs name entry, the dashboard's entry
 // script (see Resync).
 func newHub(current *configfile.Current, logger *slog.Logger, entry string) *hub {
@@ -64,8 +59,9 @@ func newHub(current *configfile.Current, logger *slog.Logger, entry string) *hub
 		// A struct of one string always marshals.
 		panic(err)
 	}
+	t := tuning.Get().WebAPI
 	return &hub{
-		current: current, logger: logger, heartbeat: heartbeatInterval, buffer: clientBuffer,
+		current: current, logger: logger, heartbeat: t.HeartbeatInterval, buffer: t.ClientBuffer, recheck: sessionRecheck,
 		clients: map[*client]struct{}{}, done: make(chan struct{}),
 		resyncFrame: fmt.Appendf(nil, "event: resync\ndata: %s\n\n", data),
 	}
@@ -142,10 +138,27 @@ func (c *client) requestResync() {
 func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	// A server-wide write timeout cuts a stream that never finishes. Instead,
-	// each write gets its own deadline.
-	extend := func() bool {
-		err := rc.SetWriteDeadline(time.Now().Add(writeTimeout))
+	// each write gets its own deadline, cleared once the frame is flushed:
+	// HTTP/2 resets a stream whose deadline passes while it waits for the
+	// next frame, as an idle one does between heartbeats.
+	deadline := func(t time.Time) bool {
+		err := rc.SetWriteDeadline(t)
 		return err == nil || errors.Is(err, http.ErrNotSupported)
+	}
+	// A frame is sent only within a recheck of the last session check, and
+	// its write gets no longer than a recheck either, so that a stalled write
+	// does not carry an event long past a session that ended meanwhile.
+	checked := time.Now()
+	extend := func() bool {
+		d := tuning.Get().WebAPI.WriteTimeout
+		if h.stands != nil {
+			d = min(d, h.recheck)
+		}
+		return deadline(time.Now().Add(d))
+	}
+	stands := func() bool {
+		checked = time.Now()
+		return h.stands == nil || h.stands(r)
 	}
 	hdr := w.Header()
 	hdr.Set("Content-Type", "text/event-stream")
@@ -157,20 +170,36 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	defer h.unsubscribe(c)
 	ticker := time.NewTicker(h.heartbeat)
 	defer ticker.Stop()
+	// A heartbeat slower than the recheck does not leave a revoked session
+	// streaming until it comes.
+	var recheck <-chan time.Time
+	if h.stands != nil && h.heartbeat > h.recheck {
+		t := time.NewTicker(h.recheck)
+		defer t.Stop()
+		recheck = t.C
+	}
 
 	// Every stream opens with a resync: events published while the browser
 	// was reconnecting, or between its first fetch and this stream opening,
 	// were never delivered to it.
 	frame := h.resyncFrame
 	for {
-		if !extend() {
-			return
-		}
-		if _, err := w.Write(frame); err != nil {
-			return
-		}
-		if err := rc.Flush(); err != nil {
-			return
+		if frame != nil {
+			if h.stands != nil && time.Since(checked) >= h.recheck && !stands() {
+				return
+			}
+			if !extend() {
+				return
+			}
+			if _, err := w.Write(frame); err != nil {
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				return
+			}
+			if !deadline(time.Time{}) {
+				return
+			}
 		}
 		select {
 		case <-r.Context().Done():
@@ -186,8 +215,13 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 				h.logger.ErrorContext(r.Context(), "webapi: encode event", "error", err)
 				return
 			}
+		case <-recheck:
+			if !stands() {
+				return
+			}
+			frame = nil
 		case <-ticker.C:
-			if h.stands != nil && !h.stands(r) {
+			if !stands() {
 				return
 			}
 			frame = []byte(": heartbeat\n\n")

@@ -12,11 +12,9 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
-)
 
-// defaultAnthropicMaxTokens applies when a request sets none. The Messages
-// API requires one.
-const defaultAnthropicMaxTokens = 8192
+	"github.com/home-operations/kritika/internal/tuning"
+)
 
 // AnthropicConfig configures an Anthropic Messages adapter.
 type AnthropicConfig struct {
@@ -51,7 +49,7 @@ func NewAnthropic(cfg AnthropicConfig) (*Anthropic, error) {
 		option.WithoutEnvironmentDefaults(), option.WithAPIKey(cfg.APIKey), option.WithHeader("User-Agent", userAgent()),
 		// The gateway owns retrying. The SDK's own retries will otherwise
 		// multiply its attempts.
-		option.WithMaxRetries(0), option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, DefaultStepTimeout)),
+		option.WithMaxRetries(0), option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, tuning.Get().Model.DefaultStepTimeout)),
 	}
 	if cfg.BaseURL != "" {
 		if err := checkBaseURL(cfg.BaseURL); err != nil {
@@ -131,7 +129,7 @@ func anthropicStop(s anthropic.StopReason) StopReason {
 func anthropicParams(req StepRequest) (anthropic.MessageNewParams, error) {
 	p := anthropic.MessageNewParams{MaxTokens: req.MaxTokens}
 	if p.MaxTokens <= 0 {
-		p.MaxTokens = defaultAnthropicMaxTokens
+		p.MaxTokens = tuning.Get().Model.AnthropicMaxTokens
 	}
 	if req.Effort != "" {
 		p.OutputConfig = anthropic.OutputConfigParam{Effort: anthropicEffort(req.Effort)}

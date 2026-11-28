@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // judgeRun ends a review whose run ended before its agent finished it, or
@@ -75,10 +76,6 @@ type endedReview struct {
 	logger                                                  *slog.Logger
 }
 
-// lockRetry is how long lockedWrite waits before it tries a held
-// publication lock again.
-const lockRetry = 500 * time.Millisecond
-
 // lockedWrite runs write under the publication lock of pull request prID,
 // taken with lock. It waits out a holder for as long as ctx allows: the
 // holder is a review's start or another review's publication, each brief. A
@@ -96,7 +93,7 @@ func lockedWrite(
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("%w: %w", err, context.Cause(ctx))
-		case <-time.After(lockRetry):
+		case <-time.After(tuning.Get().Worker.LockRetry):
 		}
 	}
 }
@@ -205,7 +202,7 @@ func preparationContext(job context.Context) (context.Context, context.CancelFun
 		}
 		forward()
 		if shutdownCause(context.Cause(job)) {
-			timer := time.NewTimer(10 * time.Second)
+			timer := time.NewTimer(tuning.Get().Worker.ShutdownSaveGrace)
 			defer timer.Stop()
 			select {
 			case <-ctx.Done():

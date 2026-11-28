@@ -2,6 +2,7 @@ package contextpack
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"reflect"
 	"slices"
@@ -89,7 +90,7 @@ func TestScanBoundsCandidatesAndText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := DefaultOptions
+	opts := DefaultOptions()
 	opts.MaxChunkBytes = 80
 	b := &builder{in: Input{Head: head}, opts: opts, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
 	if err := scanParts(t.Context(), []*builder{b}, &b.stats); err != nil {
@@ -395,7 +396,7 @@ func TestOverlayReadsARenamedFilesBase(t *testing.T) {
 // the scan rather than failing the pack.
 func TestBuildStopsAtTheScanBudget(t *testing.T) {
 	head, base, diff := repo(t)
-	opts := DefaultOptions
+	opts := DefaultOptions()
 	opts.MaxScanFiles = 1
 	_, stats, err := Build(t.Context(), Input{Head: head, Base: base, Diff: diff, Changed: []string{"widget.go"}}, opts)
 	if err != nil || !stats.ScanTruncated {
@@ -414,7 +415,7 @@ func TestScanReadsDeclarationsFromTheirHead(t *testing.T) {
 			"// Short is short.\nfunc Short() {\n\tTarget()\n}\n",
 		"deco.py": "# Plain mentions Target.\ndef plain():\n    pass\n\n\n@Target\ndef wrapped():\n    pass\n",
 	})
-	opts := DefaultOptions
+	opts := DefaultOptions()
 	opts.MaxChunkBytes = 200
 	b := &builder{in: Input{Head: head}, opts: opts, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
 	if err := scanParts(t.Context(), []*builder{b}, &b.stats); err != nil {
@@ -467,7 +468,7 @@ func TestUsersOfALongDecoratorLine(t *testing.T) {
 	hits[n] = hit{"i00007", 1}
 	var lookedAt int
 	looked = &lookedAt
-	decls := users(pf, hits, DefaultOptions.MaxDeclLines)
+	decls := users(pf, hits, DefaultOptions().MaxDeclLines)
 	looked = nil
 	if lookedAt > len(hits) {
 		t.Errorf("users looked at %d identifiers for %d hits, want one a hit at most", lookedAt, len(hits))
@@ -488,7 +489,7 @@ func TestUsersResolveALineOnce(t *testing.T) {
 		hits[i] = hit{"a", 4}
 	}
 	var decls []*chunk.Decl
-	allocs := testing.AllocsPerRun(10, func() { decls = users(pf, hits, DefaultOptions.MaxDeclLines) })
+	allocs := testing.AllocsPerRun(10, func() { decls = users(pf, hits, DefaultOptions().MaxDeclLines) })
 	if decls[0] == nil || decls[0].Symbol != "f" || decls[n-1] == nil || *decls[n-1] != *decls[0] {
 		t.Fatalf("users = %v ... %v, want f for every hit", decls[0], decls[n-1])
 	}
@@ -505,7 +506,7 @@ func TestOverlayTakesADeclarationItsCommentsPushOver(t *testing.T) {
 	diff := "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -100,1 +100,1 @@\n-\t_ = 1\n+\t_ = 0\n"
 	b := &builder{
 		in:   Input{Head: headTree(t, map[string]string{"f.go": src}), Diff: diff, Changed: []string{"f.go"}},
-		opts: DefaultOptions, parser: &chunk.Parser{},
+		opts: DefaultOptions(), parser: &chunk.Parser{},
 	}
 	if err := b.overlay(t.Context()); err != nil {
 		t.Fatal(err)
@@ -525,13 +526,13 @@ func TestOverlayTakesADeclarationItsCommentsPushOver(t *testing.T) {
 // rather than the comment alone.
 func TestOverlayKeepsTheHeadUnderACommentThatClosesOnIt(t *testing.T) {
 	src := "package demo\n\n/*\n" + strings.Repeat(" * F does things, and does them at some length.\n", 140) + " */ func F() {\n\tchanged()\n}\n"
-	if len(src) <= DefaultOptions.MaxChunkBytes {
-		t.Fatalf("source is %d bytes, not over %d", len(src), DefaultOptions.MaxChunkBytes)
+	if len(src) <= DefaultOptions().MaxChunkBytes {
+		t.Fatalf("source is %d bytes, not over %d", len(src), DefaultOptions().MaxChunkBytes)
 	}
 	diff := "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -145,1 +145,1 @@\n-\tunchanged()\n+\tchanged()\n"
 	b := &builder{
 		in:   Input{Head: headTree(t, map[string]string{"f.go": src}), Diff: diff, Changed: []string{"f.go"}},
-		opts: DefaultOptions, parser: &chunk.Parser{},
+		opts: DefaultOptions(), parser: &chunk.Parser{},
 	}
 	if err := b.overlay(t.Context()); err != nil {
 		t.Fatal(err)
@@ -553,14 +554,14 @@ func TestOverlayWindowsAChangeTheDeclarationCutDrops(t *testing.T) {
 	src := "package demo\n\n/*\n" + strings.Repeat(doc, 131) + " * CHANGED.\n" + strings.Repeat(doc, 8) + " */\nfunc F() {\n\t_ = 0\n}\n"
 	diff := "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n@@ -135,1 +135,1 @@\n-" + doc + "+ * CHANGED.\n"
 	f := (&chunk.Parser{}).Parse("f.go", []byte(src))
-	decl := f.Enclosing([]int{135}, DefaultOptions.MaxDeclLines)
-	if decl == nil || decl.Symbol != "F" || decl.StartLine != 3 || f.Text(135, 135) != " * CHANGED." || len(f.Bytes(3, 134)) <= DefaultOptions.MaxChunkBytes {
+	decl := f.Enclosing([]int{135}, DefaultOptions().MaxDeclLines)
+	if decl == nil || decl.Symbol != "F" || decl.StartLine != 3 || f.Text(135, 135) != " * CHANGED." || len(f.Bytes(3, 134)) <= DefaultOptions().MaxChunkBytes {
 		t.Fatalf("declaration = %+v, want F from line 3 with line 135 past MaxChunkBytes", decl)
 	}
 	f.Close()
 	b := &builder{
 		in:   Input{Head: headTree(t, map[string]string{"f.go": src}), Diff: diff, Changed: []string{"f.go"}},
-		opts: DefaultOptions, parser: &chunk.Parser{},
+		opts: DefaultOptions(), parser: &chunk.Parser{},
 	}
 	if err := b.overlay(t.Context()); err != nil {
 		t.Fatal(err)
@@ -582,7 +583,7 @@ func TestOverlayWindowFitsMaxChunkBytes(t *testing.T) {
 	diff := "diff --git a/f.yaml b/f.yaml\n--- a/f.yaml\n+++ b/f.yaml\n@@ -31,1 +31,1 @@\n-key: old\n+key: CHANGED\n"
 	b := &builder{
 		in:   Input{Head: headTree(t, map[string]string{"f.yaml": src}), Diff: diff, Changed: []string{"f.yaml"}},
-		opts: DefaultOptions, parser: &chunk.Parser{},
+		opts: DefaultOptions(), parser: &chunk.Parser{},
 	}
 	if err := b.overlay(t.Context()); err != nil {
 		t.Fatal(err)
@@ -591,8 +592,8 @@ func TestOverlayWindowFitsMaxChunkBytes(t *testing.T) {
 		t.Fatalf("overlay = %+v, want one chunk", b.overlayChunks)
 	}
 	c := b.overlayChunks[0]
-	if c.StartLine != 26 || c.EndLine != 36 || !strings.Contains(c.Text, "key: CHANGED") || len(c.Text) > DefaultOptions.MaxChunkBytes {
-		t.Fatalf("overlay = L%d-%d, %d bytes, want lines 26 to 36 around line 31 within %d bytes", c.StartLine, c.EndLine, len(c.Text), DefaultOptions.MaxChunkBytes)
+	if c.StartLine != 26 || c.EndLine != 36 || !strings.Contains(c.Text, "key: CHANGED") || len(c.Text) > DefaultOptions().MaxChunkBytes {
+		t.Fatalf("overlay = L%d-%d, %d bytes, want lines 26 to 36 around line 31 within %d bytes", c.StartLine, c.EndLine, len(c.Text), DefaultOptions().MaxChunkBytes)
 	}
 }
 
@@ -645,11 +646,11 @@ func TestRejectedCandidatesCopyNoText(t *testing.T) {
 	src := "package demo\n\n// Big calls Target.\nfunc Big() {\n\tTarget()\n" + strings.Repeat("\t_ = \"padding padding padding\"\n", 400) + "}\n"
 	f := (&chunk.Parser{}).Parse("big.go", []byte(src))
 	defer f.Close()
-	decl := f.Enclosing([]int{5}, DefaultOptions.MaxDeclLines+300)
+	decl := f.Enclosing([]int{5}, DefaultOptions().MaxDeclLines+300)
 	if decl == nil {
 		t.Fatal("no declaration encloses line 5")
 	}
-	opts := DefaultOptions
+	opts := DefaultOptions()
 	opts.MaxChunkBytes = 200
 	b := &builder{opts: opts, callers: map[string]*candidates{}}
 	for range opts.CallersPerSymbol {
@@ -691,14 +692,14 @@ func TestCandidateTrimsWholeLeadNodes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := (&chunk.Parser{}).Parse(tt.path, []byte(tt.src))
 			defer f.Close()
-			decl := f.Enclosing([]int{tt.line}, DefaultOptions.MaxDeclLines)
+			decl := f.Enclosing([]int{tt.line}, DefaultOptions().MaxDeclLines)
 			if decl == nil {
 				t.Fatalf("no declaration encloses line %d", tt.line)
 			}
 			if decl.HeadLine <= decl.StartLine+1 {
 				t.Fatalf("declaration %+v has no lead lines to trim", decl)
 			}
-			opts := DefaultOptions
+			opts := DefaultOptions()
 			// One byte under the declaration: the cut of its first line alone
 			// would bring it under.
 			opts.MaxChunkBytes = len(f.Bytes(decl.StartLine, decl.EndLine)) - 1
@@ -725,7 +726,7 @@ func BenchmarkScanDocMentions(b *testing.B) {
 		b.Run(fmt.Sprint(n), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				bd := &builder{in: Input{Head: head}, opts: DefaultOptions, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
+				bd := &builder{in: Input{Head: head}, opts: DefaultOptions(), parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
 				if err := scanParts(b.Context(), []*builder{bd}, &bd.stats); err != nil {
 					b.Fatal(err)
 				}
@@ -770,12 +771,12 @@ func TestOverlayShowsEveryChangePastTheCut(t *testing.T) {
 				fmt.Fprintf(&diff, "@@ -%d,1 +%d,1 @@\n-%s\n+%s\n", l, l, src[l-1], lines[l-1])
 			}
 			text := strings.Join(lines, "\n") + "\n"
-			if n := len(strings.Join(lines[2:], "\n")); n <= DefaultOptions.MaxChunkBytes {
-				t.Fatalf("declaration is %d bytes, not over %d", n, DefaultOptions.MaxChunkBytes)
+			if n := len(strings.Join(lines[2:], "\n")); n <= DefaultOptions().MaxChunkBytes {
+				t.Fatalf("declaration is %d bytes, not over %d", n, DefaultOptions().MaxChunkBytes)
 			}
 			b := &builder{
 				in:   Input{Head: headTree(t, map[string]string{"f.go": text}), Diff: diff.String(), Changed: []string{"f.go"}},
-				opts: DefaultOptions, parser: &chunk.Parser{},
+				opts: DefaultOptions(), parser: &chunk.Parser{},
 			}
 			if err := b.overlay(t.Context()); err != nil {
 				t.Fatal(err)
@@ -793,5 +794,23 @@ func TestOverlayShowsEveryChangePastTheCut(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestWindowWithAHugeRadius: a radius of far more lines than the file has
+// gives the same window as the least radius that holds the same lines.
+func TestWindowWithAHugeRadius(t *testing.T) {
+	line := "key: " + strings.Repeat("v", 495) + "\n"
+	f := (&chunk.Parser{}).Parse("f.yaml", []byte(strings.Repeat(line, 30)+"key: CHANGED\n"+strings.Repeat(line, 30)))
+	defer f.Close()
+	window := func(radius int) (int, string) {
+		opts := DefaultOptions()
+		opts.WindowRadius = radius
+		start, text := (&builder{opts: opts}).window(f, [2]int{31, 31})
+		return start, string(text)
+	}
+	start, text := window(math.MaxInt32)
+	if wantStart, want := window(20); start != wantStart || text != want || start != 26 {
+		t.Fatalf("window from line %d, %d bytes; want line %d, %d bytes", start, len(text), wantStart, len(want))
 	}
 }

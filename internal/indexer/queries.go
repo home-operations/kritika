@@ -6,14 +6,10 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/chunk"
-	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/udiff"
 )
-
-// queryContext is how many unchanged lines a query keeps on each side of a
-// hunk's changed lines.
-const queryContext = 3
 
 // HunkQueries is what a run's similar-code stage asks the index: the changed
 // regions of the diff's hunks as the head has them, each its changed lines
@@ -56,10 +52,11 @@ func HunkQueries(diff string, ignore []string, indexable func(path string) bool)
 	}
 	slices.SortStableFunc(files, func(a, b *queryFile) int { return cmp.Compare(b.added, a.added) })
 	var parser chunk.Parser
-	for len(files) > 0 && len(queries) < contextpack.SimilarQueries {
+	most := tuning.Get().ContextPack.SimilarQueries
+	for len(files) > 0 && len(queries) < most {
 		left := files[:0]
 		for _, f := range files {
-			if len(queries) == contextpack.SimilarQueries {
+			if len(queries) == most {
 				break
 			}
 			if !f.turned {
@@ -95,7 +92,7 @@ func (f *queryFile) next(parser *chunk.Parser) (string, bool) {
 		if len(f.regions) == 0 {
 			return "", false
 		}
-		f.pending = regionQueries(parser, f.path, f.regions[0], contextpack.SimilarQueries)
+		f.pending = regionQueries(parser, f.path, f.regions[0], tuning.Get().ContextPack.SimilarQueries)
 		f.regions = f.regions[1:]
 	}
 	q := f.pending[0]
@@ -103,9 +100,9 @@ func (f *queryFile) next(parser *chunk.Parser) (string, bool) {
 	return q, true
 }
 
-// changedRegion is the head-side lines of h from queryContext lines before
-// its first added line to queryContext lines after its last, and how many
-// lines it adds that are not blank. A hunk that only removes, or adds only
+// changedRegion is the head-side lines of h from tuning's
+// Indexer.QueryContext lines before its first added line to as many after
+// its last, and how many lines it adds that are not blank. A hunk that only removes, or adds only
 // blank lines, adds none.
 func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 	var head []udiff.Line
@@ -126,7 +123,9 @@ func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 	if n == 0 {
 		return nil, 0
 	}
-	return head[max(0, first-queryContext):min(len(head), last+queryContext+1)], n
+	// Held to the region, a context up to math.MaxInt cannot overflow.
+	around := min(tuning.Get().Indexer.QueryContext, len(head))
+	return head[max(0, first-around):min(len(head), last+around+1)], n
 }
 
 // regionQueries is the queries of one changed region: the region itself when
@@ -146,6 +145,7 @@ func changedRegion(h udiff.Hunk) ([]udiff.Line, int) {
 // at most limit queries, the first of them, as a request carries no more,
 // and a large added file can hold thousands of declarations.
 func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit int) []string {
+	chars := tuning.Get().ContextPack.SimilarQueryChars
 	var b strings.Builder
 	var added []int
 	for i, l := range region {
@@ -156,7 +156,7 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit
 		}
 	}
 	text := b.String()
-	if len(text) <= contextpack.SimilarQueryChars {
+	if len(text) <= chars {
 		return []string{text}
 	}
 	f := parser.Parse(path, []byte(text))
@@ -189,7 +189,7 @@ func regionQueries(parser *chunk.Parser, path string, region []udiff.Line, limit
 		}
 		body := f.Bytes(d.StartLine, d.EndLine)
 		switch {
-		case len(body)+1 <= contextpack.SimilarQueryChars:
+		case len(body)+1 <= chars:
 			out = append(out, string(body)+"\n")
 		case slices.ContainsFunc(f.Decls[i+1:], func(n chunk.Decl) bool {
 			return n.EndByte <= d.EndByte && (n.StartByte > d.StartByte || n.EndByte < d.EndByte) && holds(n, lastEnd+1)
@@ -270,24 +270,29 @@ func statementLines(decls []chunk.Decl, lines int) []bool {
 // regionWindows cuts region into runs of whole lines within the gateway's
 // bound, and keeps the first limit runs that hold an added line.
 func regionWindows(region []udiff.Line, limit int) []string {
+	chars := tuning.Get().ContextPack.SimilarQueryChars
 	var out []string
 	var b strings.Builder
 	adds := false
 	flush := func() {
 		if adds {
-			q := ChunkText(b.String(), contextpack.SimilarQueryChars)
+			q := ChunkText(b.String(), chars)
 			// A wordless line indented past the bound would cut to a blank
 			// query, which the gateway refuses with the rest of the request.
 			if strings.TrimSpace(q) == "" {
-				q = textcut.Prefix(strings.TrimSpace(b.String()), contextpack.SimilarQueryChars)
+				q = textcut.Prefix(strings.TrimSpace(b.String()), chars)
 			}
-			out = append(out, q)
+			// A bound shorter than the window's first rune still cuts it to
+			// nothing: such a window is not asked about.
+			if strings.TrimSpace(q) != "" {
+				out = append(out, q)
+			}
 		}
 		b.Reset()
 		adds = false
 	}
 	for _, l := range region {
-		if b.Len() > 0 && b.Len()+len(l.Text)+1 > contextpack.SimilarQueryChars {
+		if b.Len() > 0 && b.Len()+len(l.Text)+1 > chars {
 			if flush(); len(out) == limit {
 				return out
 			}

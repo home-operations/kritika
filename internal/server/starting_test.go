@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestStarting(t *testing.T) {
@@ -66,5 +69,26 @@ func TestSwitch(t *testing.T) {
 	sw.Set(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	if got := get(); got != http.StatusNoContent {
 		t.Fatalf("after Set: status = %d, want 204", got)
+	}
+}
+
+// TestStartingRoundsTheRetryUp: the header and the page's refresh are in
+// whole seconds, rounded up, never 0, which reloads at once.
+func TestStartingRoundsTheRetryUp(t *testing.T) {
+	for _, tt := range []struct {
+		retry time.Duration
+		want  string
+	}{{500 * time.Millisecond, "1"}, {1500 * time.Millisecond, "2"}, {2 * time.Second, "2"}} {
+		t.Run(tt.retry.String(), func(t *testing.T) {
+			tuning.Override(t, func(v *tuning.Values) { v.Server.StartingRetry = tt.retry })
+			rec := httptest.NewRecorder()
+			Starting().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if got := rec.Header().Get("Retry-After"); got != tt.want {
+				t.Errorf("Retry-After = %q, want %q", got, tt.want)
+			}
+			if want := `content="` + tt.want + `"`; !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("page = %q, want a refresh of %s", rec.Body.String(), want)
+			}
+		})
 	}
 }

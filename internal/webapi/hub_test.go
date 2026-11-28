@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func testHub(t *testing.T) (*hub, *configfile.File) {
@@ -247,4 +249,108 @@ func TestHubCloseEndsStreams(t *testing.T) {
 		t.Fatal("stream still open after the hub closed")
 	}
 	h.close() // idempotent
+}
+
+// TestHubServeIdleOverHTTP2: a write timeout shorter than the heartbeat does
+// not reset an idle HTTP/2 stream: the deadline covers a frame's write and
+// flush, not the wait for the next frame.
+func TestHubServeIdleOverHTTP2(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.WebAPI.WriteTimeout = 50 * time.Millisecond })
+	h, f := testHub(t)
+	h.heartbeat = 300 * time.Millisecond
+	p := &auth.Principal{Accounts: map[string]bool{accountIDOf(t, f, "alpha"): true}}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.ProtoMajor != 2 {
+		t.Fatalf("protocol = %s, want HTTP/2", resp.Proto)
+	}
+	br := bufio.NewReader(resp.Body)
+	expectResync(t, br)
+	for range 2 {
+		if l := sseLine(t, br); l != ": heartbeat" {
+			t.Fatalf("line = %q, want a heartbeat after an idle wait past the write timeout", l)
+		}
+	}
+}
+
+// TestHubServeEndsWithItsSessionBetweenHeartbeats: a heartbeat slower than
+// the recheck still closes a stream whose session ended, at the recheck.
+func TestHubServeEndsWithItsSessionBetweenHeartbeats(t *testing.T) {
+	h, _ := testHub(t)
+	h.heartbeat, h.recheck = time.Hour, 20*time.Millisecond
+	var ended atomic.Bool
+	h.stands = func(*http.Request) bool { return !ended.Load() }
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), &auth.Principal{Admin: true})))
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	br := bufio.NewReader(resp.Body)
+	expectResync(t, br)
+	ended.Store(true)
+	if _, err := io.Copy(io.Discard, br); err != nil {
+		t.Fatalf("stream ended with %v, want a clean close well before its hour-long heartbeat", err)
+	}
+}
+
+// stalledWriter is a stream whose writes block until its write deadline.
+type stalledWriter struct {
+	header   http.Header
+	deadline chan time.Time
+}
+
+func (s *stalledWriter) Header() http.Header { return s.header }
+func (s *stalledWriter) WriteHeader(int)     {}
+func (s *stalledWriter) Flush()              {}
+
+func (s *stalledWriter) SetWriteDeadline(t time.Time) error {
+	if !t.IsZero() {
+		s.deadline <- t
+	}
+	return nil
+}
+
+func (s *stalledWriter) Write([]byte) (int, error) {
+	time.Sleep(time.Until(<-s.deadline))
+	return 0, errors.New("write deadline passed")
+}
+
+// TestHubServeBoundsAStalledWriteByTheRecheck: a write timeout longer than
+// the session recheck does not hold a stalled stream open past the recheck.
+func TestHubServeBoundsAStalledWriteByTheRecheck(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.WebAPI.WriteTimeout = time.Hour })
+	h, _ := testHub(t)
+	h.heartbeat, h.recheck = time.Hour, 50*time.Millisecond
+	h.stands = func(*http.Request) bool { return true }
+	w := &stalledWriter{header: http.Header{}, deadline: make(chan time.Time, 1)}
+	r := httptest.NewRequestWithContext(auth.WithPrincipal(t.Context(), &auth.Principal{Admin: true}), http.MethodGet, "/", nil)
+	done := make(chan struct{})
+	go func() {
+		h.serve(w, r)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a stalled write held the stream past its session recheck")
+	}
 }

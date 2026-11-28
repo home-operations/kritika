@@ -24,6 +24,7 @@ import (
 	"github.com/home-operations/kritika/internal/egresspolicy"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // ProviderType selects the model adapter a provider uses.
@@ -345,10 +346,6 @@ type TriggerSpec struct {
 	Settle *time.Duration `yaml:"settle,omitempty"`
 }
 
-// MaxPushSettle is the most that a push's review can wait: a longer wait
-// is a manual review in all but name.
-const MaxPushSettle = time.Hour
-
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and
 // generated trees otherwise dominate both, and lockfiles have nothing a
@@ -446,9 +443,9 @@ type Agent struct {
 	// tools read the rest. The confidence score, with no tools, gets up to
 	// twice it.
 	Prompt *int `yaml:"prompt,omitempty"`
-	// Parts is the most parts that a review whose diff is over review.PartBytes
-	// is split into. An agent with these bounds of its own reads each part. A
-	// value of 1 never splits.
+	// Parts is the most parts that a review whose diff is over tuning's
+	// Review.PartBytes is split into. An agent with these bounds of its own
+	// reads each part. A value of 1 never splits.
 	Parts   *int           `yaml:"parts,omitempty"`
 	Timeout *time.Duration `yaml:"timeout,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
@@ -491,42 +488,25 @@ func (a AgentSettings) MarshalJSON() ([]byte, error) {
 
 // DefaultAgent applies to every agent bound a repository leaves unset. Its
 // steps, tool output and tokens are the agent loop's own defaults.
-var DefaultAgent = AgentSettings{
-	MaxSteps:           agent.DefaultLimits.MaxSteps,
-	MaxToolOutputBytes: agent.DefaultLimits.MaxToolOutputBytes,
-	MaxTokens:          agent.DefaultLimits.MaxTokens,
-	MaxPromptTokens:    review.DefaultBudgetTokens,
-	MaxParts:           DefaultParts,
-	Timeout:            20 * time.Minute,
-	CommandTimeout:     DefaultCommandTimeout,
-	MaxFetches:         DefaultFetches,
+func DefaultAgent() AgentSettings {
+	limits := agent.DefaultLimits()
+	t := tuning.Get()
+	return AgentSettings{
+		MaxSteps:           limits.MaxSteps,
+		MaxToolOutputBytes: limits.MaxToolOutputBytes,
+		MaxTokens:          limits.MaxTokens,
+		MaxPromptTokens:    t.Review.DefaultBudgetTokens,
+		MaxParts:           t.ConfigFile.DefaultParts,
+		Timeout:            t.ConfigFile.DefaultAgentTimeout,
+		CommandTimeout:     t.ConfigFile.DefaultCommandTimeout,
+		MaxFetches:         t.ConfigFile.DefaultFetches,
+	}
 }
-
-// DefaultParts is the most parts a review is split into unless agent.parts
-// says otherwise: a 512 KiB diff at review.PartBytes a part.
-const DefaultParts = 8
-
-// DefaultFetches is the most repositories fetch_repo fetches for a review
-// unless agent.fetches says otherwise: the upstream of a dependency bump
-// takes one, a review of several a few more.
-const DefaultFetches = 8
-
-// DefaultCommandTimeout bounds one command of the run tool unless
-// agent.commandTimeout sets it.
-const DefaultCommandTimeout = 30 * time.Second
-
-// MinPromptTokens is the least agent.prompt takes: the system prompt, with
-// its rules and skills, and the pull request's description are paid for out
-// of the same budget. Below it, little of the diff will fit.
-const MinPromptTokens = 8_000
 
 // IncrementalSettings are the resolved incremental configuration values.
 type IncrementalSettings struct {
 	MaxDeltaFiles int
 }
-
-// DefaultMaxDeltaFiles applies when a repository sets no review.incremental.
-const DefaultMaxDeltaFiles = 25
 
 // ReviewTemplates name repository files, read from the merge base, that
 // replace the built-in comment templates.

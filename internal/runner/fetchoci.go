@@ -21,26 +21,17 @@ import (
 	"oras.land/oras-go/v2/registry/remote/auth"
 
 	"github.com/home-operations/kritika/internal/agent"
-	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/upstream"
 )
 
 // What fetch_oci can take: a run inspects at most the spec's fetches, as
-// many as fetch_repo can fetch, and lists tags at most listMax times. One
-// call takes at most ociWireBytes from the registry and ociTimeout of wall
-// time. It reads a manifest or config of at most ociMetadataBytes. It shows a
-// config that is no image's cut to ociConfigShown, and a tag listing at most
-// ociTagPages pages long.
-const (
-	ociWireBytes     = 16 << 20
-	ociTimeout       = time.Minute
-	ociMetadataBytes = 4 << 20
-	ociConfigShown   = 8 << 10
-	ociTagPages      = 50
-)
+// many as fetch_repo can fetch, and lists tags at most Runner.MaxTagListings
+// times. tuning's Runner bounds the rest of a call: OCIWireBytes,
+// OCITimeout, OCIMetadataBytes, OCIConfigShown and OCITagPages.
 
 // dockerMediaTypes are the Docker media types an image's manifest list,
 // manifest and config come under, beside the OCI ones.
@@ -92,7 +83,7 @@ type fetchOCITool struct {
 // newFetchOCITool is the tool for a run of p.
 func newFetchOCITool(p runspec.Spec) *fetchOCITool {
 	return &fetchOCITool{
-		fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), hosts: p.Agent.Hosts, signed: p.Agent.Registries,
+		fetchMax: cmp.Or(p.Agent.Fetches, tuning.Get().ConfigFile.DefaultFetches), hosts: p.Agent.Hosts, signed: p.Agent.Registries,
 	}
 }
 
@@ -104,7 +95,7 @@ func (t *fetchOCITool) Def() model.ToolDef {
 		"With tags instead, it lists the repository's tags whose names contain the text, to find what a tag moved to " +
 		"rather than guess. An index that names no platform, or a manifest of another kind, is described by its digest " +
 		"and media type alone. " +
-		fmt.Sprintf("A review may inspect %d images and list tags %d times.", t.fetchMax, listMax) +
+		fmt.Sprintf("A review may inspect %d images and list tags %d times.", t.fetchMax, tuning.Get().Runner.MaxTagListings) +
 		` For example, {"image": "ghcr.io/home-operations/postgres:17.5"} shows what that tag is, and ` +
 		`{"image": "ghcr.io/home-operations/postgres", "tags": "17."} lists the tags with 17. in their names.`
 	if len(t.signed) > 0 {
@@ -149,7 +140,7 @@ func (t *fetchOCITool) Run(ctx context.Context, input json.RawMessage) (string, 
 		return "", fmt.Errorf("agent: fetch_oci: this review has inspected its %d images", t.fetchMax)
 	}
 	t.fetches++
-	rctx, cancel := context.WithTimeout(ctx, ociTimeout)
+	rctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.OCITimeout)
 	defer cancel()
 	repo, done := t.repository(ref)
 	defer done()
@@ -166,7 +157,7 @@ func (t *fetchOCITool) Run(ctx context.Context, input json.RawMessage) (string, 
 // plain http://, so the gateway sees the request. Any other is reached over
 // HTTPS, and its challenge is answered with a token it grants anyone.
 func (t *fetchOCITool) repository(ref registry.Reference) (*remote.Repository, func()) {
-	wire, done := upstream.CappedTransport(t.transport, ociWireBytes)
+	wire, done := upstream.CappedTransport(t.transport, int64(tuning.Get().Runner.OCIWireBytes))
 	// The gateway serves a plain request on port 80 alone, and names a
 	// registry in lowercase.
 	host := strings.ToLower(strings.TrimSuffix(ref.Host(), ":443"))
@@ -178,7 +169,7 @@ func (t *fetchOCITool) repository(ref registry.Reference) (*remote.Repository, f
 	// the index, the manifest and the config are read on one.
 	repo := &remote.Repository{
 		Reference: ref, Client: &auth.Client{Client: &http.Client{Transport: wire}, Cache: auth.NewCache()},
-		MaxMetadataBytes: ociMetadataBytes, TagListMaxPages: ociTagPages, PlainHTTP: plain,
+		MaxMetadataBytes: int64(tuning.Get().Runner.OCIMetadataBytes), TagListMaxPages: tuning.Get().Runner.OCITagPages, PlainHTTP: plain,
 	}
 	return repo, done
 }
@@ -210,11 +201,11 @@ func (t *fetchOCITool) record(ref registry.Reference) {
 // listTags answers a call that lists the tags of ref's repository whose
 // names contain match, as the registry orders them.
 func (t *fetchOCITool) listTags(ctx context.Context, ref registry.Reference, match string) (string, error) {
-	if t.listings >= listMax {
-		return "", fmt.Errorf("agent: fetch_oci: this review has listed tags %d times", listMax)
+	if most := tuning.Get().Runner.MaxTagListings; t.listings >= most {
+		return "", fmt.Errorf("agent: fetch_oci: this review has listed tags %d times", most)
 	}
 	t.listings++
-	lctx, cancel := context.WithTimeout(ctx, ociTimeout)
+	lctx, cancel := context.WithTimeout(ctx, tuning.Get().Runner.OCITimeout)
 	defer cancel()
 	repo, done := t.repository(ref)
 	defer done()
@@ -309,7 +300,7 @@ func inspect(ctx context.Context, repo *remote.Repository, ref registry.Referenc
 		size += l.Size
 	}
 	fmt.Fprintf(&b, " has %d layers, %d MiB, and a config of type %s", len(manifest.Layers), (size+(1<<20)-1)>>20, manifest.Config.MediaType)
-	if manifest.Config.Size > ociMetadataBytes {
+	if manifest.Config.Size > int64(tuning.Get().Runner.OCIMetadataBytes) {
 		fmt.Fprintf(&b, " of %d bytes, too large to read.", manifest.Config.Size)
 		return b.String(), nil
 	}
@@ -319,7 +310,7 @@ func inspect(ctx context.Context, repo *remote.Repository, ref registry.Referenc
 	}
 	b.WriteString(":")
 	if manifest.Config.MediaType != ocispec.MediaTypeImageConfig && manifest.Config.MediaType != dockerConfig {
-		fmt.Fprintf(&b, "\n%s", textcut.Truncate(string(config), ociConfigShown))
+		fmt.Fprintf(&b, "\n%s", textcut.Truncate(string(config), int(tuning.Get().Runner.OCIConfigShown)))
 		return b.String(), nil
 	}
 	var image ocispec.Image
@@ -331,12 +322,12 @@ func inspect(ctx context.Context, repo *remote.Repository, ref registry.Referenc
 }
 
 // readManifest reads the manifest rc holds whole, against desc's size and
-// digest, and closes it. A manifest over ociMetadataBytes is refused unread,
-// since the registry's size is trusted only that far.
+// digest, and closes it. A manifest over Runner.OCIMetadataBytes is refused
+// unread, since the registry's size is trusted only that far.
 func readManifest(rc io.ReadCloser, desc ocispec.Descriptor) ([]byte, error) {
 	defer func() { _ = rc.Close() }()
-	if desc.Size > ociMetadataBytes {
-		return nil, fmt.Errorf("manifest %s is %d bytes, over the %d MiB read", desc.Digest, desc.Size, ociMetadataBytes>>20)
+	if most := int64(tuning.Get().Runner.OCIMetadataBytes); desc.Size > most {
+		return nil, fmt.Errorf("manifest %s is %d bytes, over the %d MiB read", desc.Digest, desc.Size, most>>20)
 	}
 	return content.ReadAll(rc, desc)
 }

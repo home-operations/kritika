@@ -15,13 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// Rescue pace: how often the leader looks, and how many jobs and runs one
-// pass takes on.
-const (
-	rescueInterval = 30 * time.Second
-	rescueBatch    = 100
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // rescueReason is what a rescued job's attempt, and the review and run it
@@ -65,14 +59,15 @@ type Rescuer struct {
 	Logger  *slog.Logger
 	// Metrics can be nil.
 	Metrics *metrics.Metrics
-	// every overrides rescueInterval, and stale jobAbandonedAfter.
+	// every overrides tuning's Worker.RescueInterval, and stale
+	// JobTimeout.HeartbeatAbandonedAfter.
 	every, stale time.Duration
 }
 
-// Run rescues every rescueInterval until ctx ends. A pass that fails in
-// part is logged and the rest tried again next time.
+// Run rescues every tuning's Worker.RescueInterval until ctx ends. A pass that
+// fails in part is logged and the rest tried again next time.
 func (r *Rescuer) Run(ctx context.Context) {
-	t := time.NewTicker(cmp.Or(r.every, rescueInterval))
+	t := time.NewTicker(cmp.Or(r.every, tuning.Get().Worker.RescueInterval))
 	defer t.Stop()
 	for {
 		select {
@@ -87,16 +82,22 @@ func (r *Rescuer) Run(ctx context.Context) {
 }
 
 // Rescue makes one pass: jobs whose heartbeat went stale are handed back to
-// River. Then every unfinished run whose job is no longer running, or runs
-// anew with a run of its own, is reaped. The heartbeats of ended jobs are
-// swept too. The two are independent, each idempotent. So a reap that the API
-// server refuses is tried again next pass, without the job waiting on it. A
-// job claimed again before its reap does not hide the run that its dead
-// worker left.
+// River. A beat is stale by the abandonment window that its replica wrote
+// with it, so a leader on other heartbeat settings, as during a rollout,
+// waits out the job's own replica's fence. A beat of a replica from before
+// the window was written gets a fixed 180 seconds. This replica's
+// JobTimeout.HeartbeatAbandonedAfter is the least age of an attempt, one
+// with no beat included. Then every unfinished run whose job is no longer
+// running, or runs anew with a run of its own, is reaped. The heartbeats of
+// ended jobs are swept too. The two are independent, each idempotent. So a
+// reap that the API server refuses is tried again next pass, without the job
+// waiting on it. A job claimed again before its reap does not hide the run
+// that its dead worker left.
 func (r *Rescuer) Rescue(ctx context.Context) error {
-	stale := cmp.Or(r.stale, jobAbandonedAfter)
+	stale := cmp.Or(r.stale, tuning.Get().JobTimeout.HeartbeatAbandonedAfter())
+	batch := tuning.Get().Worker.RescueBatch
 	var errs []error
-	abandoned, err := r.Store.AbandonedJobs(ctx, stale, rescueBatch)
+	abandoned, err := r.Store.AbandonedJobs(ctx, stale, batch)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -118,7 +119,7 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 			}
 		}
 	}
-	orphaned, err := r.Store.OrphanedRuns(ctx, rescueBatch)
+	orphaned, err := r.Store.OrphanedRuns(ctx, batch)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -132,10 +133,10 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 	if _, err := r.Store.SweepJobHeartbeats(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if err := r.Store.SweepIndexProgress(ctx, rescueBatch); err != nil {
+	if err := r.Store.SweepIndexProgress(ctx, batch); err != nil {
 		errs = append(errs, err)
 	}
-	recovery, err := r.Store.ReconcileModelInvocations(ctx, rescueBatch)
+	recovery, err := r.Store.ReconcileModelInvocations(ctx, batch)
 	if err != nil {
 		errs = append(errs, err)
 	}

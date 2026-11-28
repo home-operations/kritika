@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestSettingsValidation(t *testing.T) {
@@ -30,7 +30,7 @@ func TestSettingsValidation(t *testing.T) {
 		{"zero onboarding window", "onboardWindow: 0", "onboardWindow: KRITIKA_ONBOARD_WINDOW must be positive"},
 		{"negative polling", "pollInterval: -1ns", "pollInterval: KRITIKA_POLL_INTERVAL must not be negative"},
 		{"short retention", "diffRetention: 23h59m59.999999999s", "diffRetention: KRITIKA_DIFF_RETENTION must be at least 24h"},
-		{"long deadline", fmt.Sprintf("runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(jobtimeout.MaxRunnerDeadline/time.Second)+1),
+		{"long deadline", fmt.Sprintf("runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(tuning.Get().JobTimeout.MaxRunnerDeadline()/time.Second)+1),
 			"runner.jobTemplate.spec.activeDeadlineSeconds: KRITIKA_RUNNER_JOB_TEMPLATE must be a whole number of seconds from 1 to 7200"},
 		{"empty public address", "addr: ''", "addr: KRITIKA_ADDR must be set"},
 		{"empty metrics address", "metricsAddr: ''", "metricsAddr: KRITIKA_METRICS_ADDR must be set"},
@@ -38,7 +38,10 @@ func TestSettingsValidation(t *testing.T) {
 		{"empty role", "databaseAppRole: ''", "databaseAppRole: KRITIKA_DATABASE_APP_ROLE must be set"},
 		{"unknown executor", "executor: docker", "executor: KRITIKA_EXECUTOR must be kubernetes or local"},
 		{"allowed bounds", fmt.Sprintf("pollInterval: 0s\npollLookback: 0s\nindexGrace: 0s\ntranscriptRetention: 24h\ndiffRetention: 24h\n"+
-			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(jobtimeout.MaxRunnerDeadline/time.Second)), ""},
+			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(tuning.Get().JobTimeout.MaxRunnerDeadline()/time.Second)), ""},
+		// The bound is the file's own job timeout, not the process's.
+		{"long deadline within a longer job timeout", fmt.Sprintf("tuning: {jobTimeout: {maxJobTimeout: 4h}}\n"+
+			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(tuning.Get().JobTimeout.MaxRunnerDeadline()/time.Second)+1), ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, err := LoadSettings([]byte(tt.doc))
@@ -102,9 +105,9 @@ func TestRunnerDeadline(t *testing.T) {
 		name, doc string
 		want      time.Duration
 	}{
-		{"unset", "", DefaultRunnerDeadline},
+		{"unset", "", tuning.Get().JobTimeout.RunnerDeadline},
 		{"set", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: 1200}}}", 20 * time.Minute},
-		{"null", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: null}}}", DefaultRunnerDeadline},
+		{"null", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: null}}}", tuning.Get().JobTimeout.RunnerDeadline},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _, err := LoadSettings([]byte(tt.doc))
@@ -119,6 +122,27 @@ func TestRunnerDeadline(t *testing.T) {
 	}
 }
 
+// TestRunnerDeadlineOfTheSettings: the deadline is the loaded settings'
+// own, under their tuning, not the process's, which nothing set here.
+func TestRunnerDeadlineOfTheSettings(t *testing.T) {
+	long := int64(tuning.Get().JobTimeout.MaxRunnerDeadline()/time.Second) + 1
+	for _, tt := range []struct {
+		name, doc string
+		want      time.Duration
+	}{
+		{"a tuned default", "tuning: {jobTimeout: {runnerDeadline: 20m}}", 20 * time.Minute},
+		{"a deadline that a longer job timeout admits", fmt.Sprintf("tuning: {jobTimeout: {maxJobTimeout: 4h}}\n"+
+			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", long), time.Duration(long) * time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _, err := LoadSettings([]byte(tt.doc))
+			if err != nil || s.RunnerDeadline() != tt.want {
+				t.Fatalf("RunnerDeadline = %s, %v; want %s", s.RunnerDeadline(), err, tt.want)
+			}
+		})
+	}
+}
+
 func TestS3CacheSettings(t *testing.T) {
 	const base = "gatewayCacheStorage: s3\ngatewayCacheDir: /cache\ngatewayCacheS3Endpoint: https://s3.example.com\ngatewayCacheS3Region: garage\ngatewayCacheS3Bucket: kritika\n"
 	for _, tt := range []struct{ name, doc, want string }{
@@ -126,6 +150,7 @@ func TestS3CacheSettings(t *testing.T) {
 		{"unknown backend", "gatewayCacheStorage: other", "must be filesystem or s3"},
 		{"zero entry", "gatewayCacheMaxEntrySize: 0", "must be positive"},
 		{"oversize entry", base + "gatewayCacheMaxEntrySize: 6Gi\n", "must not exceed 5Gi"},
+		{"spool past an int64", base + "gatewayCacheMaxEntrySize: 5Gi\ntuning: {egress: {maxFills: 2000000000}}\n", "overflows the S3 cache's local spool"},
 		{"no staging", strings.ReplaceAll(base, "gatewayCacheDir: /cache\n", ""), "private local staging"},
 		{"no bucket", strings.ReplaceAll(base, "gatewayCacheS3Bucket: kritika\n", ""), "S3 bucket"},
 		{"no region", strings.ReplaceAll(base, "gatewayCacheS3Region: garage\n", ""), "S3 region"},
@@ -145,5 +170,9 @@ func TestS3CacheSettings(t *testing.T) {
 				t.Fatalf("got %v, want %q", err, tt.want)
 			}
 		})
+	}
+	// At the most entries that the spool can count, an S3 cache is valid.
+	if _, _, err := LoadSettings([]byte(base + "gatewayCacheMaxEntrySize: 5Gi\ntuning: {egress: {maxFills: 1717986918}}\n")); err != nil {
+		t.Fatalf("a spool within an int64: %v", err)
 	}
 }

@@ -19,9 +19,9 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
 	"github.com/home-operations/kritika/internal/agent"
-	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gittest"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // servedRepo serves, over HTTPS, a repository with two tags: v1, with
@@ -78,7 +78,7 @@ func servedRepoMirror(t *testing.T) (string, *fetchRepoTool, *git.Repository) {
 	}
 	srv := httptest.NewTLSServer(backend.New(transport.NewFilesystemLoader(osfs.New(root), false)))
 	t.Cleanup(srv.Close)
-	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(fetchWriteBytes), fetchMax: configfile.DefaultFetches}, mirror
+	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(int64(tuning.Get().Runner.FetchWriteBytes)), fetchMax: tuning.Get().ConfigFile.DefaultFetches}, mirror
 }
 
 func fetchInput(t *testing.T, in map[string]any) json.RawMessage {
@@ -91,6 +91,7 @@ func fetchInput(t *testing.T, in map[string]any) json.RawMessage {
 }
 
 func TestFetchRepoTool(t *testing.T) {
+	limits := tuning.Get().Runner
 	url, tool := servedRepo(t)
 
 	out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v2", "from": "v1", "paths": []string{"pkg"}}))
@@ -113,8 +114,8 @@ func TestFetchRepoTool(t *testing.T) {
 	if err != nil || !strings.Contains(string(diff), "+func A() {}") {
 		t.Fatalf("diff file = %q, %v", diff, err)
 	}
-	if want := int64(len("package pkg\n\nfunc A() {}\n") + len(diff)); fetchWriteBytes-tool.budget.Left() != want {
-		t.Fatalf("written = %d, want %d", fetchWriteBytes-tool.budget.Left(), want)
+	if want := int64(len("package pkg\n\nfunc A() {}\n") + len(diff)); int64(limits.FetchWriteBytes)-tool.budget.Left() != want {
+		t.Fatalf("written = %d, want %d", int64(limits.FetchWriteBytes)-tool.budget.Left(), want)
 	}
 
 	if out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v1"})); err != nil ||
@@ -240,6 +241,7 @@ func TestFetchRepoSources(t *testing.T) {
 }
 
 func TestDirName(t *testing.T) {
+	limits := tuning.Get().Runner
 	for _, tt := range []struct {
 		n         int
 		url, ref  string
@@ -253,8 +255,8 @@ func TestDirName(t *testing.T) {
 	} {
 		got := dirName(tt.n, tt.url, tt.ref)
 		if tt.wantLimit {
-			if len(got) != dirNameMax || !strings.HasPrefix(got, "4-r@aaa") {
-				t.Errorf("dirName(%q) = %q, want it cut to %d", tt.ref, got, dirNameMax)
+			if len(got) != limits.MaxDirNameBytes || !strings.HasPrefix(got, "4-r@aaa") {
+				t.Errorf("dirName(%q) = %q, want it cut to %d", tt.ref, got, limits.MaxDirNameBytes)
 			}
 			continue
 		}
@@ -265,6 +267,7 @@ func TestDirName(t *testing.T) {
 }
 
 func TestFetchRepoTags(t *testing.T) {
+	limits := tuning.Get().Runner
 	url, tool := servedRepo(t)
 	run := func(in map[string]any) (string, error) {
 		t.Helper()
@@ -300,7 +303,7 @@ func TestFetchRepoTags(t *testing.T) {
 		t.Fatalf("description = %q", d)
 	}
 	tool.hosts = nil
-	if tool.fetches != 0 || tool.budget.Left() != fetchWriteBytes {
+	if tool.fetches != 0 || tool.budget.Left() != int64(limits.FetchWriteBytes) {
 		t.Fatalf("a listing counted as a fetch: fetches = %d, budget left = %d", tool.fetches, tool.budget.Left())
 	}
 
@@ -316,7 +319,7 @@ func TestFetchRepoTags(t *testing.T) {
 		t.Fatalf("listings = %d, want 5: three asked for and two after a missing ref", tool.listings)
 	}
 
-	tool.listings = listMax
+	tool.listings = limits.MaxTagListings
 	if _, err := run(map[string]any{"tags": ""}); err == nil || !strings.Contains(err.Error(), "listed tags 8 times") {
 		t.Fatalf("past the listing count: err = %v", err)
 	}
@@ -431,7 +434,7 @@ func TestFetchedReadFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A fetch keeps a diff larger than any file it writes.
-	big := strings.Repeat("+a line of a long diff\n", (fetchDiffBytes-1)/len("+a line of a long diff\n"))
+	big := strings.Repeat("+a line of a long diff\n", (int(tuning.Get().Runner.FetchDiffBytes)-1)/len("+a line of a long diff\n"))
 	if err := os.WriteFile(filepath.Join(fetch.dir, "9-repo@v9.diff"), []byte(big), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -477,5 +480,46 @@ func TestFetchedReadFile(t *testing.T) {
 				t.Fatalf("read = %q, %v; want %q", got, err, tt.want)
 			}
 		})
+	}
+}
+
+// TestReadFetchedLimits: a file inside a fetch's directory is held to
+// agent.maxBlobBytes, which the fetch wrote it under, and a kept diff or
+// output beside those directories to runner.fetchDiffBytes, whichever is
+// the smaller.
+func TestReadFetchedLimits(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.FetchDiffBytes, v.Agent.MaxBlobBytes = 16, 64 })
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "1-repo@v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, size := range map[string]int{"1-repo@v2/between.go": 32, "1-repo@v2/over.go": 65, "1-repo@v2.diff": 32} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(strings.Repeat("x", size)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tt := range []struct {
+		rel, err string
+	}{
+		{"1-repo@v2/between.go", ""},
+		{"1-repo@v2/over.go", "over the 64 byte limit"},
+		{"1-repo@v2.diff", "over the 16 byte limit"},
+	} {
+		t.Run(tt.rel, func(t *testing.T) {
+			_, err := readFetched(dir, tt.rel)
+			if (tt.err == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tt.err)) {
+				t.Fatalf("readFetched = %v, want %q", err, tt.err)
+			}
+		})
+	}
+}
+
+// TestDirNameKeepsTheFetchNumber: under the smallest limit, the cut spares
+// each fetch's number, so fetches 1 and 10 get directories of their own.
+func TestDirNameKeepsTheFetchNumber(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxDirNameBytes = 1 })
+	first, tenth := dirName(1, "https://example.com/r", "v1"), dirName(10, "https://example.com/r", "v1")
+	if first != "1-" || tenth != "10-" {
+		t.Fatalf("dirName = %q and %q, want %q and %q", first, tenth, "1-", "10-")
 	}
 }

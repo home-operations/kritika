@@ -18,6 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestCommandEnvHoldsNoReportToken: a command that could report would forge
@@ -197,7 +198,7 @@ func TestKeptOutputRead(t *testing.T) {
 	}
 	run := agent.NewRunTool(agent.RunConfig{
 		Dir: checkout, Commands: map[string]string{"cat": catBin, "head": headBin}, Timeout: 10 * time.Second, MaxOutputBytes: 1024,
-		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: agent.NewWriteBudget(fetchWriteBytes)},
+		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: int(tuning.Get().Runner.FetchDiffBytes), Budget: agent.NewWriteBudget(int64(tuning.Get().Runner.FetchWriteBytes))},
 	})
 	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "cat", "args": []string{"render.yaml"}}))
 	if err != nil || !strings.HasSuffix(out, "\n[the whole output is in ../upstream/run-1.out]") {

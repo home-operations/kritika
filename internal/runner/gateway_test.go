@@ -10,13 +10,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestWaitForGateway(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
-	poll := gatewayPoll
-	gatewayPoll = 50 * time.Millisecond
-	t.Cleanup(func() { gatewayPoll = poll })
+	const gatewayPoll = 50 * time.Millisecond
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.GatewayPoll = gatewayPoll })
 
 	t.Run("no proxy is nothing to wait for", func(t *testing.T) {
 		t.Setenv("HTTPS_PROXY", "")

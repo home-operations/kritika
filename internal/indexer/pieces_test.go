@@ -143,7 +143,7 @@ func TestPiecesCoverTheFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := (&chunk.Parser{}).Parse(tt.path, []byte(tt.src))
 			defer f.Close()
-			opts := DefaultOptions
+			opts := DefaultOptions()
 			stored := map[int]chunk.Decl{}
 			first := map[int]chunk.Decl{}
 			for _, p := range Pieces(f, opts) {
@@ -285,7 +285,7 @@ func TestPiecesAtTheTopLevel(t *testing.T) {
 			f := (&chunk.Parser{}).Parse(tt.path, []byte(tt.src))
 			defer f.Close()
 			var got []span
-			for _, p := range Pieces(f, DefaultOptions) {
+			for _, p := range Pieces(f, DefaultOptions()) {
 				got = append(got, span{p.Symbol, p.Kind, p.StartLine, p.EndLine})
 			}
 			if len(got) != len(tt.want) {
@@ -310,14 +310,14 @@ func TestPiecesDoNotCopyTheSource(t *testing.T) {
 	src := "package demo\n\nfunc Long() {\n" + lines(3000, "\t_ = %d // "+strings.Repeat("x", 100)) + "}\n"
 	f := (&chunk.Parser{}).Parse("long.go", []byte(src))
 	defer f.Close()
-	want := Pieces(f, DefaultOptions)
+	want := Pieces(f, DefaultOptions())
 	if len(want) < 2 {
 		t.Fatalf("%d pieces, want the declaration cut into windows", len(want))
 	}
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	got := Pieces(f, DefaultOptions)
+	got := Pieces(f, DefaultOptions())
 	runtime.ReadMemStats(&after)
 	if !slices.Equal(got, want) {
 		t.Fatalf("pieces differ between two cuts of one file")
@@ -342,7 +342,7 @@ func TestPiecesCopyEachNestedPieceOnce(t *testing.T) {
 	src.WriteString(strings.Repeat("}\n", depth))
 	f := (&chunk.Parser{}).Parse("deep.js", []byte(src.String()))
 	defer f.Close()
-	want := Pieces(f, DefaultOptions)
+	want := Pieces(f, DefaultOptions())
 	named := 0
 	for _, p := range want {
 		if strings.HasPrefix(p.Symbol, "leaf") {
@@ -355,7 +355,7 @@ func TestPiecesCopyEachNestedPieceOnce(t *testing.T) {
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	got := Pieces(f, DefaultOptions)
+	got := Pieces(f, DefaultOptions())
 	runtime.ReadMemStats(&after)
 	if !slices.Equal(got, want) {
 		t.Fatalf("pieces differ between two cuts of one file")

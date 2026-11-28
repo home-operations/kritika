@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestQuotes(t *testing.T) {
@@ -134,28 +136,29 @@ func TestCheckQuotes(t *testing.T) {
 	}
 }
 
-// TestQuoteGate: a gate refuses a misquoted submission MaxQuoteRefusals times
-// and takes the next. Drop then removes the misquoted findings and nothing
-// else, and leaves a clean submission as it is.
+// TestQuoteGate: a gate refuses a misquoted submission tuning's
+// Review.MaxQuoteRefusals times and takes the next. Drop then removes the
+// misquoted findings and nothing else, and leaves a clean submission as it is.
 func TestQuoteGate(t *testing.T) {
+	maxQuoteRefusals := tuning.Get().Review.MaxQuoteRefusals
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors with fmt.Errorf and the package name."}}
 	quoted := `{"path":"a.go","line":1,"severity":"p2","category":"correctness","title":"t","explanation":"e","rules":["wrap-errors"],"quote":"fmt.Errorf and the package name"}`
 	unquoted := `{"path":"b.go","line":2,"severity":"p2","category":"correctness","title":"u","explanation":"e","rules":["wrap-errors"]}`
 	raw := json.RawMessage(`{"summary":{"take":"T.","praise":[]},"findings":[` + quoted + `,` + unquoted + `]}`)
 	g := NewQuoteGate(rules)
 	check := g.Check(Check)
-	for i := range MaxQuoteRefusals {
+	for i := range maxQuoteRefusals {
 		if err := check(raw); err == nil || !strings.Contains(err.Error(), "b.go:2 cites rule wrap-errors but has no quote") {
 			t.Fatalf("refusal %d = %v", i+1, err)
 		}
 	}
 	if err := check(raw); err != nil {
-		t.Fatalf("the submission after %d refusals = %v, want it taken", MaxQuoteRefusals, err)
+		t.Fatalf("the submission after %d refusals = %v, want it taken", maxQuoteRefusals, err)
 	}
 	// Peek refuses as Check does and spends nothing: the fallback judges a
 	// submission that Check refused once more without costing a refusal.
 	fresh := NewQuoteGate(rules)
-	for range MaxQuoteRefusals + 1 {
+	for range maxQuoteRefusals + 1 {
 		if err := fresh.Peek(Check)(raw); err == nil {
 			t.Fatal("Peek took a misquoted submission")
 		}

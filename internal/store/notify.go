@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -95,26 +96,11 @@ type ListenHandlers struct {
 	OnReconnect func()
 }
 
-// listenBufferSize bounds the queue of notifications waiting for
-// ListenHandlers callbacks to run. It only needs to absorb a burst: under
-// steady state the consumer goroutine drains it as fast as Postgres can
-// deliver notifications.
-const listenBufferSize = 1024
-
-// listenBackoffMin and listenBackoffMax bound Listen's reconnect delay.
-// The delay grows exponentially between them (doubling per failed
-// attempt, capped at listenBackoffMax). It is jittered so that many
-// listeners disconnected by the same event (for example, a Postgres
-// failover) do not all reconnect in lockstep.
-const (
-	listenBackoffMin = 1 * time.Second
-	listenBackoffMax = 30 * time.Second
-)
-
 // dropWarner logs that the listen buffer is full and notifications are
-// being dropped, at most once per second. The log summarizes how many were
-// dropped since the last warning. It is only ever called from Listen's
-// single read loop, so it needs no locking of its own.
+// being dropped, at most once every tuning's Store.ListenDropWarnInterval.
+// The log summarizes how many were dropped since the last warning. It is
+// only ever called from Listen's single read loop, so it needs no locking
+// of its own.
 type dropWarner struct {
 	logger     *slog.Logger
 	dropped    int
@@ -123,7 +109,7 @@ type dropWarner struct {
 
 func (w *dropWarner) drop() {
 	w.dropped++
-	if now := time.Now(); now.Sub(w.lastWarnAt) >= time.Second {
+	if now := time.Now(); now.Sub(w.lastWarnAt) >= tuning.Get().Store.ListenDropWarnInterval {
 		w.logger.Warn("event listener buffer full, dropping notifications",
 			"dropped_since_last_warning", w.dropped)
 		w.dropped = 0
@@ -146,7 +132,7 @@ func (w *dropWarner) drop() {
 // A malformed kritika_events payload is logged and skipped rather than
 // ending the listener.
 func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
-	notifications := make(chan func(), listenBufferSize)
+	notifications := make(chan func(), tuning.Get().Store.ListenBufferSize)
 	consumerDone := make(chan struct{})
 	go func() {
 		defer close(consumerDone)
@@ -185,7 +171,7 @@ func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(Backoff(attempt, listenBackoffMin, listenBackoffMax)):
+		case <-time.After(Backoff(attempt, tuning.Get().Store.ListenBackoffMin, tuning.Get().Store.ListenBackoffMax)):
 		}
 		attempt++
 	}
@@ -209,14 +195,14 @@ func (s *Store) listenOnce(
 	if connConfig.RuntimeParams == nil {
 		connConfig.RuntimeParams = map[string]string{}
 	}
-	connConfig.RuntimeParams["application_name"] = "kritika-listen"
+	connConfig.RuntimeParams[applicationNameParam] = applicationName("listen")
 
 	conn, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
 		return false, fmt.Errorf("store: listen connect: %w", err)
 	}
 	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Store.SessionCloseTimeout)
 		defer cancel()
 		_ = conn.Close(closeCtx)
 	}()

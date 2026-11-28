@@ -1,5 +1,7 @@
 package review
 
+import "github.com/home-operations/kritika/internal/tuning"
+
 // Summary is the review's overall judgement for the sticky comment.
 type Summary struct {
 	// Headline is one sentence on what the change does, the summary
@@ -24,7 +26,8 @@ type Summary struct {
 func normalizeSummary(s Summary, opts ParseOptions) Summary {
 	s.Headline = oneLine(prose(s.Headline, opts.Repository))
 	s.Take = prose(s.Take, opts.Repository)
-	praise := make([]string, 0, maxPraise)
+	maxPraise := tuning.Get().Review.MaxPraise
+	praise := make([]string, 0, min(len(s.Praise), maxPraise))
 	for _, p := range s.Praise {
 		if p = prose(p, opts.Repository); p != "" && len(praise) < maxPraise {
 			praise = append(praise, p)
@@ -33,7 +36,7 @@ func normalizeSummary(s Summary, opts ParseOptions) Summary {
 	s.Praise = praise
 	var checked []string
 	for _, c := range s.Checked {
-		if c = oneLine(c); c != "" && len(checked) < maxChecked {
+		if c = oneLine(c); c != "" && len(checked) < tuning.Get().Review.MaxChecked {
 			checked = append(checked, c)
 		}
 	}

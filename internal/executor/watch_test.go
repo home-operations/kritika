@@ -19,6 +19,9 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
+
+	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestKubeStartNeedsTheWatch: an executor the API lets list runner Jobs and
@@ -40,7 +43,7 @@ func TestKubeStartNeedsTheWatch(t *testing.T) {
 }
 
 // TestKubeStartBoundsAStalledWatch: a trial watch the API never answers
-// fails Start once watchSync passes, though ctx has no deadline.
+// fails Start once Executor.WatchSync passes, though ctx has no deadline.
 func TestKubeStartBoundsAStalledWatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		client, err := kubernetes.NewForConfig(&rest.Config{Host: "https://kube.invalid", Transport: stalled{}})
@@ -53,8 +56,8 @@ func TestKubeStartBoundsAStalledWatch(t *testing.T) {
 		if err := k.Start(t.Context()); !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("Start = %v, want the watch given up", err)
 		}
-		if waited := time.Since(start); waited != watchSync {
-			t.Fatalf("Start waited %s, want %s", waited, watchSync)
+		if waited := time.Since(start); waited != tuning.Get().Executor.WatchSync {
+			t.Fatalf("Start waited %s, want %s", waited, tuning.Get().Executor.WatchSync)
 		}
 	})
 }
@@ -68,7 +71,7 @@ func (stalled) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // TestKubeStartBoundsTheFirstLists: lists the API never answers fail Start
-// once watchSync passes, with the wait's cause and every kind not
+// once Executor.WatchSync passes, with the wait's cause and every kind not
 // listed.
 func TestKubeStartBoundsTheFirstLists(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -170,4 +173,26 @@ func TestWaitLeavesALaterWaitAlone(t *testing.T) {
 	default:
 		t.Fatal("the later wait was not woken")
 	}
+}
+
+// TestKubeFinishBoundsAStalledList: collecting a run's pod from an API
+// that never answers its list gives up once executor.finishTimeout passes,
+// though executor.apiTimeout, which bounds one call, is longer.
+func TestKubeFinishBoundsAStalledList(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tuning.Override(t, func(v *tuning.Values) {
+			v.Executor.FinishTimeout, v.Executor.APITimeout = 5*time.Second, time.Minute
+		})
+		client, err := kubernetes.NewForConfig(&rest.Config{Host: "https://kube.invalid", Transport: stalled{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		k := &Kube{Client: client, Namespace: "kritika"}
+		start := time.Now()
+		res := Result{JobName: "kritika-run-01234567"}
+		k.finish(t.Context(), &res, runspec.Secrets{})
+		if waited := time.Since(start); waited != 5*time.Second {
+			t.Fatalf("finish waited %s, want the finish timeout, 5s", waited)
+		}
+	})
 }

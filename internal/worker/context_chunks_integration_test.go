@@ -170,7 +170,7 @@ func seedHelperCalls(t *testing.T, h *agenticHarness, emb *configfile.Embedding)
 	}
 	var large int
 	for _, c := range seedIndex(t, h, emb, configfile.RepositoryID(h.account.ID(), "acme/widgets"), files) {
-		if c.Kind == "function" && strings.HasPrefix(c.Symbol, "b") && len(c.Text) > indexer.DefaultOptions.MaxChunkBytes*9/10 {
+		if c.Kind == "function" && strings.HasPrefix(c.Symbol, "b") && len(c.Text) > indexer.DefaultOptions().MaxChunkBytes*9/10 {
 			large++
 		}
 	}
@@ -187,7 +187,7 @@ func helperCalls(name string) string {
 	fmt.Fprintf(&b, "func %s() {\n", name)
 	for i := 1; ; i++ {
 		line := fmt.Sprintf("\thelper() // step %d of %s, in the order the widgets need\n", i, name)
-		if b.Len()+len(line)+len("}") > indexer.DefaultOptions.MaxChunkBytes {
+		if b.Len()+len(line)+len("}") > indexer.DefaultOptions().MaxChunkBytes {
 			break
 		}
 		b.WriteString(line)

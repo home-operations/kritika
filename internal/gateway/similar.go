@@ -22,40 +22,8 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// Similarity retrieval bounds: neighbours per query, chunks kept of one
-// file, and chunks kept when a request asks for no other number. The floor
-// and the margin below a query's best match, under which a neighbour is
-// noise, are the embedder's.
-const (
-	similarPerQuery = 4
-	similarPerFile  = 2
-	similarMax      = 10
-)
-
-// similarDepth is how many chunks each search finds for a query, without a
-// reranker, for the fusion to rank, unless the query keeps more: twice what
-// a query of a review keeps, so that the places of chunks that the file cap
-// or a duplicate turns away go to the query's next ones. A query whose
-// window of either search the file cap leaves short is searched again past
-// the files that fill it (pastFullFiles, searchByName).
-const similarDepth = 2 * similarPerQuery
-
-// maxSimilarBody bounds a similar-code request: its queries, each cut to
-// contextpack.SimilarQueryChars, with room for their encoding. The paths a
-// search leaves out are the run's report, not the request's, so the bound
-// holds however many files a change touches.
-const maxSimilarBody = 256 << 10
-
-// similarAnswerWithin is how long after a similar-code request arrives the
-// vector search's looks past full files, its search by name and its
-// reranking end at the latest, leaving the hits found until then, in the
-// fused order, to the queries that they have not reached. A run waits a minute for its answer from before it sends
-// the request, whatever the embedding and the searches took of it. The rest
-// is for the answer, its accounting, and the request's way to the gateway. A
-// variable for the tests.
-var similarAnswerWithin = 50 * time.Second
 
 // What became of a similar-code request, as kritika_similar_requests_total
 // counts it, and of a hit that it found, as kritika_similar_hits_total does.
@@ -74,7 +42,7 @@ const (
 	hitFloor  = "floor"
 	hitMargin = "margin"
 	// hitLexicalFloor is a chunk that only the search by name found, under
-	// lexicalShare of its query's best weight by name.
+	// Gateway.LexicalShare of its query's best weight by name.
 	hitLexicalFloor = "lexical_floor"
 	hitDuplicate    = "duplicate"
 	hitFileCap      = "file_cap"
@@ -100,7 +68,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	}
 	kind, outcome := "unknown", similarInvalid
 	defer func() { g.Metrics.SimilarRequest(c.account.Key(), kind, outcome) }()
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSimilarBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(tuning.Get().Gateway.MaxSimilarRequest)))
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		outcome = similarTooLarge
 		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())
@@ -125,9 +93,9 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 			contextpack.SimilarKindDiff, contextpack.SimilarKindSearch))
 		return
 	}
-	if len(req.Queries) > contextpack.SimilarQueries {
+	if most := tuning.Get().ContextPack.SimilarQueries; len(req.Queries) > most {
 		refuse(w, http.StatusBadRequest, "invalid_request",
-			fmt.Sprintf("the request must carry at most %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
+			fmt.Sprintf("the request must carry at most %d queries, not %d", most, len(req.Queries)))
 		return
 	}
 	switch {
@@ -153,7 +121,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 			refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("query %d is empty", i))
 			return
 		}
-		texts[i] = textcut.Prefix(q, contextpack.SimilarQueryChars)
+		texts[i] = textcut.Prefix(q, tuning.Get().ContextPack.SimilarQueryChars)
 		req.Queries[i] = prompt + texts[i]
 	}
 	outcome = similarError
@@ -178,7 +146,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		token: c.token, queries: req.Queries, texts: texts, languages: languages, limit: answerLimit(req.Limit),
 		perQuery: queryLimit(kind, len(req.Queries), req.Limit),
 		exclude:  store.Exclusions{Run: c.grant.RunID, Paths: req.Exclude},
-		answerBy: arrived.Add(similarAnswerWithin),
+		answerBy: arrived.Add(tuning.Get().Gateway.SimilarWithin),
 	}, c.logger)
 	outcome = searched
 	if errors.Is(err, errBudgetSpent) {
@@ -225,7 +193,7 @@ type similarRequest struct {
 	// reranking are reserved against and charged to.
 	token string
 	// queries are the texts to embed: the embedder's prompt for their kind,
-	// then a query cut to contextpack.SimilarQueryChars, which texts holds
+	// then a query cut to ContextPack.SimilarQueryChars, which texts holds
 	// without the prompt. exclude are the paths left out of the answer.
 	queries []string
 	texts   []string
@@ -251,24 +219,24 @@ var (
 )
 
 // answerLimit is the most chunks an answer holds when its request asks for
-// asked: similarMax unless it asks for a number, which is at most
-// contextpack.SimilarLimit.
+// asked: Gateway.SimilarMax unless it asks for a number, which is at most
+// ContextPack.SimilarLimit.
 func answerLimit(asked int) int {
 	if asked <= 0 {
-		return similarMax
+		return tuning.Get().Gateway.SimilarMax
 	}
-	return min(asked, contextpack.SimilarLimit)
+	return min(asked, tuning.Get().ContextPack.SimilarLimit)
 }
 
-// queryLimit is the most chunks one query keeps: similarPerQuery, or, for a
-// request of SimilarKindSearch of one query that asks for more, its
-// answerLimit. No other query shares that answer, and search_code asks for
-// spares, as it leaves out the chunks that the head no longer has.
+// queryLimit is the most chunks one query keeps: Gateway.SimilarPerQuery,
+// or, for a request of SimilarKindSearch of one query that asks for more,
+// its answerLimit. No other query shares that answer, and search_code asks
+// for spares, as it leaves out the chunks that the head no longer has.
 func queryLimit(kind string, queries, asked int) int {
 	if kind != contextpack.SimilarKindSearch || queries != 1 || asked <= 0 {
-		return similarPerQuery
+		return tuning.Get().Gateway.SimilarPerQuery
 	}
-	return max(similarPerQuery, answerLimit(asked))
+	return max(tuning.Get().Gateway.SimilarPerQuery, answerLimit(asked))
 }
 
 // reserveRun reserves tokens against the budget of the run whose gateway
@@ -382,7 +350,10 @@ func (g *Server) similar(
 	// A reranker sorts a pool of candidates for each query, which both
 	// searches look deeper to fill, and never shallower than without one:
 	// the candidates past those it is sent are what a query falls back on.
-	depth := max(similarDepth, r.perQuery)
+	// A query whose window of either search the file cap leaves short is
+	// searched again past the files that fill it (pastFullFiles,
+	// searchByName).
+	depth := max(tuning.Get().Gateway.SimilarDepth(), r.perQuery)
 	reranker, rr := g.Rerankers.Reranker(file)
 	if reranker != nil {
 		depth = max(depth, rr.CandidateCount())
@@ -480,23 +451,13 @@ func countsByOutcome(counts map[hitKey]int) map[string]int {
 	return out
 }
 
-// rrfK is reciprocal rank fusion's constant: a candidate's score in its
-// query is the sum, over the searches that found it, of 1 / (rrfK + its rank
-// in that search's answer), counted from 1. It is the value of the paper
-// that introduced the fusion (Cormack, Clarke and Buettcher, 2009), which
-// damps the weight of the very top ranks.
-const rrfK = 60
-
-// lexicalShare is the least share of its query's best lexical weight that a
-// hit needs to count as similar code by its names alone.
-const lexicalShare = 0.5
-
 // candidate is a chunk found for a query, by one search or both.
 type candidate struct {
 	store.SimilarHit
 	// vector and lexical say which searches found it, and close and named
 	// which of them vouch for it: its similarity clears the floor and the
-	// margin, or its lexical weight clears lexicalShare of its query's best.
+	// margin, or its lexical weight clears Gateway.LexicalShare of its
+	// query's best.
 	vector, lexical, close, named bool
 	// score orders the query's candidates: reciprocal rank fusion of every
 	// search that found it, whether or not that search vouches for it, or the
@@ -548,7 +509,7 @@ func fuse(hits, named []store.SimilarHit) []candidate {
 // by reciprocal rank fusion, the count of those that do not, by why not, and
 // the similarity of each query's best candidate. A candidate counts when its similarity is at or above floor and
 // within margin of the best similarity of its query, or when it holds at
-// least lexicalShare of the lexical weight that its query's best lexical hit
+// least Gateway.LexicalShare of the lexical weight that its query's best lexical hit
 // holds: either search can vouch for it. Each query's scores sit at a height of their own,
 // set by the code that it is near. So one floor cuts one query's good
 // matches and keeps another's noise. The margin is measured from each
@@ -589,8 +550,9 @@ func gateCandidates(cands []candidate, floor, margin float64) ([]candidate, map[
 }
 
 // addRanks adds to the score of each candidate that found says a search
-// found 1 / (rrfK + its rank), by by, among those of its query that it
-// found. Of candidates that by ties, the one nearest the query ranks first.
+// found 1 / (k + its rank), by by, among those of its query that it found,
+// k being reciprocal rank fusion's constant, Gateway.RRFK. Of candidates
+// that by ties, the one nearest the query ranks first.
 func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) float64) {
 	var order []int
 	for i, c := range cands {
@@ -601,15 +563,16 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 	slices.SortStableFunc(order, func(a, b int) int {
 		return cmp.Or(cmp.Compare(by(cands[b]), by(cands[a])), cmp.Compare(cands[b].Similarity, cands[a].Similarity))
 	})
+	k := tuning.Get().Gateway.RRFK
 	rank := map[int]int{}
 	for _, i := range order {
 		rank[cands[i].Query]++
-		cands[i].score += 1.0 / float64(rrfK+rank[cands[i].Query])
+		cands[i].score += 1.0 / float64(k+rank[cands[i].Query])
 	}
 }
 
 // keepCandidates keeps each chunk once, at most queryMax of one query,
-// similarPerFile of one file and limit in all, and labels each with
+// Gateway.SimilarPerFile of one file and limit in all, and labels each with
 // its similarity or the names it shares with its query. It takes every
 // query's best, by its order among its query's (candidateOrder) and then by
 // its shared score, before any query's second, and so on. So neither one
@@ -617,12 +580,15 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 // declarations take every place. A query's turn is spent only on a chunk it
 // keeps: one that a duplicate or the file cap turns away gives the turn to
 // the query's next candidate, which competes for the same round's places as
-// the other queries' first. It adds what it drops to counts.
+// the other queries' first. It stops at the first chunk past what the
+// answer's encoding can hold within Runner.MaxSimilarAnswerBody, which a
+// runner reads it to. It adds what it drops to counts.
 func keepCandidates(cands []candidate, counts map[hitKey]int, limit, queryMax int) []contextpack.Chunk {
 	queues := map[int][]candidate{}
 	for _, c := range cands {
 		queues[c.Query] = append(queues[c.Query], c)
 	}
+	fileCap := tuning.Get().Gateway.SimilarPerFile
 	queries := slices.Sorted(maps.Keys(queues))
 	for _, q := range queries {
 		slices.SortStableFunc(queues[q], candidateOrder)
@@ -631,6 +597,7 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit, queryMax in
 	seen := map[string]bool{}
 	perFile, perQuery := map[string]int{}, map[int]int{}
 	chunks := make([]contextpack.Chunk, 0, min(len(cands), limit))
+	room := int(tuning.Get().Runner.MaxSimilarAnswerBody) - len(emptyAnswer)
 	for len(chunks) < limit {
 		pick := -1
 		for _, q := range queries {
@@ -639,7 +606,7 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit, queryMax in
 				c := queue[0]
 				if seen[key(c)] {
 					counts[hitKey{hitDuplicate, c.source()}]++
-				} else if perFile[c.Chunk.Path] == similarPerFile {
+				} else if perFile[c.Chunk.Path] == fileCap {
 					counts[hitKey{hitFileCap, c.source()}]++
 				} else {
 					break
@@ -658,11 +625,21 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit, queryMax in
 			break
 		}
 		c := queues[pick][0]
+		c.Chunk.Ref = similarRef(c)
+		// A chunk of strings and numbers always encodes.
+		encoded, _ := json.Marshal(c.Chunk)
+		need := len(encoded)
+		if len(chunks) > 0 {
+			need++ // the comma before it
+		}
+		if need > room {
+			break
+		}
+		room -= need
 		queues[pick] = queues[pick][1:]
 		seen[key(c)] = true
 		perFile[c.Chunk.Path]++
 		perQuery[pick]++
-		c.Chunk.Ref = similarRef(c)
 		chunks = append(chunks, c.Chunk)
 		counts[hitKey{hitKept, c.source()}]++
 	}
@@ -702,10 +679,6 @@ func comparePast(a, b candidate) int {
 	return 1
 }
 
-// similarNames is how many of the names a chunk shares with its query its
-// label shows.
-const similarNames = 3
-
 // similarRef labels a kept chunk for the prompt: its similarity when that
 // vouches for it, and the names it shares with its query when it holds any.
 // A chunk that only its names vouch for shows no similarity, which sits
@@ -716,7 +689,11 @@ func similarRef(c candidate) string {
 		parts = append(parts, fmt.Sprintf("similarity %.2f", c.Similarity))
 	}
 	if len(c.Matched) > 0 {
-		parts = append(parts, "shares "+strings.Join(c.Matched[:min(len(c.Matched), similarNames)], ", "))
+		parts = append(parts, "shares "+strings.Join(c.Matched[:min(len(c.Matched), tuning.Get().Gateway.SimilarNames)], ", "))
 	}
 	return strings.Join(parts, "; ")
 }
+
+// emptyAnswer is the longest encoding of an answer without chunks: an
+// unindexed one.
+var emptyAnswer, _ = json.Marshal(contextpack.SimilarResponse{Chunks: []contextpack.Chunk{}})

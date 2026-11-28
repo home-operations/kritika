@@ -51,7 +51,7 @@ func TestRunChatGPTStreamedTools(t *testing.T) {
 		default:
 			t.Error("review did not submit after two steps")
 			// A refusal the loop does not retry, so an extra step fails the
-			// test at once instead of after stepRetryWaits.
+			// test at once instead of after tuning's Agent.StepRetryWaits.
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}

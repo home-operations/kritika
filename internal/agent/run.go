@@ -21,12 +21,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/textcut"
-)
-
-// Source bounds: how many URLs one run records, and how long each can be.
-const (
-	maxSources     = 50
-	maxSourceBytes = 2048
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // sourceEscaper percent-encodes what can end a Markdown autolink or a code
@@ -198,7 +193,14 @@ func (rt *RunTool) setupError(command string, err error) error {
 	if pe, ok := errors.AsType[*fs.PathError](err); ok {
 		shown = fmt.Errorf("%s: %w", pe.Op, pe.Err)
 	}
-	note := textcut.Truncate(rt.mask(fmt.Sprintf("Command %s unavailable: %s", command, shown)), 2048)
+	most := int(tuning.Get().Agent.SetupErrorBytes)
+	diagnostic := rt.mask(fmt.Sprintf("Command %s unavailable: %s", command, shown))
+	note := textcut.Truncate(diagnostic, most)
+	if len(note) > most {
+		// A cap too small for the truncation note keeps the diagnostic's
+		// start instead.
+		note = textcut.Prefix(diagnostic, most)
+	}
 	if !slices.Contains(rt.failed, command) {
 		rt.failed, rt.errors = append(rt.failed, command), append(rt.errors, note)
 	}
@@ -339,7 +341,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		// An output that will not be kept is not buffered past the cut.
 		out.keep = max(out.max, int(min(int64(k.FileBytes), k.Budget.Left())))
 	}
-	errs := &stderrTail{out: out, max: rt.cfg.MaxOutputBytes / stderrShare, last: '\n'}
+	errs := &stderrTail{out: out, max: rt.cfg.MaxOutputBytes / tuning.Get().Agent.StderrShare, last: '\n'}
 	cmd := exec.CommandContext(cctx, bin, req.Args...)
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(env), rt.cfg.CommandEnv[req.Command]...), out, errs
 	// The command and the processes that it starts form a process group of
@@ -352,7 +354,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	cmd.Cancel = func() error { return group.kill(cmd.Process) }
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
-	cmd.WaitDelay = time.Second
+	cmd.WaitDelay = tuning.Get().Agent.CommandWaitDelay
 	if err = cmd.Start(); err == nil {
 		rt.executions[req.Command]++
 		stopped, serr := stopGroupOnExit(cmd.Process.Pid)
@@ -453,12 +455,9 @@ func (rt *RunTool) prepare(ctx context.Context) (string, error) {
 	return rt.prepareNote, rt.prepareErr
 }
 
-// A cut output keeps at most MaxOutputBytes/stderrShare of the end of the
-// command's stderr, after stderrLead.
-const (
-	stderrShare = 8
-	stderrLead  = "\n[the end of stderr, from the part cut above:]\n"
-)
+// stderrLead comes before the end of a cut command's stderr, of which the
+// output keeps at most MaxOutputBytes divided by tuning's Agent.StderrShare.
+const stderrLead = "\n[the end of stderr, from the part cut above:]\n"
 
 // result is a command's result cut to MaxOutputBytes with its note. The note
 // also counts the bytes that the buffer dropped, so the loop's own cut to the
@@ -466,7 +465,8 @@ const (
 // file, from out. A note after the cut's note names that file. stderr is the
 // end of the stderr that the buffer dropped, where an error printed after a
 // long output lands. It follows the notes, with the rest cut shorter to make
-// room, unless it takes more than a quarter of the limit.
+// room, unless it takes more of the limit than tuning's
+// Agent.StderrAppendShare allows.
 func (rt *RunTool) result(s string, out *cappedBuffer, dropped int, stderr string) string {
 	var tail string
 	// An output that fits the buffer is still cut when its first line
@@ -474,7 +474,7 @@ func (rt *RunTool) result(s string, out *cappedBuffer, dropped int, stderr strin
 	if (dropped > 0 || len(s) > rt.cfg.MaxOutputBytes) && rt.cfg.Keep != nil {
 		tail = rt.keep(out)
 	}
-	if end := stderrLead + stderr; stderr != "" && len(end) <= rt.cfg.MaxOutputBytes/4 {
+	if end := stderrLead + stderr; stderr != "" && len(end) <= rt.cfg.MaxOutputBytes/tuning.Get().Agent.StderrAppendShare {
 		tail += end
 	}
 	if tail == "" {
@@ -540,7 +540,7 @@ func (rt *RunTool) record(args []string) {
 			u.Scheme = "https"
 		}
 		s := sourceEscaper.Replace(u.String())
-		if len(rt.sources) < maxSources && len(s) <= maxSourceBytes && !slices.Contains(rt.sources, s) {
+		if t := tuning.Get().Agent; len(rt.sources) < t.MaxSources && len(s) <= int(t.MaxSourceBytes) && !slices.Contains(rt.sources, s) {
 			rt.sources = append(rt.sources, s)
 		}
 	}

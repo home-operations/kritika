@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -107,7 +108,7 @@ func TestCreateLoginStateCap(t *testing.T) {
 	if _, err := s.owner.Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
 		SELECT sha256(('cap-' || g)::bytea), 'cap-test', 'n', 'v', $1, sha256('b'::bytea)
 		FROM generate_series(1, $2::int - (SELECT count(*)::int FROM login_states WHERE expires_at > $3)) g`,
-		now.Add(time.Minute), MaxLoginStates, now); err != nil {
+		now.Add(time.Minute), tuning.Get().Store.MaxLoginStates, now); err != nil {
 		t.Fatal(err)
 	}
 	ls := LoginState{Provider: "cap-test", Nonce: "n", PKCEVerifier: "v"}

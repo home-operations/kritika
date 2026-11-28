@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestReferencesReserveRoom(t *testing.T) {
+	charsPerToken := tuning.Get().Review.CharsPerToken
 	for _, kind := range []string{"full", "incremental", "follow-up", "continued"} {
 		t.Run(kind, func(t *testing.T) {
 			in := incrementalInput()

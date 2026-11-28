@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // reportEnv is a gateway and what a run holds to call it.
@@ -367,7 +368,7 @@ func TestReportPartCheckpointsAndSlots(t *testing.T) {
 	}
 	// One past the bound only costs a retry that part's run again.
 	if status := e.post(runspec.ReportCheckpointsPath, token, runspec.CheckpointReport{
-		Input: "inputs", Part: 2, Payload: json.RawMessage(strconv.Quote(strings.Repeat("x", maxCheckpointBody))),
+		Input: "inputs", Part: 2, Payload: json.RawMessage(strconv.Quote(strings.Repeat("x", int(tuning.Get().Gateway.MaxCheckpointBody)))),
 	}); status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("an oversized checkpoint = %d, want 413", status)
 	}
@@ -428,6 +429,7 @@ func indexBody(t *testing.T, claimed, chunks int) []byte {
 }
 
 func TestReportIndexUpload(t *testing.T) {
+	gw := tuning.Get().Gateway
 	e := newReportEnv(t)
 	upload := func(token string, body []byte) int {
 		t.Helper()
@@ -436,7 +438,7 @@ func TestReportIndexUpload(t *testing.T) {
 	}
 	t.Run("more chunks than one batch, sent twice", func(t *testing.T) {
 		id, token := e.run(store.RunnerKindIndex)
-		chunks := indexBatchChunks + 1
+		chunks := gw.IndexBatchChunks + 1
 		body := indexBody(t, chunks, chunks)
 		for range 2 {
 			if status := upload(token, body); status != http.StatusNoContent {
@@ -495,7 +497,7 @@ func TestReportIndexUpload(t *testing.T) {
 		{"a chunk with a field more", func(t *testing.T) []byte { return append(indexBody(t, 1, 0), `{"path":"a","account":"b"}`+"\n"...) }, http.StatusBadRequest},
 		{"no opening line", func(*testing.T) []byte { return nil }, http.StatusRequestTimeout},
 		{"a line past the limit", func(t *testing.T) []byte {
-			return append(indexBody(t, 1, 0), fmt.Sprintf(`{"text":%q}`+"\n", strings.Repeat("x", maxIndexLine))...)
+			return append(indexBody(t, 1, 0), fmt.Sprintf(`{"text":%q}`+"\n", strings.Repeat("x", int(gw.MaxIndexLine)))...)
 		}, http.StatusRequestEntityTooLarge},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -514,5 +516,39 @@ func TestReportIndexUpload(t *testing.T) {
 				t.Fatalf("staged = %d, want 2", e.count("index_staging", id))
 			}
 		})
+	}
+}
+
+// TestReportPartsPastTheSmallReport: a split review's report of eight long
+// slot pools, over a lowered gateway.maxSmallReport, is taken under
+// gateway.maxPartsReport and answered with the pools' slots.
+func TestReportPartsPastTheSmallReport(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxFailureCause, v.Gateway.MaxSmallReport = 64, 1408 })
+	e := newReportEnv(t)
+	ctx := t.Context()
+	id, token := e.run(store.RunnerKindReview)
+	report := runspec.PartsReport{Sequence: 1, Remaining: map[string]int{}, Active: map[string]int{}}
+	granted := map[string]int{}
+	for i := range 8 {
+		pool := strconv.Itoa(i) + strings.Repeat("m", 100)
+		report.Remaining[pool], report.Active[pool], granted[pool] = 2, 1, 3
+	}
+	if err := e.st.WithAccount(ctx, e.account, func(tx pgx.Tx) error {
+		_, err := store.SetPartSlots(ctx, tx, id, granted)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) <= int(tuning.Get().Gateway.MaxSmallReport) {
+		t.Fatalf("the report is %d bytes, within the small report's bound", len(body))
+	}
+	status, answer := e.send(http.MethodPost, runspec.ReportPartsPath, token, body)
+	var slots runspec.PartSlots
+	if err := json.Unmarshal(answer, &slots); err != nil || status != http.StatusOK || len(slots.Slots) != 8 {
+		t.Fatalf("parts = %d %s, %v", status, answer, err)
 	}
 }

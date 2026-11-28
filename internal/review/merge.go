@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // mergeSystem is the instructions of the call that writes a split review's
@@ -34,9 +35,9 @@ const mergeDiagram = summaryDiagram + ` Draw it from the parts' diagrams, as one
 // when the summary carries one.
 func MergeSystemPrompt(diagram bool) string {
 	if diagram {
-		return mergeSystem + mergeDiagram
+		return withPraiseCap(mergeSystem) + mergeDiagram
 	}
-	return mergeSystem
+	return withPraiseCap(mergeSystem)
 }
 
 // MergeSchema is the merge call's answer shape: a summary's headline, take
@@ -56,22 +57,15 @@ type MergePart struct {
 	Reviewer string
 }
 
-// maxMergePaths is how many of a part's files the merge call is shown
-// before it counts the rest, and maxMergeTake how much of its take.
-const (
-	maxMergePaths = 20
-	maxMergeTake  = 1500
-)
-
 // BuildMerge renders the merge call's user message within budget tokens. It
 // holds the pull request's title and description, with the description cut to
 // a quarter of the budget. Then it holds each part's files and summary, and
 // then the findings, one line each, while they fit.
 func BuildMerge(title, body string, parts []MergePart, findings []Finding, budget int) string {
-	limit := budget * charsPerToken
+	limit := tokenBytes(budget)
 	var b strings.Builder
 	fmt.Fprintf(&b, "Pull request: %s\n", oneLine(title))
-	writeDescription(&b, body, limit/bodyShare)
+	writeDescription(&b, body, limit/tuning.Get().Review.BodyShare)
 	for i, p := range parts {
 		section := mergeSection(i, len(parts), p)
 		if b.Len()+len(section) > limit {
@@ -96,16 +90,18 @@ func BuildMerge(title, body string, parts []MergePart, findings []Finding, budge
 	return b.String()
 }
 
-// mergeSection is part i of n as the merge call is shown it: its files,
-// the first maxMergePaths named, and the summary its reviewer wrote.
+// mergeSection is part i of n as the merge call is shown it: its files, the
+// first tuning's Review.MaxMergePaths named, and the summary its reviewer
+// wrote.
 func mergeSection(i, n int, p MergePart) string {
+	r := tuning.Get().Review
 	paths := p.Paths
-	if more := len(paths) - maxMergePaths; more > 0 {
-		paths = append(slices.Clone(paths[:maxMergePaths]), fmt.Sprintf("and %d more", more))
+	if more := len(paths) - r.MaxMergePaths; more > 0 {
+		paths = append(slices.Clone(paths[:r.MaxMergePaths]), fmt.Sprintf("and %d more", more))
 	}
 	take := strings.Join(strings.Fields(p.Summary.Take), " ")
-	if len(take) > maxMergeTake {
-		take = textcut.Prefix(take, maxMergeTake) + " …"
+	if len(take) > r.MaxMergeTake {
+		take = textcut.Prefix(take, r.MaxMergeTake) + " …"
 	}
 	var b strings.Builder
 	by := ""

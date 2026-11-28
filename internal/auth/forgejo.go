@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // forgejoScopes read the profile, its emails and organization memberships.
@@ -105,25 +106,18 @@ func (forgejoAPI) mappingVars(ctx context.Context, c apiClient, id Identity) (ma
 	return vars, nil
 }
 
-// forgejoPageSize is the page size that a listing asks for, which is the
-// instance's default cap. forgejoMaxPages bounds how many pages a sign-in
-// reads.
-const (
-	forgejoPageSize = 50
-	forgejoMaxPages = 20
-)
-
 // forgejoPages calls fn with each page of the list at path. It stops when the
 // pages read reach the X-Total-Count that the instance sends. Without an
-// X-Total-Count, it stops when a page comes back short. fn returns how many
-// items its page held. A list longer than forgejoMaxPages is an error, not a
-// cut list: a role mapping must not decide on part of what the person belongs
-// to.
+// X-Total-Count, it stops only at an empty page: the instance caps the page
+// size asked for, so a short page may be a full one. fn returns how many
+// items its page held. A list longer than tuning's Auth.ForgejoMaxPages
+// pages, which one page past them confirms, is an error, not a cut list: a
+// role mapping must not decide on part of what the person belongs to.
 func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.RawMessage) (int, error)) error {
-	read := 0
-	for page := 1; page <= forgejoMaxPages; page++ {
+	read, t := 0, tuning.Get().Auth
+	for page := 1; page <= t.ForgejoMaxPages+1; page++ {
 		var raw json.RawMessage
-		p := fmt.Sprintf("%s?limit=%d&page=%d", path, forgejoPageSize, page)
+		p := fmt.Sprintf("%s?limit=%d&page=%d", path, t.ForgejoPageSize, page)
 		status, header, _, err := c.get(ctx, p, &raw)
 		switch {
 		case err != nil:
@@ -131,20 +125,28 @@ func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.Ra
 		case status/100 != 2:
 			return fmt.Errorf("%w: GET %s: status %d", ErrForgeAPI, p, status)
 		}
+		total, err := strconv.Atoi(header.Get("X-Total-Count"))
+		counted := err == nil
+		if page > t.ForgejoMaxPages {
+			var rest []json.RawMessage
+			if err := json.Unmarshal(raw, &rest); err == nil && len(rest) == 0 && (!counted || read >= total) {
+				return nil
+			}
+			break
+		}
 		n, err := fn(raw)
 		if err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrForgeAPI, path, err)
 		}
 		read += n
-		if total, err := strconv.Atoi(header.Get("X-Total-Count")); err == nil {
-			if n == 0 || read >= total {
-				return nil
-			}
-			continue
-		}
-		if n < forgejoPageSize {
+		if n == 0 || counted && read >= total {
 			return nil
 		}
+		// An unmet total means more remain, whatever a page past the cap
+		// holds.
+		if counted && page == t.ForgejoMaxPages {
+			break
+		}
 	}
-	return fmt.Errorf("%w: %s: more than %d pages", ErrForgeAPI, path, forgejoMaxPages)
+	return fmt.Errorf("%w: %s: more than %d pages", ErrForgeAPI, path, t.ForgejoMaxPages)
 }

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Settings holds non-secret application configuration from the configuration
@@ -155,16 +155,21 @@ type Settings struct {
 	// is kept, so turning it back on within the window reuses the index.
 	IndexGrace time.Duration `env:"KRITIKA_INDEX_GRACE" envDefault:"720h" yaml:"indexGrace,omitempty"`
 	// TranscriptRetention is how long a review's transcript is kept. It is at
-	// least a day, because members read it after the review.
+	// least tuning's Worker.MinRetention, a day, because members read it
+	// after the review.
 	TranscriptRetention time.Duration `env:"KRITIKA_TRANSCRIPT_RETENTION" envDefault:"720h" yaml:"transcriptRetention,omitempty"`
 	// DiffRetention is how long a review keeps the diff it was made from,
-	// the context it read, and the repository files it named. It is at least a
-	// day, because members read them after the review. The review and its
-	// findings stay.
+	// the context it read, and the repository files it named. It is at least
+	// tuning's Worker.MinRetention, a day, because members read them after
+	// the review. The review and its findings stay.
 	DiffRetention time.Duration `env:"KRITIKA_DIFF_RETENTION" envDefault:"720h" yaml:"diffRetention,omitempty"`
 
 	// Runner groups the runtime configuration used to create runner Jobs.
 	Runner `yaml:"runner,omitempty"`
+	// Tuning is the tunable constants, the file's tuning block and the
+	// KRITIKA_TUNING_* variables. Named, not embedded: Values has a Runner of
+	// its own.
+	Tuning tuning.Values `yaml:"tuning,omitempty"`
 	// fileEnv records file-supplied configuration by env name for Env's source
 	// reporting.
 	fileEnv map[string]bool
@@ -187,28 +192,27 @@ type Runner struct {
 	RunnerPodTemplate jsonObject `env:"KRITIKA_RUNNER_POD_TEMPLATE" yaml:"podTemplate,omitempty"`
 }
 
-// DefaultRunnerDeadline bounds a runner Job whose jobTemplate sets no
-// activeDeadlineSeconds.
-const DefaultRunnerDeadline = 15 * time.Minute
-
 // RunnerDeadline bounds a runner Job, its jobTemplate's
 // activeDeadlineSeconds, and so the work around it: the job that runs it
-// and the run's gateway token. Validate refuses one that is not a positive
-// whole number of seconds within jobtimeout.MaxRunnerDeadline.
-func (r Runner) RunnerDeadline() time.Duration {
-	d, _ := r.deadline()
+// and the run's gateway token. A jobTemplate that sets none gets tuning's
+// JobTimeout.RunnerDeadline. Validate refuses one that is not a positive
+// whole number of seconds within JobTimeout.MaxRunnerDeadline. Both read
+// the tuning values that s was loaded with, which serve's are too.
+func (s Settings) RunnerDeadline() time.Duration {
+	d, _ := s.deadline(s.Tuning.JobTimeout)
 	return d
 }
 
 // deadlineField names the deadline's setting in a refusal.
 const deadlineField = "runner.jobTemplate.spec.activeDeadlineSeconds: KRITIKA_RUNNER_JOB_TEMPLATE"
 
-// deadline is RunnerDeadline, and why the jobTemplate's is refused.
-func (r Runner) deadline() (time.Duration, error) {
+// deadline is RunnerDeadline under jt, and why the jobTemplate's is
+// refused.
+func (r Runner) deadline(jt tuning.JobTimeout) (time.Duration, error) {
 	spec, _ := r.RunnerJobTemplate["spec"].(map[string]any)
 	v, set := spec["activeDeadlineSeconds"]
 	if !set || v == nil {
-		return DefaultRunnerDeadline, nil
+		return jt.RunnerDeadline, nil
 	}
 	var seconds float64
 	switch n := v.(type) {
@@ -221,12 +225,12 @@ func (r Runner) deadline() (time.Duration, error) {
 	case float64:
 		seconds = n
 	default:
-		return DefaultRunnerDeadline, errors.New(deadlineField + " must be a number of seconds")
+		return jt.RunnerDeadline, errors.New(deadlineField + " must be a number of seconds")
 	}
-	if seconds != math.Trunc(seconds) || seconds < 1 || seconds > jobtimeout.MaxRunnerDeadline.Seconds() {
-		return DefaultRunnerDeadline, fmt.Errorf("%s must be a whole number of seconds from 1 to %d, "+
+	if seconds != math.Trunc(seconds) || seconds < 1 || seconds > jt.MaxRunnerDeadline().Seconds() {
+		return jt.RunnerDeadline, fmt.Errorf("%s must be a whole number of seconds from 1 to %d, "+
 			"or River's %s job timeout cap would cut the runner off early",
-			deadlineField, int64(jobtimeout.MaxRunnerDeadline/time.Second), jobtimeout.MaxJobTimeout)
+			deadlineField, int64(jt.MaxRunnerDeadline()/time.Second), jt.MaxJobTimeout)
 	}
 	return time.Duration(seconds) * time.Second, nil
 }
@@ -240,22 +244,21 @@ func (o *jsonObject) UnmarshalText(b []byte) error { return json.Unmarshal(b, (*
 
 // ByteSize is a size in bytes, a whole number of them or one with a
 // binary suffix as Kubernetes writes a quantity: Ki, Mi, Gi or Ti.
-type ByteSize int64
+type ByteSize = tuning.ByteSize
 
-// UnmarshalText parses the variable's value.
-func (b *ByteSize) UnmarshalText(text []byte) error {
-	s := string(text)
-	num, unit := s, int64(1)
-	for i, suffix := range []string{"Ki", "Mi", "Gi", "Ti"} {
-		if n, ok := strings.CutSuffix(s, suffix); ok {
-			num, unit = n, 1<<(10*(i+1))
-			break
+// TuningSupplied reports whether any of s's tuning came from the file or a
+// KRITIKA_TUNING_* variable, rather than from the defaults alone.
+func (s Settings) TuningSupplied() bool {
+	const prefix = "KRITIKA_TUNING_"
+	for name := range s.fileEnv {
+		if strings.HasPrefix(name, prefix) {
+			return true
 		}
 	}
-	n, err := strconv.ParseInt(num, 10, 64)
-	if err != nil || n < 0 || n > math.MaxInt64/unit {
-		return fmt.Errorf("config: %q is not a size: a whole number of bytes, or one followed by Ki, Mi, Gi or Ti", s)
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, prefix) {
+			return true
+		}
 	}
-	*b = ByteSize(n * unit)
-	return nil
+	return false
 }

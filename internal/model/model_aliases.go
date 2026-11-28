@@ -10,14 +10,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
-)
 
-const (
-	modelCatalogTTL     = 5 * time.Minute
-	modelCatalogTimeout = 30 * time.Second
-	// modelCatalogRetry is how long a catalog that failed to refresh stays
-	// in use before the next refresh.
-	modelCatalogRetry = time.Minute
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Pinner is a Stepper that resolves floating aliases, ~<family>-latest,
@@ -160,16 +154,16 @@ func (c *modelCatalog[T]) get(
 		if models, _, fresh := c.cached(key, now); fresh {
 			return models, nil
 		}
-		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), modelCatalogTimeout)
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Model.CatalogTimeout)
 		defer cancel()
 		models, err := fetch(fetchCtx)
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		switch {
 		case err == nil:
-			c.key, c.models, c.fetched, c.expiresAt = key, models, true, now().Add(modelCatalogTTL)
+			c.key, c.models, c.fetched, c.expiresAt = key, models, true, now().Add(tuning.Get().Model.CatalogTTL)
 		case c.fetched && c.key == key:
-			c.expiresAt = now().Add(modelCatalogRetry)
+			c.expiresAt = now().Add(tuning.Get().Model.CatalogRetry)
 		}
 		return models, err
 	})

@@ -10,6 +10,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/transcript"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestUsageFollowupGrouping(t *testing.T) {
@@ -163,6 +164,23 @@ func TestQueueAttention(t *testing.T) {
 	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - interval '1 hour' WHERE job_id = $1`, fresh); err != nil {
 		t.Fatal(err)
 	}
+	// A beat is judged by the window it carries, the claim by the leader's
+	// own: a 7m owner window 6m after a beat is live, and a job claimed 2m
+	// ago, within the claim grace, is too, though its 30s window passed.
+	windowed := func(number int, claimed, beat, window time.Duration) int64 {
+		t.Helper()
+		id := add(account, "running", number, claimed)
+		if err := s.HeartbeatJob(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - make_interval(secs => $2), abandon_after_at = now() - make_interval(secs => $2),
+			abandon_after = make_interval(secs => $3) WHERE job_id = $1`, id, beat.Seconds(), window.Seconds()); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	slowOwner := windowed(8, 10*time.Minute, 6*time.Minute, 7*time.Minute)
+	justClaimed := windowed(9, 2*time.Minute, 90*time.Second, 30*time.Second)
 	recent := add(account, "discarded", 4, time.Hour)
 	old := add(account, "discarded", 5, 25*time.Hour)
 	recovered := add(account, "discarded", 6, time.Hour)
@@ -184,6 +202,7 @@ func TestQueueAttention(t *testing.T) {
 			overdue, failure bool
 		}{
 			{stale, true, false}, {fresh, false, false}, {beating, false, false}, {recent, false, true}, {old, false, false}, {recovered, false, false}, {retrying, false, false},
+			{slowOwner, false, false}, {justClaimed, false, false},
 		} {
 			r, ok := got[tc.id]
 			if !ok || r.HeartbeatOverdue != tc.overdue || r.RecentFailure != tc.failure {
@@ -197,6 +216,7 @@ func TestQueueAttention(t *testing.T) {
 }
 
 func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
+	queueFinished := tuning.Get().Store.QueueFinished
 	s := openStore(t)
 	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
@@ -245,5 +265,59 @@ func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestQueueReadsBeforeTheWindowColumns: the queue and a pull request's live
+// job read a job_heartbeats from before its window columns, as a replica
+// serves them before the leader migrates, with the fixed 180 seconds.
+func TestQueueReadsBeforeTheWindowColumns(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "alpha", "alpha/one")
+	account := accountID(t, s, "alpha")
+	var repo string
+	if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 LIMIT 1`, account).Scan(&repo); err != nil {
+		t.Fatal(err)
+	}
+	// Claimed a minute ago, its first beat still to come: within the legacy
+	// leader's 180 seconds, though past this replica's 12.
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.HeartbeatInterval, v.JobTimeout.AbandonedBeats = 4*time.Second, 3 })
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 5, time.Minute, `{}`)
+	if _, err := s.owner.Exec(ctx, `UPDATE river_job SET args = jsonb_build_object('account_id', $2::text, 'repository_id', $3::text, 'number', 7)
+		WHERE id = $1`, id, account, repo); err != nil {
+		t.Fatal(err)
+	}
+	prev := heartbeatWindowColumns.Load()
+	heartbeatWindowColumns.Store(false)
+	t.Cleanup(func() { heartbeatWindowColumns.Store(prev) })
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		// A temporary table comes first on the search path: the table as it
+		// was before migration 0073.
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE job_heartbeats (job_id bigint PRIMARY KEY, heartbeat_at timestamptz NOT NULL) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		rows, err := ListQueue(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			if r.ID == id && r.HeartbeatOverdue {
+				t.Error("the queue shows a job awaiting its first beat overdue by this replica's window")
+			}
+		}
+		live, err := FindLiveReviewJob(ctx, tx, repo, 7)
+		if err == nil && (live == nil || live.HeartbeatOverdue) {
+			t.Errorf("live job = %+v, want it found and not overdue", live)
+		}
+		return err
+	}); err != nil {
+		t.Fatalf("reads on the old job_heartbeats: %v", err)
+	}
+	if heartbeatWindowColumns.Load() {
+		t.Fatal("the old table was taken for one with window columns")
 	}
 }

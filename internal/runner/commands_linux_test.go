@@ -20,6 +20,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // environHelper names the role the test binary plays when TestHideEnviron
@@ -110,7 +111,7 @@ func TestCommandTool(t *testing.T) {
 			t.Fatalf(".curlrc written for a curl that is not offered: %v", err)
 		}
 		k := run.Kept()
-		if k == nil || *k != (agent.Kept{Dir: filepath.Join(scratch[0], upstreamDir), Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: k.Budget}) {
+		if k == nil || *k != (agent.Kept{Dir: filepath.Join(scratch[0], upstreamDir), Rel: upstreamRel, FileBytes: int(tuning.Get().Runner.FetchDiffBytes), Budget: k.Budget}) {
 			t.Fatalf("a cut output is kept at %+v, want beside the checkout in %s", k, scratch[0])
 		}
 		cleanup()

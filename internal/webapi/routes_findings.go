@@ -11,10 +11,8 @@ import (
 
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// exportLimit is how many findings an export holds at most: the newest.
-const exportLimit = 1000
 
 // listFindings serves the account's findings, one per pull request and
 // fingerprint, most recently reported first.
@@ -76,9 +74,9 @@ func findingSummary(sum store.FindingSummary) FindingSummary {
 	}
 }
 
-// exportFindings serves the findings the list's filters keep, newest
-// first and at most exportLimit of them, as a file to download: Markdown,
-// to hand to a person or a coding agent, or JSON.
+// exportFindings serves the findings the list's filters keep, newest first
+// and at most tuning's WebAPI.ExportLimit of them, as a file to download:
+// Markdown, to hand to a person or a coding agent, or JSON.
 func (s *Server) exportFindings(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	format := r.URL.Query().Get("format")
 	if format != "markdown" && format != "json" {
@@ -97,7 +95,7 @@ func (s *Server) exportFindings(w http.ResponseWriter, r *http.Request, t *accou
 			return err
 		}
 		f.RepositoryID = id
-		rows, next, err = store.ListAccountFindings(ctx, tx, f, store.Page{Limit: exportLimit})
+		rows, next, err = store.ListAccountFindings(ctx, tx, f, store.Page{Limit: tuning.Get().WebAPI.ExportLimit})
 		return err
 	}); err != nil {
 		return err

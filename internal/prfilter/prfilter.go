@@ -23,6 +23,7 @@ import (
 	"cel.dev/cel-go/common/operators"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/interpreter"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Program is a compiled, type-checked PR-filter expression.
@@ -31,15 +32,6 @@ type Program struct {
 	ast *celast.AST
 	src string
 }
-
-// evalCostLimit caps the CEL cost of a single filter evaluation. The
-// expression is admin-supplied (trusted) and its attacker-influenced inputs
-// (pr.title, pr.labels) are forge-bounded. So this is defense-in-depth
-// against a pathological admin's expression rather than a likely attack. It
-// is a ceiling that no reasonable PR predicate approaches, while it still
-// bounds an accidental blow-up. CEL has no loops, so a finite cost is
-// guaranteed to exist.
-const evalCostLimit = 1_000_000
 
 // Compile parses and type-checks expr and returns a runnable Program. It
 // fails when the expression is syntactically invalid, references unknown
@@ -68,7 +60,8 @@ func Compile(expr string) (*Program, error) {
 	}
 	// OptimizeRegex compiles a constant pattern here, so a malformed one
 	// fails Compile instead of every Eval.
-	prg, err := env.Program(ast, cel.CostLimit(evalCostLimit), cel.OptimizeRegex(interpreter.MatchesRegexOptimization))
+	cost := cel.CostLimit(uint64(tuning.Get().PRFilter.EvalCostLimit))
+	prg, err := env.Program(ast, cost, cel.OptimizeRegex(interpreter.MatchesRegexOptimization))
 	if err != nil {
 		return nil, fmt.Errorf("prfilter: program: %w", err)
 	}

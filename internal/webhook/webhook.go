@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Verification outcomes. Callers map any non-nil error to HTTP 401.
@@ -62,10 +63,6 @@ func Verify(forge configfile.Forge, secret string, header http.Header, body []by
 	}
 }
 
-// gitlabTolerance is how far a GitLab delivery's timestamp can be from now:
-// the signature covers it, so an older one is a replay.
-const gitlabTolerance = 5 * time.Minute
-
 // verifyGitLab does signature verification on a delivery signed with a GitLab
 // webhook's signing token: webhook-signature is one or more space-separated
 // "v1," + base64 HMAC-SHA256 values over
@@ -86,7 +83,8 @@ func verifyGitLab(secret string, header http.Header, body []byte, now time.Time)
 	if id == "" || err != nil {
 		return ErrSignatureMismatch
 	}
-	if d := now.Sub(time.Unix(sec, 0)); d > gitlabTolerance || d < -gitlabTolerance {
+	tolerance := tuning.Get().Webhook.GitLabTolerance
+	if d := now.Sub(time.Unix(sec, 0)); d > tolerance || d < -tolerance {
 		return ErrSignatureMismatch
 	}
 	mac := hmac.New(sha256.New, key)

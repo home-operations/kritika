@@ -8,17 +8,109 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/riverqueue/river/rivertype"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // HeartbeatJob stamps the worker's heartbeat on the River job it is
-// working, so the leader knows the job's replica is alive.
+// working, so the leader knows the job's replica is alive. The beat carries
+// this replica's tuning JobTimeout.HeartbeatAbandonedAfter, which the leader
+// rescues the job by instead of its own: this replica fences the job a beat
+// before that.
 func (s *Store) HeartbeatJob(ctx context.Context, jobID int64) error {
-	if _, err := s.app.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at) VALUES ($1, now())
-		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = now()`, jobID); err != nil {
+	return heartbeatJob(ctx, s.app, jobID)
+}
+
+func heartbeatJob(ctx context.Context, db interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}, jobID int64) error {
+	abandonAfter := tuning.Get().JobTimeout.HeartbeatAbandonedAfter().Seconds()
+	if _, err := db.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at, abandon_after, abandon_after_at)
+		VALUES ($1, statement_timestamp(), make_interval(secs => $2), statement_timestamp())
+		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = excluded.heartbeat_at, abandon_after = excluded.abandon_after,
+			abandon_after_at = excluded.abandon_after_at`,
+		jobID, abandonAfter); err != nil {
 		return fmt.Errorf("store: heartbeat job %d: %w", jobID, err)
 	}
 	return nil
+}
+
+// heartbeatWindow is the abandonment window of a job's last beat h: the one
+// written with it, or 180 seconds for a beat of a replica from before the
+// window was written, which stamps heartbeat_at alone.
+const heartbeatWindow = `CASE WHEN h.abandon_after_at = h.heartbeat_at THEN h.abandon_after ELSE interval '180 seconds' END`
+
+// legacyAbandonedAfter is the abandonment window from before it was tuned.
+const legacyAbandonedAfter = 180 * time.Second
+
+// jobRescue is what StartJob merges into River's job metadata: the
+// attempt, by its claim time in microseconds, and how long River's rescuer
+// must leave it.
+type jobRescue struct {
+	Rescue *rescueHorizon `json:"kritika_rescue"`
+}
+
+type rescueHorizon struct {
+	AttemptedAtMicros int64   `json:"attempted_at_us"`
+	AfterSeconds      float64 `json:"after_seconds"`
+}
+
+// ErrJobNotRunning is StartJob's refusal of an attempt that is not running
+// any more: the leader rescued it before it started.
+var ErrJobNotRunning = errors.New("store: the job's attempt is not running")
+
+// StartJob takes the attempt of job that this replica claimed: it records
+// on River's row how long River's rescuer must leave the attempt, this
+// replica's tuning JobTimeout.RescueStuckJobsAfter, and stamps its first
+// heartbeat, together. River's rescuer, on whichever replica River elected,
+// computes a running job's timeout from its own settings, which during a
+// rollout can be shorter; JobRescueAfter hands it this one instead. A later
+// attempt, a snoozed job's included, is claimed anew and does not match what
+// an earlier one wrote. It returns when the first beat was sent, after any
+// wait for River's row, which this replica's fence counts from.
+func (s *Store) StartJob(ctx context.Context, job *rivertype.JobRow) (time.Time, error) {
+	if job.AttemptedAt == nil {
+		sent := time.Now()
+		return sent, s.HeartbeatJob(ctx, job.ID)
+	}
+	data, err := json.Marshal(jobRescue{&rescueHorizon{
+		AttemptedAtMicros: job.AttemptedAt.UnixMicro(), AfterSeconds: tuning.Get().JobTimeout.RescueStuckJobsAfter().Seconds(),
+	}})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("store: encode the rescue of job %d: %w", job.ID, err)
+	}
+	var sent time.Time
+	err = pgx.BeginFunc(ctx, s.app, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE river_job SET metadata = metadata || $2::jsonb
+			WHERE id = $1 AND state = 'running' AND attempted_at = $3`, job.ID, string(data), *job.AttemptedAt)
+		if err != nil {
+			return fmt.Errorf("store: record the rescue of job %d: %w", job.ID, err)
+		}
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("store: start job %d: %w", job.ID, ErrJobNotRunning)
+		}
+		sent = time.Now()
+		return heartbeatJob(ctx, tx, job.ID)
+	})
+	return sent, err
+}
+
+// JobRescueAfter is how long River's rescuer must leave job's attempt, as
+// StartJob recorded it. It is false when nothing was recorded for
+// this attempt: by a replica from before the record, or in the row as it
+// was claimed, which River's executor reads.
+func JobRescueAfter(job *rivertype.JobRow) (time.Duration, bool) {
+	if job == nil || job.AttemptedAt == nil || len(job.Metadata) == 0 {
+		return 0, false
+	}
+	var m jobRescue
+	if json.Unmarshal(job.Metadata, &m) != nil || m.Rescue == nil ||
+		m.Rescue.AttemptedAtMicros != job.AttemptedAt.UnixMicro() || m.Rescue.AfterSeconds <= 0 {
+		return 0, false
+	}
+	return time.Duration(m.Rescue.AfterSeconds * float64(time.Second)), true
 }
 
 // AbandonedJob is a River job in the running state whose worker has not
@@ -47,9 +139,10 @@ func (j AbandonedJob) RescueState() rivertype.JobState {
 }
 
 // AbandonedJobs lists up to limit running jobs whose worker stamped no
-// heartbeat for stale, oldest first. A job claimed less than stale ago
-// is left alone: its first beat can be on its way. Owner connection: River's
-// rows are outside row-level security and the leader spans every account.
+// heartbeat for the abandonment window that its last beat carries, oldest
+// first. A job claimed less than stale ago, the leader's own window, is left
+// alone: its first beat can be on its way. Owner connection: River's rows
+// are outside row-level security and the leader spans every account.
 func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit int) ([]AbandonedJob, error) {
 	if s.owner == nil {
 		return nil, errors.New("store: AbandonedJobs needs the owner connection")
@@ -57,7 +150,7 @@ func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit in
 	rows, err := s.owner.Query(ctx, `SELECT j.id, j.kind, j.attempt, j.max_attempts, j.metadata ? 'cancel_attempted_at'
 		FROM river_job j LEFT JOIN job_heartbeats h ON h.job_id = j.id
 		WHERE j.state = 'running' AND j.attempted_at < now() - make_interval(secs => $1)
-		  AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - make_interval(secs => $1))
+		  AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - `+heartbeatWindow+`)
 		ORDER BY j.id LIMIT $2`, stale.Seconds(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list abandoned jobs: %w", err)
@@ -77,7 +170,8 @@ func (s *Store) AbandonedJobs(ctx context.Context, stale time.Duration, limit in
 // the attempt's error. It also ends the reviews that the job left running,
 // which otherwise block every re-run of their head. It reports whether it
 // did: false when the job finished, was claimed again or stamped a
-// heartbeat within stale since it was listed. Owner connection.
+// heartbeat since it was listed, judged as AbandonedJobs judges one. Owner
+// connection.
 func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Duration, reason string) (bool, error) {
 	if s.owner == nil {
 		return false, errors.New("store: RescueJob needs the owner connection")
@@ -92,12 +186,18 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 		return false, fmt.Errorf("store: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
+	// The lock waits out a StartJob in flight, so that the update's own
+	// snapshot, taken after it, sees the first beat that one commits.
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM river_job WHERE id = $1 FOR UPDATE`, job.ID); err != nil {
+		return false, fmt.Errorf("store: lock job %d: %w", job.ID, err)
+	}
 	tag, err := tx.Exec(ctx, `UPDATE river_job j SET state = $3::text::river_job_state,
 		scheduled_at = CASE WHEN $3::text = 'retryable' THEN now() ELSE j.scheduled_at END,
 		finalized_at = CASE WHEN $3::text = 'retryable' THEN NULL ELSE now() END,
 		errors = array_append(j.errors, $4::jsonb)
-		WHERE j.id = $1 AND j.state = 'running' AND j.attempt = $2
-		  AND NOT EXISTS (SELECT 1 FROM job_heartbeats h WHERE h.job_id = j.id AND h.heartbeat_at >= now() - make_interval(secs => $5))`,
+		WHERE j.id = $1 AND j.state = 'running' AND j.attempt = $2 AND j.attempted_at < now() - make_interval(secs => $5)
+		  AND NOT EXISTS (SELECT 1 FROM job_heartbeats h WHERE h.job_id = j.id
+		    AND h.heartbeat_at >= now() - `+heartbeatWindow+`)`,
 		job.ID, job.Attempt, state, string(attemptErr), stale.Seconds())
 	if err != nil {
 		return false, fmt.Errorf("store: rescue job %d: %w", job.ID, err)
@@ -105,10 +205,11 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 	if tag.RowsAffected() == 0 {
 		return false, nil
 	}
-	if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now(),
+	if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, $4), finished_at = now(),
 		publication = CASE WHEN publication IS NOT NULL THEN '{}'::jsonb END
 		WHERE river_job_id = $1 AND finished_at IS NULL
-		AND NOT ($3 AND publication IS NOT NULL)`, job.ID, reason, job.RescueState() == rivertype.JobStateRetryable); err != nil {
+		AND NOT ($3 AND publication IS NOT NULL)`,
+		job.ID, reason, job.RescueState() == rivertype.JobStateRetryable, tuning.Get().Store.ErrorTextChars); err != nil {
 		return false, fmt.Errorf("store: end the reviews of job %d: %w", job.ID, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -237,20 +338,20 @@ func (s *Store) EndOrphanedRun(ctx context.Context, run OrphanedRun, reason stri
 		return fmt.Errorf("store: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
-	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000), finished_at = now()
-		WHERE id = $1 AND finished_at IS NULL`, run.ID, reason); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, $3), finished_at = now()
+		WHERE id = $1 AND finished_at IS NULL`, run.ID, reason, tuning.Get().Store.ErrorTextChars); err != nil {
 		return fmt.Errorf("store: end orphaned run %s: %w", run.ID, err)
 	}
 	switch {
 	case run.ReviewID != "":
-		if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now(),
+		if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, $3), finished_at = now(),
 		publication = CASE WHEN publication IS NOT NULL THEN '{}'::jsonb END
-			WHERE id = $1 AND finished_at IS NULL`, run.ReviewID, reason); err != nil {
+			WHERE id = $1 AND finished_at IS NULL`, run.ReviewID, reason, tuning.Get().Store.ErrorTextChars); err != nil {
 			return fmt.Errorf("store: end the review of run %s: %w", run.ID, err)
 		}
 	case run.IndexRunID != "":
-		if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'failed', error = left($2, 2000), finished_at = now()
-			WHERE id = $1 AND finished_at IS NULL`, run.IndexRunID, reason); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'failed', error = left($2, $3), finished_at = now()
+			WHERE id = $1 AND finished_at IS NULL`, run.IndexRunID, reason, tuning.Get().Store.ErrorTextChars); err != nil {
 			return fmt.Errorf("store: end the index run of run %s: %w", run.ID, err)
 		}
 	}

@@ -5,23 +5,24 @@ import (
 	"errors"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // leaderKey is the advisory lock every leader-eligible replica competes for.
 const leaderKey = "kritika-leader"
 
-// lockTimeout bounds one lock attempt and each ping of the held connection.
-// A lock attempt acquires the connection and tries the lock. Both are a round
-// trip on a server that is up. A server that is gone answers neither. The
-// bound turns that into a step-down or a retry instead of a wait on TCP
-// retransmissions.
-const lockTimeout = 5 * time.Second
-
 // LeaderStepDown is the longest a leader whose lock the server dropped goes
 // on leading, its duties running, before RunAsLeader notices: until its next
-// ping of the lock, every interval, fails within lockTimeout.
-func LeaderStepDown(interval time.Duration) time.Duration { return interval + lockTimeout }
+// ping of the lock, every interval, fails within tuning's Store.LockTimeout.
+// That timeout is taken as at least legacyLockTimeout, a leader's from before
+// it was tuned.
+func LeaderStepDown(interval time.Duration) time.Duration {
+	return interval + max(tuning.Get().Store.LockTimeout, legacyLockTimeout)
+}
+
+// legacyLockTimeout is the lock timeout from before it was tuned.
+const legacyLockTimeout = 5 * time.Second
 
 // RunAsLeader competes for the leader lock and, once held, calls lead with a
 // context that is canceled if the lock is lost or ctx ends. It returns when
@@ -38,10 +39,11 @@ func LeaderStepDown(interval time.Duration) time.Duration { return interval + lo
 // tenure, so it releases on its own if the process dies. The holder pings
 // that connection every interval, because a dropped connection releases the
 // lock server-side without the client noticing. The ping and each lock
-// attempt are bounded by lockTimeout. A server that died without closing its
-// sockets answers nothing. An unbounded ping will wait on the kernel's TCP
-// retransmissions, about fifteen minutes. During that wait, lead runs the
-// whole time while another replica can hold the lock on the new primary.
+// attempt are bounded by tuning's Store.LockTimeout. A server that died
+// without closing its sockets answers nothing. An unbounded ping will wait on
+// the kernel's TCP retransmissions, about fifteen minutes. During that wait,
+// lead runs the whole time while another replica can hold the lock on the new
+// primary.
 //
 // A database that cannot be reached when the lock is tried, as during a
 // failover, is tried again after retry rather than ending the process. A
@@ -77,7 +79,7 @@ func (s *Store) RunAsLeader(ctx context.Context, retry time.Duration, lead func(
 func (s *Store) tryLead(ctx context.Context, interval time.Duration, lead func(ctx context.Context) error) (bool, error) {
 	// The bound covers the attempt alone: the connection it yields is held
 	// for the tenure under ctx.
-	attemptCtx, cancelAttempt := context.WithTimeout(ctx, lockTimeout)
+	attemptCtx, cancelAttempt := context.WithTimeout(ctx, tuning.Get().Store.LockTimeout)
 	defer cancelAttempt()
 	conn, err := s.owner.Acquire(attemptCtx)
 	if err != nil {
@@ -128,19 +130,26 @@ loop:
 		}
 	}
 
-	// Best effort: the session ends with the connection anyway.
-	unlockCtx, unlockCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	unlockCtx, unlockCancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Store.SessionCloseTimeout)
 	defer unlockCancel()
-	_, _ = conn.Exec(unlockCtx, `SELECT pg_advisory_unlock(hashtext($1))`, leaderKey)
+	if _, err := conn.Exec(unlockCtx, `SELECT pg_advisory_unlock(hashtext($1))`, leaderKey); err != nil {
+		// A session that may still hold the lock must not go back to the
+		// pool: closing it ends the session, and the lock with it.
+		s.logger.Warn("leader lock not released; closing its session", "error", err)
+		closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Store.SessionCloseTimeout)
+		defer closeCancel()
+		_ = conn.Hijack().Close(closeCtx) // Close drops the connection even when it fails.
+		return true, leadErr
+	}
 	s.logger.Info("leader lock released")
 	return true, leadErr
 }
 
-// pingLock pings the held lock connection within lockTimeout. A ping that
-// runs out closes the connection. So the release that follows a step-down
-// discards it rather than handing a dead socket back to the pool.
+// pingLock pings the held lock connection within tuning's Store.LockTimeout. A
+// ping that runs out closes the connection. So the release that follows a
+// step-down discards it rather than handing a dead socket back to the pool.
 func (s *Store) pingLock(ctx context.Context, conn *pgxpool.Conn) error {
-	pingCtx, cancel := context.WithTimeout(ctx, lockTimeout)
+	pingCtx, cancel := context.WithTimeout(ctx, tuning.Get().Store.LockTimeout)
 	defer cancel()
 	return conn.Ping(pingCtx)
 }

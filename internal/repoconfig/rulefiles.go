@@ -14,9 +14,6 @@ import (
 // conventions from. A repository without them discovers none.
 var RuleFileDirs = []string{".agents/rules", ".claude/rules"}
 
-// MaxRuleFiles bounds how many rule files are read for one review.
-const MaxRuleFiles = 100
-
 // RuleFileExt is the extension that makes a file under a rule file
 // directory a rule.
 const RuleFileExt = ".md"

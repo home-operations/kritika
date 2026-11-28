@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func sampleData() RenderData {
@@ -667,7 +669,7 @@ func TestRenderSummaryCustom(t *testing.T) {
 			if !strings.Contains(body, "## Kritika Review\n") || !strings.Contains(body, notes[0]) {
 				t.Fatalf("fallback body should be the default and carry the note:\n%s", body)
 			}
-			if len(body) > MaxRenderBytes {
+			if len(body) > int(tuning.Get().Review.MaxRenderBytes) {
 				t.Fatalf("body is %d bytes", len(body))
 			}
 		})
@@ -787,6 +789,7 @@ func TestRenderMemoryIsBounded(t *testing.T) {
 }
 
 func TestMeasureRecursesIntoData(t *testing.T) {
+	maxCallBytes := tuning.Get().Review.MaxCallBytes()
 	d := sampleData()
 	d.Result.Findings[0].Explanation = strings.Repeat("x", 50_000)
 	if n := measure(reflect.ValueOf(d), 0, maxCallBytes); n < 50_000 {
@@ -820,7 +823,7 @@ func TestLoopsAreAllGuarded(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, err := execute(t.Context(), tt.src, sampleData(), MaxRenderBytes)
+			out, err := execute(t.Context(), tt.src, sampleData(), int(tuning.Get().Review.MaxRenderBytes))
 			if tt.fails {
 				if err == nil {
 					t.Fatalf("rendered %q, want an error", out)
@@ -842,7 +845,7 @@ func TestLoopStopsAtTheDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	out, err := execute(ctx, src, sampleData(), MaxRenderBytes)
+	out, err := execute(ctx, src, sampleData(), int(tuning.Get().Review.MaxRenderBytes))
 	elapsed := time.Since(started)
 	if err == nil || ctx.Err() == nil {
 		t.Fatalf("out = %q, err = %v after %s; want the deadline to stop the loop", out, err, elapsed)
@@ -875,7 +878,7 @@ func TestCallLimitsMatchTheDocs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.src, func(t *testing.T) {
-			out, err := execute(t.Context(), tt.src, sampleData(), MaxRenderBytes)
+			out, err := execute(t.Context(), tt.src, sampleData(), int(tuning.Get().Review.MaxRenderBytes))
 			if tt.fail != (err != nil) || (!tt.fail && out != tt.want) {
 				t.Fatalf("out = %q, err = %v", out, err)
 			}
@@ -889,7 +892,7 @@ func TestCallLimitsMatchTheDocs(t *testing.T) {
 func TestDeprecatedFunctionLogsNothing(t *testing.T) {
 	const helperEnv = "KRITIKA_REVIEW_TEST_HELPER"
 	if os.Getenv(helperEnv) != "" {
-		if _, err := execute(t.Context(), `{{ toJson "x" }}`, sampleData(), MaxRenderBytes); err != nil {
+		if _, err := execute(t.Context(), `{{ toJson "x" }}`, sampleData(), int(tuning.Get().Review.MaxRenderBytes)); err != nil {
 			t.Fatal(err)
 		}
 		return

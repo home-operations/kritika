@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -486,7 +487,7 @@ func TestIndexUpdateTakesAFreeSlotOnThePool(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
 	})
-	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", appStatementTimeout, appPoolMaxConns)
+	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", tuning.Get().Store.AppStatementTimeout, int32(tuning.Get().Store.AppPoolMaxConns))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +594,7 @@ func indexUpdateWaitsWithoutSession(t *testing.T, dial func(refused chan<- struc
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
 	})
-	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", appStatementTimeout, appPoolMaxConns)
+	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", tuning.Get().Store.AppStatementTimeout, int32(tuning.Get().Store.AppPoolMaxConns))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -731,7 +732,7 @@ func indexUpdateWaitsOnSession(t *testing.T, lost bool) {
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM model_leases WHERE model_key = $1`, model)
 	})
-	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", appStatementTimeout, appPoolMaxConns)
+	cfg, err := poolConfig(testEnv(t, "KRITIKA_TEST_APP_URL"), "kritika-app", tuning.Get().Store.AppStatementTimeout, int32(tuning.Get().Store.AppPoolMaxConns))
 	if err != nil {
 		t.Fatal(err)
 	}

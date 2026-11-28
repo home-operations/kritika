@@ -48,6 +48,7 @@ export default defineConfig({
           label: "Reference",
           items: [
             { label: "Configuration", slug: "configuration" },
+            { label: "Tuning", slug: "tuning" },
             { label: "Git forges", slug: "forges" },
             { label: "Models and providers", slug: "models" },
             { label: "Helm values", slug: "chart-values" },

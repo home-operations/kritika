@@ -10,6 +10,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // answerForge lists fixed inline comments and answers each login's
@@ -35,10 +36,10 @@ func (f *answerForge) Permission(_ context.Context, _, _, login string) (forge.P
 }
 
 // TestThreadAnswers: a finding's answers are the replies in its thread by
-// people with write access, the latest maxAnswers, oldest first, each with
-// its comment's id. A bot, a reader and a thread that no finding opened give
-// none, and each login is looked up once. A finding in a conversation that
-// an older comment opened, as Forgejo groups them, gets that
+// people with write access, the latest tuning's Worker.MaxAnswers, oldest
+// first, each with its comment's id. A bot, a reader and a thread that no
+// finding opened give none, and each login is looked up once. A finding in a
+// conversation that an older comment opened, as Forgejo groups them, gets that
 // conversation's replies.
 func TestThreadAnswers(t *testing.T) {
 	f := &answerForge{
@@ -62,9 +63,10 @@ func TestThreadAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	own := answerOf(f.comments[3])
+	caps := currentCaps()
+	own := answerOf(f.comments[3], caps)
 	own.Own = true
-	want := map[int64][]review.Answer{1: {own, answerOf(f.comments[4]), answerOf(f.comments[5]), answerOf(f.comments[6])}, 11: {answerOf(f.comments[11])}}
+	want := map[int64][]review.Answer{1: {own, answerOf(f.comments[4], caps), answerOf(f.comments[5], caps), answerOf(f.comments[6], caps)}, 11: {answerOf(f.comments[11], caps)}}
 	if want[1][1].Text != "second" || want[1][1].ID != 5 || want[1][1].Digest == "" {
 		t.Fatalf("answerOf = %+v", want[1][1])
 	}
@@ -123,8 +125,8 @@ func TestHeldOf(t *testing.T) {
 	}
 	// An edit past the cut that the review was shown changes the digest
 	// alone, and holds no answer either.
-	long := strings.Repeat("x", answerBytes+20)
-	was, edited := answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " keep it"}), answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " drop it"})
+	long := strings.Repeat("x", tuning.Get().Worker.AnswerBytes+20)
+	was, edited := answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " keep it"}, currentCaps()), answerOf(forge.Comment{ID: 10, Author: "maint", Body: long + " drop it"}, currentCaps())
 	if was.Text != edited.Text || was.Digest == edited.Digest {
 		t.Fatalf("answerOf: %+v against %+v", was, edited)
 	}

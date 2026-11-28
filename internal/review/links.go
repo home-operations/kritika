@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // redirectHost serves github.com's pages under another name. A github.com
@@ -37,7 +39,7 @@ func sourceLink(s string) string {
 	switch strings.ToLower(u.Hostname()) {
 	case "github.com":
 		link.Path, link.RawQuery, link.Fragment = u.Path, u.RawQuery, u.Fragment
-	case "api.github.com":
+	case tuning.GitHubAPIHost:
 		page, ok := apiPage(u)
 		if !ok {
 			return s

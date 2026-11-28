@@ -17,6 +17,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/gittest"
 	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func tree(t *testing.T, files map[string]string) *object.Tree {
@@ -62,7 +63,7 @@ func tree(t *testing.T, files map[string]string) *object.Tree {
 }
 
 func TestRepoFiles(t *testing.T) {
-	big := strings.Repeat("x", repoconfig.MaxFileBytes+1)
+	big := strings.Repeat("x", int(tuning.Get().RepoConfig.MaxFileBytes)+1)
 	tests := []struct {
 		name      string
 		files     map[string]string

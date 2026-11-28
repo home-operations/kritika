@@ -3,19 +3,11 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// mergeTimeout bounds writing a split review's summary, inside the time
-// publishing reads the agent's run in, and mergeMaxOutputTokens its answer:
-// a summary, with room for the review model's reasoning at its effort.
-const (
-	mergeTimeout         = 100 * time.Second
-	mergeMaxOutputTokens = 16384
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // mergeFailedNote is what the summary states when it joins the parts' own
@@ -47,7 +39,7 @@ func (p *publishPhase) mergeSummary(ctx context.Context, parts []store.AgentPart
 		return answer, ""
 	}
 	defer p.timeStage("merge")()
-	ctx, cancel := context.WithTimeout(ctx, mergeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Worker.MergeTimeout)
 	defer cancel()
 	var raw string
 	call := func(ctx context.Context) error {
@@ -102,7 +94,7 @@ func (p *publishPhase) merge(ctx context.Context, parts []review.MergePart, find
 		System: review.MergeSystemPrompt(p.parse.Diagram),
 		User:   review.BuildMerge(p.pr.title, body, parts, findings, p.settings.Agent.MaxPromptTokens),
 		Model:  ref.Model(), Session: "merge-" + p.reviewID, Effort: p.settings.Models.Effort,
-		Schema: review.MergeSchema(p.parse.Diagram), SchemaName: "summary", MaxTokens: mergeMaxOutputTokens,
+		Schema: review.MergeSchema(p.parse.Diagram), SchemaName: "summary", MaxTokens: tuning.Get().Worker.MergeMaxOutputTokens,
 	})
 
 	return resp.Raw, err

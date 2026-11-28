@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Identity is who a sign-in provider says a human is. Provider is the
@@ -52,14 +53,9 @@ type Facts struct {
 // ErrUnknownProvider is a sign-in the file does not configure.
 var ErrUnknownProvider = errors.New("auth: unknown sign-in")
 
-// failedBuildTTL is how long a failed build, that is, the discovery of an
-// unreachable OIDC issuer, is remembered before a sign-in retries it. So a
-// dead issuer does not cost a network round trip on every attempt.
-const failedBuildTTL = 30 * time.Second
-
 // providers builds each sign-in's Provider on first use and keeps it until
-// the file's sign-ins change. A failed build is remembered for
-// failedBuildTTL.
+// the file's sign-ins change. A failed build is remembered for tuning's
+// Auth.FailedBuildTTL.
 type providers struct {
 	webURL *url.URL
 	client *http.Client
@@ -103,7 +99,7 @@ func (ps *providers) get(ctx context.Context, auth configfile.Auth, name string)
 	if ok {
 		return p, signIn, nil
 	}
-	if hasFailed && ps.now().Sub(failed.at) < failedBuildTTL {
+	if hasFailed && ps.now().Sub(failed.at) < tuning.Get().Auth.FailedBuildTTL {
 		return nil, nil, failed.err
 	}
 	// Built outside the lock: OIDC discovery is a network round trip, and two

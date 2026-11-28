@@ -9,6 +9,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fileWithDefaults is minimal's app with instance defaults: a provider,
@@ -91,8 +92,9 @@ func TestProviderConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != DefaultConcurrency {
-		t.Fatalf("concurrency unset = %d, want %d", p.Concurrency, DefaultConcurrency)
+	want := tuning.Get().ConfigFile.DefaultConcurrency
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Concurrency != want {
+		t.Fatalf("concurrency unset = %d, want %d", p.Concurrency, want)
 	}
 	withConcurrency := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, concurrency: 5 }", 1)
 	f, err = Parse([]byte(withConcurrency))
@@ -117,8 +119,8 @@ func TestProviderTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Timeout != model.DefaultStepTimeout {
-		t.Fatalf("timeout unset = %s, want %s", p.Timeout, model.DefaultStepTimeout)
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Timeout != tuning.Get().Model.DefaultStepTimeout {
+		t.Fatalf("timeout unset = %s, want %s", p.Timeout, tuning.Get().Model.DefaultStepTimeout)
 	}
 	if got := f.StepBudget(&f.Accounts[0], "openrouter/big", "openrouter/small"); got != 12*time.Minute {
 		t.Fatalf("StepBudget by default = %s, want 12m", got)
@@ -271,5 +273,22 @@ func TestConfidenceSettings(t *testing.T) {
 	if want := []string{"confidence.model=openrouter/judge (file)", "confidence.fallback=openrouter/judge-small (file)", "confidence.effort=low (file)",
 		"confidence.threshold=4 (file)", "confidence.gate=true (file)", "confidence.risk=medium (file)"}; !slices.Equal(layer, want) {
 		t.Fatalf("file layer = %v, want %v", layer, want)
+	}
+}
+
+// TestProviderRetriesUnderAZeroCap: a cap of 0 forbids retries: a provider
+// with none parses, and one with any is refused.
+func TestProviderRetriesUnderAZeroCap(t *testing.T) {
+	setInstanceEnv(t)
+	tuning.Override(t, func(v *tuning.Values) { v.ConfigFile.MaxProviderRetries = 0 })
+	if err := tuning.Get().Validate(); err != nil {
+		t.Fatalf("a zero cap is invalid: %v", err)
+	}
+	if _, err := Parse([]byte(fileWithDefaults)); err != nil {
+		t.Fatalf("Parse with no retries: %v", err)
+	}
+	withRetry := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, retries: 1 }", 1)
+	if _, err := Parse([]byte(withRetry)); err == nil || !strings.Contains(err.Error(), "retries must be between 0 and 0") {
+		t.Fatalf("Parse with a retry under a zero cap = %v", err)
 	}
 }

@@ -2,7 +2,10 @@ package review
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // The reviewer's standing instructions, in the pieces that SystemPrompt
@@ -100,7 +103,27 @@ the take does not restate the findings or their fixes: kritika lists the finding
 take gives no verdict, does not count the findings or say there are none, and does not
 reassure that nothing else changes or that the merge is safe. It omits how the code does what it does, what you
 read and how, generic caveats about what a diff cannot show, and routine advice such as watching logs. Praise lists
-at most three specific things done well, and is empty when nothing stands out.`
+at most ` + praiseCap + ` specific things done well, and is empty when nothing stands out.`
+
+// praiseCap stands in summarySpec for tuning's Review.MaxPraise, which
+// withPraiseCap writes in as the schema's praise description does, so the
+// two always ask for the same count.
+const praiseCap = "{praise cap}"
+
+func withPraiseCap(s string) string {
+	return strings.Replace(s, praiseCap, praiseCount(), 1)
+}
+
+// praiseCount is tuning's Review.MaxPraise as prose writes it: in words up
+// to ten.
+func praiseCount() string {
+	n := tuning.Get().Review.MaxPraise
+	words := [...]string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
+	if n >= 0 && n < len(words) {
+		return words[n]
+	}
+	return strconv.Itoa(n)
+}
 
 // crossReference is how every prompt whose text the forge renders cites
 // another repository's issue or pull request. The forge links a bare #N to
@@ -260,7 +283,7 @@ type Rule struct {
 // asks for a diagram in the summary. bumps says that the change moves
 // versions (see Bumps), which the user message lists.
 func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search, diagram, bumps bool) string {
-	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules
+	system := systemLead + agenticSees + "\n\n" + systemReport + withPraiseCap(systemRules)
 	if diagram {
 		system += summaryDiagram
 	}

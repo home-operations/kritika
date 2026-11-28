@@ -14,7 +14,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritika/internal/executor"
-	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fakeState is a run as the database reports it, changed by the test while
@@ -292,16 +292,32 @@ func TestHeartbeatStaleOutlastsReportRetries(t *testing.T) {
 		age  time.Duration
 		want error
 	}{
-		{"past the old six missed beats", 6*runspec.HeartbeatInterval + time.Second, nil},
-		{"as long as a report's last attempt", runspec.ReportRetryWindow + runspec.ReportTimeout, nil},
-		{"past the bound", heartbeatStale + time.Second, errHeartbeatLost},
+		{"past the old six missed beats", 6*tuning.Get().RunSpec.HeartbeatInterval + time.Second, nil},
+		{"as long as a report's last attempt", tuning.Get().RunSpec.ReportRetryWindow + tuning.Get().RunSpec.ReportTimeout, nil},
+		{"past the bound", tuning.Get().HeartbeatStale() + time.Second, errHeartbeatLost},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			s := supervision{stale: heartbeatStale, logger: slog.New(slog.DiscardHandler),
+			s := supervision{stale: tuning.Get().HeartbeatStale(), logger: slog.New(slog.DiscardHandler),
 				heartbeat: func(context.Context) (time.Duration, bool, error) { return tt.age, true, nil }}
 			if err := s.check(t.Context()); !errors.Is(err, tt.want) {
 				t.Fatalf("check = %v, want %v", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestRunSupervisionKeepsTheLegacyStaleCutoff: a stale cutoff tuned under
+// the one from before it was tuned is held to that one, which a runner of
+// an earlier release beating every 15 seconds needs; a longer one stands.
+func TestRunSupervisionKeepsTheLegacyStaleCutoff(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.RunSpec.HeartbeatInterval, v.RunSpec.ReportRetryWindow, v.RunSpec.ReportTimeout = time.Second, 5*time.Second, 5*time.Second
+	})
+	if s := runSupervision(nil, "", "", "", "", "", 0, slog.New(slog.DiscardHandler)); s.stale != legacyHeartbeatStale {
+		t.Fatalf("stale = %s, want the legacy %s", s.stale, legacyHeartbeatStale)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.RunSpec.ReportRetryWindow = 10 * time.Minute })
+	if s := runSupervision(nil, "", "", "", "", "", 0, slog.New(slog.DiscardHandler)); s.stale != tuning.Get().HeartbeatStale() {
+		t.Fatalf("stale = %s, want the tuned %s", s.stale, tuning.Get().HeartbeatStale())
 	}
 }

@@ -2,9 +2,12 @@ package review
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestShortSHA(t *testing.T) {
@@ -119,13 +122,14 @@ func TestSameBriefFocus(t *testing.T) {
 }
 
 func TestCleanFocus(t *testing.T) {
-	long := strings.Repeat("x", MaxFocusRunes+5)
+	maxFocusRunes := tuning.Get().Review.MaxFocusRunes
+	long := strings.Repeat("x", maxFocusRunes+5)
 	for in, want := range map[string]string{
 		"  the  retry\tloop ":               "the retry loop",
 		"first line\nsecond line":           "first line",
 		"\r\nafter a blank line":            "after a blank line",
 		"with a \x07bell and \x1b[31mcolor": "with a bell and [31mcolor",
-		long:                                long[:MaxFocusRunes],
+		long:                                long[:maxFocusRunes],
 		"ünïcödé ✓":                         "ünïcödé ✓",
 	} {
 		if got := CleanFocus(in); got != want {
@@ -135,7 +139,7 @@ func TestCleanFocus(t *testing.T) {
 }
 
 // TestBuildListsBumps: the versions the change moves follow the changed
-// files, each on its line, as many as maxBumpsBytes holds.
+// files, each on its line, as many as tuning's Review.MaxBumpsBytes holds.
 func TestBuildListsBumps(t *testing.T) {
 	in := Input{Repository: "a/b", Number: 1, Changed: []string{"go.mod"}, Bumps: []Bump{{Path: "go.mod", Line: 7, Old: "v1.2.3", New: "v1.3.0"}}}
 	msg, _, _, _ := Build(in)
@@ -146,7 +150,7 @@ func TestBuildListsBumps(t *testing.T) {
 		t.Fatalf("a change that moves no version lists some:\n%s", msg)
 	}
 	item := "- go.mod:7: v1.2.3 to v1.3.0\n"
-	fits := maxBumpsBytes / len(item)
+	fits := tuning.Get().Review.MaxBumpsBytes / len(item)
 	in.Bumps = slices.Repeat(in.Bumps, fits+3)
 	if msg, _, _, _ = Build(in); !strings.Contains(msg, "- and 3 more\n") || strings.Count(msg, item) != fits {
 		t.Fatalf("a long list is not cut at %d items:\n%s", fits, msg)
@@ -218,7 +222,7 @@ func TestBuildBumpRanges(t *testing.T) {
 func TestBuildBumpAnnotationsFitBudget(t *testing.T) {
 	const delta = "diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -7 +7 @@\n-require x/y v1.2.9\n+require x/y v1.3.0\n"
 	const item = "- go.mod:7: v1.2.3 to v1.3.0 (v1.2.9 to v1.3.0 since your last review)\n"
-	fits := maxBumpsBytes / len(item)
+	fits := tuning.Get().Review.MaxBumpsBytes / len(item)
 	bumps := slices.Repeat(Bumps(strings.Replace(delta, "v1.2.9", "v1.2.3", 1)), fits+3)
 	fresh, _, _, _ := Build(Input{Bumps: bumps, Incremental: &IncrementalInput{DeltaDiff: delta}})
 	continued, _, _ := BuildContinuation(ContinueInput{Bumps: bumps, DeltaDiff: delta})
@@ -306,5 +310,78 @@ func TestBuildReplyWrites(t *testing.T) {
 	})
 	if !strings.Contains(msg, "--- reader ---\nkeep it") || !strings.Contains(msg, "--- writer [write access] [reply if needed] ---\nis it?") {
 		t.Fatalf("thread:\n%s", msg)
+	}
+}
+
+// TestBuildAtTheLeastBodyShare: at the least body share Validate takes, a
+// description and linked issues each far over the budget leave a small
+// diff its room, and the message within the budget.
+func TestBuildAtTheLeastBodyShare(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.BodyShare = tuning.MinBodyShare })
+	const budget = 2_000
+	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n"
+	long := strings.Repeat("words ", 4*budget*tuning.Get().Review.CharsPerToken)
+	msg, omitted, _, _ := Build(Input{
+		Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Diff: diff, BudgetTokens: budget,
+		Body: long, Issues: []Issue{{ID: "#1", Title: "one", Body: long}, {ID: "#2", Title: "two", Body: long}},
+	})
+	if len(omitted) != 0 || !strings.Contains(msg, diff) {
+		t.Fatalf("omitted %v; want the diff shown in full", omitted)
+	}
+	if most := budget * tuning.Get().Review.CharsPerToken; len(msg) > most {
+		t.Fatalf("message of %d bytes, want at most the budget's %d", len(msg), most)
+	}
+}
+
+// TestBuildUnderTheLargestBudget: a least user budget as large as an int
+// goes makes every budget the largest, which the builders take in bytes as
+// the largest int rather than a product wrapped negative, and build every
+// message whole.
+func TestBuildUnderTheLargestBudget(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.MinUserBudget = math.MaxInt })
+	budget := UserBudget("system prompt", 0)
+	if budget != math.MaxInt || tokenBytes(budget) != math.MaxInt || tokenBytes(0) != 0 {
+		t.Fatalf("UserBudget = %d, in bytes %d; want the largest int both", budget, tokenBytes(budget))
+	}
+	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n"
+	in := Input{Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Diff: diff, BudgetTokens: budget,
+		Body: "Adds y.", Issues: []Issue{{ID: "#1", Title: "one", Body: "We need y."}}, References: []Reference{{Path: "README.md"}}}
+	msg, omitted, _, _ := Build(in)
+	if len(omitted) != 0 || !strings.Contains(msg, diff) || !strings.Contains(msg, "Adds y.") || !strings.Contains(msg, "We need y.") {
+		t.Fatalf("omitted %v; message:\n%s", omitted, msg)
+	}
+	if !SameBrief(msg, in) {
+		t.Fatal("the message is not the same brief as its input")
+	}
+	cont, omitted, _ := BuildContinuation(ContinueInput{DeltaDiff: diff, BudgetTokens: budget})
+	if len(omitted) != 0 || !strings.Contains(cont, diff) {
+		t.Fatalf("continuation omitted %v:\n%s", omitted, cont)
+	}
+	if merge := BuildMerge("t", "Adds y.", nil, nil, budget); !strings.Contains(merge, "Adds y.") {
+		t.Fatalf("merge message:\n%s", merge)
+	}
+}
+
+// TestBuildUnderTheLargestReserves: reserves as large as an int goes, taken
+// from a budget the header already spent, leave no room rather than
+// wrapping to a room that holds the whole diff.
+func TestBuildUnderTheLargestReserves(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Review.OmissionRoom = math.MaxInt
+		v.Review.NoteRoom = math.MaxInt
+	})
+	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n"
+	_, omitted, _, _ := Build(Input{Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Diff: diff, BudgetTokens: 10})
+	if !slices.Equal(omitted, []string{"a.go"}) {
+		t.Fatalf("omitted %v; want the diff left out and its path reported", omitted)
+	}
+	_, omitted, _, _ = Build(Input{Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Diff: diff, BudgetTokens: 10,
+		Incremental: &IncrementalInput{DeltaDiff: diff, Prior: []Finding{{Path: "a.go", Line: 1, Title: "old"}}}})
+	if !slices.Equal(omitted, []string{"a.go"}) {
+		t.Fatalf("incremental: omitted %v; want the diff left out and its path reported", omitted)
+	}
+	cont, omitted, _ := BuildContinuation(ContinueInput{DeltaDiff: diff, BudgetTokens: 10, Prior: []Finding{{Path: "a.go", Line: 1, Title: "old"}}})
+	if !slices.Equal(omitted, []string{"a.go"}) || strings.Contains(cont, "+y") {
+		t.Fatalf("continuation: omitted %v; want the delta left out and its path reported:\n%s", omitted, cont)
 	}
 }

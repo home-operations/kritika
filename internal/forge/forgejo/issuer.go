@@ -21,6 +21,7 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Forgejo authenticates an authorized integration by a JWT that the
@@ -33,17 +34,6 @@ import (
 // issuerPath is where the documents live under the dashboard's URL, so
 // the issuer is one URL for every connection.
 const issuerPath = "/forgejo"
-
-// tokenTTL is how long a token that kritika calls the API with lasts.
-// runnerTokenTTL is how long a token that a runner fetches with lasts. That
-// token is read once a run starts, but it can wait in a queue first. skew is
-// how far a token's issue and not-before times are set back. Forgejo refuses
-// a token issued in its future and allows no leeway.
-const (
-	tokenTTL       = 10 * time.Minute
-	runnerTokenTTL = time.Hour
-	skew           = time.Minute
-)
 
 // IssuerURL is the issuer kritika's tokens name when the dashboard is at
 // web: the discovery document is at its .well-known/openid-configuration.
@@ -84,8 +74,8 @@ func (i *Issuer) PublicKey() jose.JSONWebKey {
 }
 
 // Token signs a token for audience, the integration's. The token lasts ttl
-// from now and is issued skew ago. The subject is kritika, which a claim rule
-// on the integration can pin.
+// from now and is issued tuning's Forgejo.TokenSkew ago. The subject is
+// kritika, which a claim rule on the integration can pin.
 func (i *Issuer) Token(audience string, ttl time.Duration, now time.Time) (string, error) {
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: i.key},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", i.kid))
@@ -96,9 +86,10 @@ func (i *Issuer) Token(audience string, ttl time.Duration, now time.Time) (strin
 	if _, err := rand.Read(jti); err != nil {
 		return "", fmt.Errorf("forgejo: token id: %w", err)
 	}
+	issued := now.Add(-tuning.Get().Forgejo.TokenSkew)
 	claims := jwt.Claims{
 		Issuer: i.url, Subject: "kritika", Audience: jwt.Audience{audience}, ID: base64.RawURLEncoding.EncodeToString(jti),
-		IssuedAt: jwt.NewNumericDate(now.Add(-skew)), NotBefore: jwt.NewNumericDate(now.Add(-skew)), Expiry: jwt.NewNumericDate(now.Add(ttl)),
+		IssuedAt: jwt.NewNumericDate(issued), NotBefore: jwt.NewNumericDate(issued), Expiry: jwt.NewNumericDate(now.Add(ttl)),
 	}
 	token, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {

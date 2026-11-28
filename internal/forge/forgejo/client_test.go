@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fakeForge is enough of a Forgejo or Gitea instance for the client: a
@@ -159,7 +160,8 @@ func TestNewClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims, _ := verify(t, issuer, tok); claims.Audience[0] != "aud-read" || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) != runnerTokenTTL+skew {
+	ft := tuning.Get().Forgejo
+	if claims, _ := verify(t, issuer, tok); claims.Audience[0] != "aud-read" || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) != ft.RunnerTokenTTL+ft.TokenSkew {
 		t.Fatalf("runner token claims = %+v", claims)
 	}
 	c, _ = NewClient("forge.example.com", issuer, "aud-api", "", nil)
@@ -199,7 +201,7 @@ func TestPullRequestReads(t *testing.T) {
 		_, _ = io.WriteString(w, "diff --git a/x b/x\n")
 	})
 	f.mux.HandleFunc("GET "+repoAPI+"/pulls/9.diff", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write(make([]byte, maxDiffBytes+1))
+		_, _ = w.Write(make([]byte, tuning.Get().Forgejo.MaxDiffBytes+1))
 	})
 	c := f.client(t)
 	base, err := c.MergeBase(t.Context(), "acme", "widgets", 7, "main", "head1")
@@ -247,7 +249,7 @@ func TestRepositoryReads(t *testing.T) {
 		_, _ = io.WriteString(w, "a: 1\n")
 	})
 	f.mux.HandleFunc("GET "+repoAPI+"/raw/big", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write(make([]byte, forge.MaxFileBytes+1))
+		_, _ = w.Write(make([]byte, tuning.Get().Forge.MaxFileBytes+1))
 	})
 	f.json("GET", repoAPI+"/issues/3", 200, map[string]any{"number": 3, "title": "bug", "body": "it breaks", "html_url": "https://x/i/3"})
 	f.json("GET", repoAPI+"/issues/7", 200, map[string]any{"number": 7, "title": "pr", "pull_request": map[string]any{"merged": false}})
@@ -587,6 +589,7 @@ func TestReactions(t *testing.T) {
 
 func TestListOpenPullRequests(t *testing.T) {
 	f := newFake(t)
+	pageSize := tuning.Get().Forgejo.PageSize
 	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("state") != "open" || q.Get("sort") != "recentupdate" || q.Get("limit") != fmt.Sprint(pageSize) {
@@ -611,8 +614,33 @@ func TestListOpenPullRequests(t *testing.T) {
 	}
 	since := time.Date(2026, 10, 20, 11, 50, 0, 0, time.UTC)
 	recent, err := c.ListOpenPullRequests(t.Context(), "acme", "widgets", since)
-	if err != nil || len(recent) != 11 || f.called("GET "+repoAPI+"/pulls") != 3 {
+	// The walk of all reads on to an empty third page. The walk since stops
+	// at its first page.
+	if err != nil || len(recent) != 11 || f.called("GET "+repoAPI+"/pulls") != 4 {
 		t.Fatalf("ListOpenPullRequests(since) = %d, %v, calls %d; want the walk to stop at the first older one", len(recent), err, f.called("GET "+repoAPI+"/pulls"))
+	}
+}
+
+// TestListHeaderlessCappedPages: without a Link or an X-Total-Count, a short
+// page is not taken for the last. The walk goes on to an empty page.
+func TestListHeaderlessCappedPages(t *testing.T) {
+	f := newFake(t)
+	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
+		var page []map[string]any
+		switch r.URL.Query().Get("page") {
+		case "1":
+			page = []map[string]any{
+				{"number": 3, "updated_at": "2026-10-20T12:00:00Z", "user": map[string]any{"login": "x"}},
+				{"number": 2, "updated_at": "2026-10-20T11:00:00Z", "user": map[string]any{"login": "x"}},
+			}
+		case "2":
+			page = []map[string]any{{"number": 1, "updated_at": "2026-10-20T10:00:00Z", "user": map[string]any{"login": "x"}}}
+		}
+		_ = json.NewEncoder(w).Encode(page)
+	})
+	all, err := f.client(t).ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{})
+	if err != nil || len(all) != 3 || f.called("GET "+repoAPI+"/pulls") != 3 {
+		t.Fatalf("ListOpenPullRequests = %d, %v after %d calls; want all 3 by an empty third page", len(all), err, f.called("GET "+repoAPI+"/pulls"))
 	}
 }
 
@@ -689,7 +717,7 @@ func TestErrorsCarryTheStatus(t *testing.T) {
 	})
 	c := f.client(t)
 	_, err := c.ListConversation(t.Context(), "acme", "widgets", 7)
-	if err == nil || !strings.Contains(err.Error(), "500") || len(err.Error()) > maxErrorBody+200 {
+	if err == nil || !strings.Contains(err.Error(), "500") || len(err.Error()) > int(tuning.Get().Forgejo.MaxErrorBody)+200 {
 		t.Fatalf("err = %v; want the status and a bounded body", err)
 	}
 	if _, ok := errors.AsType[*apiError](err); !ok || errors.Is(err, forge.ErrNotFound) {
@@ -757,7 +785,7 @@ func TestBearerIsReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now = now.Add(tokenTTL - 2*time.Minute)
+	now = now.Add(tuning.Get().Forgejo.TokenTTL - 2*time.Minute)
 	if again, _ := c.bearer(); again != first {
 		t.Fatal("a token with two minutes left is kept")
 	}
@@ -787,5 +815,82 @@ func TestStatus(t *testing.T) {
 				t.Fatalf("Status = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestBearerExpiresWithTheToken: a token is replaced by the expiry that it
+// carries, in whole seconds, so a token minted late in a second is not used
+// past it under a sub-second reuse margin.
+func TestBearerExpiresWithTheToken(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Forgejo.TokenReuseMargin = 100 * time.Millisecond })
+	c := newFake(t).client(t)
+	now := time.Date(2026, 10, 22, 12, 0, 0, 900*int(time.Millisecond), time.UTC)
+	c.now = func() time.Time { return now }
+	first, err := c.bearer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 50ms before the token's own expiry, at 12:10:00, but 850ms before
+	// minting time plus its lifetime.
+	now = time.Date(2026, 10, 22, 12, 9, 59, 950*int(time.Millisecond), time.UTC)
+	if again, _ := c.bearer(); again == first {
+		t.Fatal("a token within the margin of its encoded expiry is reused")
+	}
+}
+
+// TestListPagesThatShareTheirFirstItem: a listing that shifts between pages
+// can open a page with the previous page's first item; with the Link that
+// names a next page, or another item after it, the walk goes on.
+func TestListPagesThatShareTheirFirstItem(t *testing.T) {
+	f := newFake(t)
+	pr := func(n int) map[string]any {
+		return map[string]any{"number": n, "updated_at": "2026-10-20T12:00:00Z", "user": map[string]any{"login": "x"}}
+	}
+	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
+		var page []map[string]any
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("Link", `<`+f.srv.URL+`/next>; rel="next"`)
+			page = []map[string]any{pr(5), pr(4)}
+		case "2":
+			w.Header().Set("Link", `<`+f.srv.URL+`/next>; rel="next"`)
+			page = []map[string]any{pr(5), pr(3)}
+		case "3":
+			page = []map[string]any{pr(2)}
+		}
+		_ = json.NewEncoder(w).Encode(page)
+	})
+	all, err := f.client(t).ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{})
+	numbers := make([]int, 0, len(all))
+	for _, p := range all {
+		numbers = append(numbers, p.Number)
+	}
+	if err != nil || !slices.Equal(numbers, []int{5, 4, 5, 3, 2}) {
+		t.Fatalf("ListOpenPullRequests = %v, %v; want every page read", numbers, err)
+	}
+}
+
+// TestListStopsAtALinkWithNoNext: a page whose Link names a previous page
+// and no next one is the last, and no page past it is asked for.
+func TestListStopsAtALinkWithNoNext(t *testing.T) {
+	f := newFake(t)
+	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
+		var page []map[string]any
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("Link", `<`+f.srv.URL+`/next>; rel="next"`)
+			page = []map[string]any{{"number": 2, "updated_at": "2026-10-20T12:00:00Z", "user": map[string]any{"login": "x"}}}
+		case "2":
+			w.Header().Set("Link", `<`+f.srv.URL+`/prev>; rel="prev"`)
+			page = []map[string]any{{"number": 1, "updated_at": "2026-10-20T11:00:00Z", "user": map[string]any{"login": "x"}}}
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(page)
+	})
+	all, err := f.client(t).ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{})
+	if err != nil || len(all) != 2 || f.called("GET "+repoAPI+"/pulls") != 2 {
+		t.Fatalf("ListOpenPullRequests = %d, %v after %d calls; want both, in two", len(all), err, f.called("GET "+repoAPI+"/pulls"))
 	}
 }

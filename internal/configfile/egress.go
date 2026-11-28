@@ -9,13 +9,14 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // GitHubHost is the forge a GitHub App and GitHub sign-in talk to, and
 // GitHubAPIHost its API, which a runner's gh calls.
 const (
 	GitHubHost    = "github.com"
-	GitHubAPIHost = "api.github.com"
+	GitHubAPIHost = tuning.GitHubAPIHost
 )
 
 // EgressCredential is one host's credential. Scheme is how the gateway

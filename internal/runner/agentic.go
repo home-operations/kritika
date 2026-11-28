@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // submitReview is the tool whose input is the review contract.
@@ -54,13 +55,13 @@ type packView struct {
 // Notes the runner adds to the pack about the repository's files, which
 // the review's summary states.
 const (
-	noteRulesLeft         = "%d review rule(s) left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given: %s"
+	noteRulesLeft         = "%d review rule(s) left out, past the %s of rule text or %s of rule files a review is given: %s"
 	noteDiffOmitted       = "%d diff file(s) left out of the prompt to fit its budget, for the agent to read with read_diff: %s"
 	noteReferencesOmitted = "%d reference file(s) left out of the prompt to fit its budget"
 	noteContextOmitted    = "%d context chunk(s) left out of the prompt to fit its budget"
 	noteDiffNotKept       = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
 	noteSplit             = "Reviewed in %d parts, each by an agent of its own"
-	noteSkillsUnloaded    = "%d skill(s) offered by name rather than loaded, past the 32 KiB loaded skills are given"
+	noteSkillsUnloaded    = "%d skill(s) offered by name rather than loaded, past the %s loaded skills are given"
 )
 
 // promptInputs is what the repository's files and the configuration give the
@@ -91,19 +92,21 @@ func (in promptInputs) ruleIDs() []string {
 // when conditions of those rules.
 func newPromptInputs(p runspec.Spec, files repoconfig.Files, found []repoconfig.Skill, changed []string) promptInputs {
 	var in promptInputs
+	limits := tuning.Get().RepoConfig
 	if sk := p.Prompt.Skills; sk != nil {
 		offered := repoconfig.OfferedSkills(found, sk.Scope, sk.Off, changed)
 		in.skills, in.loaded = offered.Listed, offered.Loaded
 		if offered.Left > 0 {
-			in.notes = append(in.notes, fmt.Sprintf(noteSkillsLeft, offered.Left))
+			in.notes = append(in.notes, fmt.Sprintf(noteSkillsLeft, offered.Left, sizeNote(limits.MaxSkillListingBytes)))
 		}
 		if offered.Unloaded > 0 {
-			in.notes = append(in.notes, fmt.Sprintf(noteSkillsUnloaded, offered.Unloaded))
+			in.notes = append(in.notes, fmt.Sprintf(noteSkillsUnloaded, offered.Unloaded, sizeNote(limits.MaxSkillLoadedBytes)))
 		}
 	}
 	var left []string
 	if in.rules, left = repoconfig.ActiveRules(p.Prompt.Rules, files, changed); len(left) > 0 {
-		in.notes = append(in.notes, fmt.Sprintf(noteRulesLeft, len(left), strings.Join(left, ", ")))
+		in.notes = append(in.notes, fmt.Sprintf(noteRulesLeft, len(left),
+			sizeNote(limits.MaxRulesBytes), sizeNote(limits.MaxRuleFileBytes), strings.Join(left, ", ")))
 	}
 	for _, c := range repoconfig.ActiveContext(p.Prompt.Context, changed) {
 		in.references = append(in.references, review.Reference{Path: c.Path, Description: c.Description})
@@ -136,13 +139,11 @@ type agentPrompt struct {
 	carried           *agent.Conversation
 }
 
-// noteOmittedPaths is how many omitted paths a note names.
-const noteOmittedPaths = 5
-
-// namePaths names the first noteOmittedPaths of paths and counts the rest.
+// namePaths names the first Runner.NoteOmittedPaths of paths and counts the
+// rest.
 func namePaths(paths []string) string {
-	if n := len(paths); n > noteOmittedPaths {
-		paths = append(slices.Clone(paths[:noteOmittedPaths]), fmt.Sprintf("and %d more", n-noteOmittedPaths))
+	if n, most := len(paths), tuning.Get().Runner.NoteOmittedPaths; n > most {
+		paths = append(slices.Clone(paths[:most]), fmt.Sprintf("and %d more", n-most))
 	}
 	return strings.Join(paths, ", ")
 }
@@ -421,11 +422,6 @@ func (t agentTools) commands() []string {
 	return t.run.Names()
 }
 
-// gatewayRetries is how many times a step the gateway answered with a 500,
-// its own database not answering, is sent again. The gateway marks every
-// other refusal final, since it already retried the provider.
-const gatewayRetries = 2
-
 // runAgentic runs the agent over the fetched head with the prompt already
 // composed. It writes its agent_runs row, with a review's conversation for
 // the next re-review, and marks the run done.
@@ -454,7 +450,7 @@ func runAgentic(
 		if res.Err == "" {
 			res.Err = context.Cause(ctx).Error()
 		}
-		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
+		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Runner.CancelWriteTimeout)
 		defer cancel()
 		rec, err := newAgentRecord(res, timeline, sources, secrets)
 		rec.useTools(tools)
@@ -497,11 +493,12 @@ func gatewayStepper(p runspec.Spec, secrets runspec.Secrets, part int, reviewer 
 	}
 	timeout := time.Duration(p.Model.RequestTimeoutSeconds) * time.Second
 	if timeout <= 0 {
-		timeout = model.GatewayRequestTimeout(model.StepBudget(model.DefaultStepTimeout, model.DefaultStepTimeout))
+		step := tuning.Get().Model.DefaultStepTimeout
+		timeout = model.GatewayRequestTimeout(model.StepBudget(step, step))
 	}
 	s, err := model.NewOpenAI(model.OpenAIConfig{
 		BaseURL: strings.TrimSuffix(p.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true, Gateway: true,
-		Retries: gatewayRetries, RequestTimeout: timeout, Part: part, Reviewer: reviewer,
+		Retries: tuning.Get().Runner.GatewayRetries, RequestTimeout: timeout, Part: part, Reviewer: reviewer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("runner: %w", err)
@@ -541,10 +538,6 @@ func (rec *agentRecord) useTools(tools agentTools) {
 		rec.commandErrors = append(rec.commandErrors, tools.run.Errors()...)
 	}
 }
-
-// canceledWriteTimeout bounds writing a cancelled agent's row, well inside
-// a runner pod's termination grace period.
-const canceledWriteTimeout = 5 * time.Second
 
 // agentRecord is an agent_runs row.
 type agentRecord struct {
@@ -592,7 +585,7 @@ func keptConversation(c *agent.Conversation, secrets runspec.Secrets, logger *sl
 	if c == nil {
 		return nil
 	}
-	if c.Tokens >= agent.ContinueTokens {
+	if c.Tokens >= tuning.Get().Agent.ContinueTokens {
 		logger.Info("conversation not kept: too long to carry on", "tokens", c.Tokens)
 		return nil
 	}
@@ -647,4 +640,16 @@ func writeAgentRun(ctx context.Context, report *reporter, rec agentRecord, phase
 		CommandCounts: rec.commandCounts, Model: rec.model, Error: rec.err, ContinuedFrom: rec.continued, Parts: rec.parts,
 		Conversation: rec.conversation, Tokens: rec.tokens, Session: rec.session, GrantedModel: rec.granted,
 	}, phase)
+}
+
+// sizeNote is b as a note says it: in MiB or KiB when it is a whole number
+// of them.
+func sizeNote(b tuning.ByteSize) string {
+	if b%(1<<20) == 0 {
+		return fmt.Sprintf("%d MiB", b>>20)
+	}
+	if b%1024 == 0 {
+		return fmt.Sprintf("%d KiB", b>>10)
+	}
+	return fmt.Sprintf("%d bytes", b)
 }

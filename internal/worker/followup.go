@@ -25,14 +25,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// Follow-up bounds: thread messages kept in the prompt, and replies that the
-// bot makes in one of its finding threads to replies that did not address
-// it. Past the last bound, it leaves the thread to a mention.
-const (
-	threadMessages   = 20
-	repliesPerThread = 3
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // FollowUp works the followup queue. One job answers one comment that
@@ -53,8 +46,9 @@ type FollowUp struct {
 	GatewayURL      string
 	GatewayTokenTTL time.Duration
 
-	// superviseEvery overrides superviseInterval, rowWait agentRowWait, and
-	// awaitEvery awaitInterval.
+	// superviseEvery overrides tuning's Worker.SuperviseInterval, rowWait
+	// tuning's Worker.AgentRowWait, and awaitEvery tuning's
+	// Worker.AwaitInterval.
 	superviseEvery time.Duration
 	rowWait        time.Duration
 	awaitEvery     time.Duration
@@ -570,8 +564,8 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int, error) {
 	}
 	slices.SortStableFunc(comments, func(a, b forge.Comment) int { return a.CreatedAt.Compare(b.CreatedAt) })
 	comments = append(comments, asking)
-	if len(comments) > threadMessages {
-		comments = comments[len(comments)-threadMessages:]
+	if most := tuning.Get().Worker.ThreadMessages; len(comments) > most {
+		comments = comments[len(comments)-most:]
 	}
 	msgs := make([]review.Message, 0, len(comments))
 	writes := map[string]bool{}

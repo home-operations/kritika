@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 const deltaDiff = `diff --git a/main.go b/main.go
@@ -267,6 +268,7 @@ func TestBuildIncrementalChecked(t *testing.T) {
 }
 
 func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
+	charsPerToken := tuning.Get().Review.CharsPerToken
 	in := incrementalInput()
 	full, _, _, _ := Build(in)
 	contextAt := strings.Index(full, "\n\nContext (not part")
@@ -337,6 +339,7 @@ func TestPriorFindingsAreFramedAsData(t *testing.T) {
 }
 
 func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
+	charsPerToken := tuning.Get().Review.CharsPerToken
 	in := incrementalInput()
 	var diff strings.Builder
 	changed := make([]string, 0, 300)
@@ -353,7 +356,7 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 	}
 	note := msg[strings.Index(msg, "\n\n[")+2:]
 	note = note[:strings.Index(note, "\n")+1]
-	if len(note) > omissionRoom || !strings.Contains(note, " and ") || !strings.Contains(note, " more; read them with read_diff]") {
+	if len(note) > tuning.Get().Review.OmissionRoom || !strings.Contains(note, " and ") || !strings.Contains(note, " more; read them with read_diff]") {
 		t.Fatalf("note of %d bytes: %q", len(note), note)
 	}
 	// The diff took the room that the delta otherwise has, so the model is
@@ -371,6 +374,7 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 // budget is still shown the last review's findings. The diff gives way to
 // them up to a quarter of the budget.
 func TestBuildEarlierFindingsKeepTheirRoom(t *testing.T) {
+	bodyShare := tuning.Get().Review.BodyShare
 	var diff strings.Builder
 	for i := range 200 {
 		fmt.Fprintf(&diff, "diff --git a/f%03d.go b/f%03d.go\n--- a/f%03d.go\n+++ b/f%03d.go\n@@ -1 +1,2 @@\n x\n+%s\n",
@@ -401,7 +405,7 @@ func TestBuildEarlierFindingsKeepTheirRoom(t *testing.T) {
 				in.Earlier, in.Incremental = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: tc.prior}, nil
 			}
 			msg, omitted, _, _ := Build(in)
-			budget := in.BudgetTokens * charsPerToken
+			budget := in.BudgetTokens * tuning.Get().Review.CharsPerToken
 			start := strings.Index(msg, "\n\n"+priorHeading)
 			if len(omitted) == 0 || start < 0 || !strings.Contains(msg, priorPrefix("main.go", tc.prior[0].Title)) || len(msg) > budget {
 				t.Fatalf("omitted %d diff files, earlier findings at %d, %d characters of %d:\n%s", len(omitted), start, len(msg), budget, msg)
@@ -516,7 +520,7 @@ func TestBuildIncrementalDeltaBeforeDiagram(t *testing.T) {
 	}
 	// Room for the delta and the prior findings, and under a quarter of
 	// what the diagram needs.
-	in.BudgetTokens = (len(whole) + 700) / charsPerToken
+	in.BudgetTokens = (len(whole) + 700) / tuning.Get().Review.CharsPerToken
 	msg, omitted, _, _ := Build(in)
 	if len(omitted) != 0 || !strings.Contains(msg, "+\tlast()\n") || strings.Contains(msg, "omitted to fit") ||
 		!strings.Contains(msg, priorHeading) {

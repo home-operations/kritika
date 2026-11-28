@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // forgejoInstances are two Forgejo connections on different instances,
@@ -118,6 +119,9 @@ func TestForgejoMappingVars(t *testing.T) {
 			_, _ = fmt.Fprint(w, `[{"name":"org-3"}]`)
 		case r.URL.Path == "/user/teams" && page == "1":
 			_, _ = fmt.Fprint(w, `[{"name":"Owners","organization":{"name":"org-1"}}]`)
+		case r.URL.Path == "/user/teams" && page == "2":
+			// Without a total, only an empty page ends the list.
+			_, _ = fmt.Fprint(w, `[]`)
 		default:
 			t.Errorf("unexpected request %s", r.URL)
 			w.WriteHeader(http.StatusNotFound)
@@ -141,12 +145,36 @@ func TestForgejoMappingVars(t *testing.T) {
 	}
 }
 
+// TestForgejoMappingVarsShortPages: without an X-Total-Count, a page shorter
+// than the size asked for is not taken for the last, since the instance may
+// cap the size. The listing goes on to an empty page.
+func TestForgejoMappingVarsShortPages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch page := r.URL.Query().Get("page"); {
+		case r.URL.Path == "/user/orgs" && page == "1":
+			_, _ = fmt.Fprint(w, `[{"name":"org-1"},{"name":"org-2"}]`)
+		case r.URL.Path == "/user/orgs" && page == "2":
+			_, _ = fmt.Fprint(w, `[{"name":"admins"}]`)
+		default:
+			_, _ = fmt.Fprint(w, `[]`)
+		}
+	}))
+	defer srv.Close()
+	vars, err := forgejoAPI{}.mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{Login: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if orgs, _ := vars["orgs"].([]string); strings.Join(orgs, ",") != "org-1,org-2,admins" {
+		t.Fatalf("orgs = %v, want org-1, org-2 and admins", orgs)
+	}
+}
+
 // TestForgejoMappingVarsTooMany: a list longer than a sign-in reads fails
 // it, rather than mapping on part of it.
 func TestForgejoMappingVarsTooMany(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Total-Count", "5000")
-		_, _ = fmt.Fprint(w, "["+strings.TrimSuffix(strings.Repeat(`{"name":"o"},`, forgejoPageSize), ",")+"]")
+		_, _ = fmt.Fprint(w, "["+strings.TrimSuffix(strings.Repeat(`{"name":"o"},`, tuning.Get().Auth.ForgejoPageSize), ",")+"]")
 	}))
 	defer srv.Close()
 	_, err := forgejoAPI{}.mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{Login: "alice"})
@@ -216,5 +244,53 @@ func TestGiteaSignIn(t *testing.T) {
 	g, err := grant(t.Context(), file, s, Identity{Login: "alice"}, Facts{Membership: o.membership()})
 	if err != nil || !slices.Equal(g.Accounts, []string{"gitea/acme"}) {
 		t.Fatalf("grant = %+v, %v; want the Gitea account alone", g, err)
+	}
+}
+
+// TestForgejoMappingVarsAtThePageCap: a headerless list that fills the last
+// page a sign-in reads is whole when the page after it is empty, and too
+// long when it is not.
+func TestForgejoMappingVarsAtThePageCap(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Auth.ForgejoMaxPages = 1 })
+	for _, tt := range []struct {
+		name, next string
+		ok         bool
+	}{{"an empty page after it", `[]`, true}, {"more after it", `[{"name":"org-2"}]`, false}} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("page") == "1" {
+					_, _ = fmt.Fprint(w, `[{"name":"org-1"}]`)
+					return
+				}
+				_, _ = fmt.Fprint(w, tt.next)
+			}))
+			defer srv.Close()
+			vars, err := forgejoAPI{}.mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{Login: "alice"})
+			if tt.ok {
+				if orgs, _ := vars["orgs"].([]string); err != nil || strings.Join(orgs, ",") != "org-1" {
+					t.Fatalf("mappingVars = %v, %v; want org-1 alone", vars, err)
+				}
+			} else if !errors.Is(err, ErrForgeAPI) {
+				t.Fatalf("mappingVars = %v, want a refusal", err)
+			}
+		})
+	}
+}
+
+// TestForgejoMappingVarsUnmetTotalAtTheCap: a last allowed page whose total
+// is still unmet fails the sign-in, whatever a page past the cap says.
+func TestForgejoMappingVarsUnmetTotalAtTheCap(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Auth.ForgejoMaxPages = 1 })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "1" {
+			w.Header().Set("X-Total-Count", "3")
+			_, _ = fmt.Fprint(w, `[{"name":"org-1"}]`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+	if _, err := (forgejoAPI{}).mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{Login: "alice"}); !errors.Is(err, ErrForgeAPI) {
+		t.Fatalf("mappingVars = %v, want a refusal", err)
 	}
 }

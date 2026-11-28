@@ -16,6 +16,8 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Attribution headers that OpenRouter shows in its dashboard. They are
@@ -31,7 +33,7 @@ var attribution = map[string]string{
 // user agent rather than the SDK's.
 var Version = "dev"
 
-func userAgent() string { return "kritika/" + Version }
+func userAgent() string { return tuning.UserAgent(Version) }
 
 // OpenAIConfig configures an OpenAI chat-completions adapter.
 type OpenAIConfig struct {
@@ -64,9 +66,10 @@ type OpenAIConfig struct {
 	// the provider's retries, and the SDK's own retries will otherwise
 	// multiply its attempts.
 	Retries int
-	// RequestTimeout bounds one request. Zero is DefaultStepTimeout. A
-	// provider's adapter gets the provider's timeout. The runner's client of
-	// the gateway allows the gateway's whole step budget.
+	// RequestTimeout bounds one request. Zero is tuning's
+	// Model.DefaultStepTimeout. A provider's adapter gets the provider's
+	// timeout. The runner's client of the gateway allows the gateway's whole
+	// step budget.
 	RequestTimeout time.Duration
 	// Part names, in PartHeader on every request, the part of a split review
 	// that the runner's client of the gateway steps for. Zero sends none.
@@ -149,7 +152,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
 	opts = append(opts, option.WithHeader("User-Agent", userAgent()), option.WithMaxRetries(cfg.Retries),
-		option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, DefaultStepTimeout)))
+		option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, tuning.Get().Model.DefaultStepTimeout)))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/transcript"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func (s *Server) getAttention(w http.ResponseWriter, r *http.Request, t *accountScope) error {
@@ -33,9 +34,6 @@ func (s *Server) getAttention(w http.ResponseWriter, r *http.Request, t *account
 func attentionDTO(a store.Attention) Attention {
 	return Attention{Failed: a.Failed, Capped: a.Capped, P0: a.P0, Paused: a.Paused}
 }
-
-// pullFollowups bounds the follow-ups a pull request's detail lists.
-const pullFollowups = 200
 
 func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	page, err := parsePage(r)
@@ -204,7 +202,7 @@ func loadPull(ctx context.Context, tx pgx.Tx, p store.PullRow) (pullRecord, erro
 		return rec, err
 	}
 	f := store.FollowupFilter{PullRequestID: p.ID}
-	if rec.followups, _, err = store.ListFollowups(ctx, tx, f, store.Page{Limit: pullFollowups}); err != nil {
+	if rec.followups, _, err = store.ListFollowups(ctx, tx, f, store.Page{Limit: tuning.Get().WebAPI.PullFollowups}); err != nil {
 		return rec, err
 	}
 	rec.job, err = store.FindLiveReviewJob(ctx, tx, p.RepositoryID, p.Number)

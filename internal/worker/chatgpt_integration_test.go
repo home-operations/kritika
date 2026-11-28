@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestChatGPTRefresher(t *testing.T) {
@@ -217,7 +218,7 @@ func TestChatGPTRefresherWaitsOutThePreviousLeader(t *testing.T) {
 	}()
 	select {
 	case d := <-waiting:
-		if want := store.LeaderStepDown(15*time.Second) + chatGPTRefreshTimeout; d != want {
+		if want := store.LeaderStepDown(15*time.Second) + tuning.Get().Worker.ChatGPTRefreshTimeout; d != want {
 			t.Fatalf("the new leader waits %v, want %v", d, want)
 		}
 	case <-reused:
@@ -243,5 +244,78 @@ func TestChatGPTRefresherWaitsOutThePreviousLeader(t *testing.T) {
 		t.Fatal("the new leader sent rt-1 after the previous leader saved rt-2")
 	case <-ctx.Done():
 		t.Fatal("the new leader never refreshed")
+	}
+}
+
+// TestChatGPTRefreshLeavesAClaimedSession: a new leader that does not wait,
+// as one with a shorter refresh timeout than its predecessor's would not
+// wait long enough, leaves a session whose refresh the predecessor claimed
+// and has in flight, rather than sending its refresh token a second time.
+func TestChatGPTRefreshLeavesAClaimedSession(t *testing.T) {
+	st := storetest.Open(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	now := time.Now().UTC()
+	key := "claimed-" + uuid.NewString()
+	s, err := st.PrepareChatGPTSession(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := s.Credentials
+	c.ClientID, c.AccessToken, c.RefreshToken = "oaiapp_claimed", "at-1", "rt-1"
+	c.Scopes, c.ExpiresIn, c.SavedAt = []string{chatgpt.PlanScope}, 3600, now.Add(-56*time.Minute)
+	if err := st.ConnectChatGPTSession(ctx, key, c, ""); err != nil {
+		t.Fatal(err)
+	}
+	inFlight, release := make(chan struct{}), make(chan struct{})
+	free := sync.OnceFunc(func() { close(release) })
+	defer free()
+	var sent atomic.Int32
+	tokens := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.PostForm.Get("refresh_token") != "rt-1" {
+			_, _ = fmt.Fprint(w, `{"access_token":"at-3","refresh_token":"rt-3","expires_in":3600}`)
+			return
+		}
+		if sent.Add(1) > 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprint(w, `{"error":"refresh_token_reused"}`)
+			return
+		}
+		close(inFlight)
+		<-release
+		_, _ = fmt.Fprint(w, `{"access_token":"at-2","refresh_token":"rt-2","expires_in":3600}`)
+	}))
+	t.Cleanup(tokens.Close)
+	f := &configfile.File{Providers: map[string]configfile.Provider{key: {Type: configfile.ProviderChatGPT}}}
+	leader := func() *ChatGPTRefresher {
+		return &ChatGPTRefresher{
+			Store: st, Current: configfile.NewCurrent(f), Logger: slog.New(slog.DiscardHandler), LeaderInterval: 15 * time.Second,
+			Client: tokens.Client(), TokenURL: tokens.URL, now: func() time.Time { return now },
+		}
+	}
+	previous := make(chan error, 1)
+	go func() { previous <- leader().Refresh(ctx) }()
+	select {
+	case <-inFlight:
+	case <-ctx.Done():
+		t.Fatal("the previous leader never refreshed")
+	}
+	if err := leader().Refresh(ctx); err != nil {
+		t.Fatalf("the new leader's refresh: %v", err)
+	}
+	if n := sent.Load(); n != 1 {
+		t.Fatalf("rt-1 sent %d times, want once: the new leader must leave the claimed session", n)
+	}
+	free()
+	if err := <-previous; err != nil {
+		t.Fatalf("the previous leader's refresh: %v", err)
+	}
+	saved, _, err := st.ChatGPTSession(ctx, key)
+	if err != nil || saved.Credentials.RefreshToken != "rt-2" || saved.SignedOut() {
+		t.Fatalf("session after the previous leader's refresh = %+v, %v", saved, err)
 	}
 }

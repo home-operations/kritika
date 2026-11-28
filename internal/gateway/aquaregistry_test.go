@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // aquaFixture is an aqua registry with one package.
@@ -70,11 +72,10 @@ func TestAquaRegistryRefresh(t *testing.T) {
 }
 
 // TestAquaRegistryRetries: a replica whose source is down when it starts
-// asks again within aquaRegistryRetry rather than waiting out Refresh.
+// asks again within Gateway.AquaRegistryRetry rather than waiting out
+// Refresh.
 func TestAquaRegistryRetries(t *testing.T) {
-	was := aquaRegistryRetry
-	t.Cleanup(func() { aquaRegistryRetry = was })
-	aquaRegistryRetry = 10 * time.Millisecond
+	tuning.Override(t, func(v *tuning.Values) { v.Gateway.AquaRegistryRetry = 10 * time.Millisecond })
 	var asked atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if asked.Add(1) == 1 {

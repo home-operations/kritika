@@ -16,6 +16,7 @@ require (
 	github.com/go-sprout/sprout v1.1.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/go-github/v93 v93.0.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	github.com/gookit/validate/v2 v2.0.4
 	github.com/hashicorp/go-retryablehttp v0.7.8
@@ -32,7 +33,9 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/riverqueue/river v0.51.2
+	github.com/riverqueue/river/riverdriver v0.51.2
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.51.2
+	github.com/riverqueue/river/rivershared v0.51.2
 	github.com/riverqueue/river/rivertype v0.51.2
 	github.com/sigstore/sigstore-go v1.4.1
 	github.com/ulikunitz/xz v0.5.17
@@ -107,7 +110,6 @@ require (
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-containerregistry v0.22.1 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/gookit/filter v1.2.3 // indirect
 	github.com/gookit/goutil v0.8.6 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
@@ -144,8 +146,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/common v0.72.1 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
-	github.com/riverqueue/river/riverdriver v0.51.2 // indirect
-	github.com/riverqueue/river/rivershared v0.51.2 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.1 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect

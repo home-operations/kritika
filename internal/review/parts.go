@@ -9,12 +9,8 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/chunk"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// PartBytes is the most diff one part of a split review holds: about
-// thirty files of an ordinary change, few enough for one agent to read each
-// with care. A review whose diff is larger is split into parts.
-const PartBytes = 64 << 10
 
 // SplitDiff cuts the files of a unified diff that no ignore glob matches into
 // the parts that a review is split into. Each part is the paths of its files.
@@ -174,7 +170,7 @@ func MergeParts(parts []Result) Result {
 			takes = append(takes, t)
 		}
 		for _, pr := range p.Summary.Praise {
-			if len(out.Summary.Praise) < maxPraise {
+			if len(out.Summary.Praise) < tuning.Get().Review.MaxPraise {
 				out.Summary.Praise = append(out.Summary.Praise, pr)
 			}
 		}

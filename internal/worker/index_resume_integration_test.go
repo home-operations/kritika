@@ -31,6 +31,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type resumeForge struct {
@@ -72,6 +73,7 @@ func (f *tipRetryForge) BranchTip(ctx context.Context, owner, name, branch strin
 }
 
 func TestIndexRetriesFailedTipCheck(t *testing.T) {
+	tipCheckWait := tuning.Get().Worker.TipCheckWait
 	env := setupIndexResume(t, "")
 	ctx := rivertest.WorkContext(t.Context(), env.queue)
 	job := env.claim(1)
@@ -124,8 +126,8 @@ func TestIndexRetriesFailedTipCheck(t *testing.T) {
 // TestIndexWaitsOutARateLimitOnItsTipCheckAfterPublication: a forge's rate
 // limit on the tip check after publication names when to ask again, hours
 // away here: GitLab's 429 by its reset, and GitHub's secondary limit by its
-// Retry-After. The job snoozes until then rather than for tipCheckWait,
-// which would only ask again within the limit.
+// Retry-After. The job snoozes until then rather than for tuning's
+// Worker.TipCheckWait, which would only ask again within the limit.
 func TestIndexWaitsOutARateLimitOnItsTipCheckAfterPublication(t *testing.T) {
 	for _, tc := range []struct {
 		name string

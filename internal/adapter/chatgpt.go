@@ -11,12 +11,8 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// planTokenTTL bounds how long a replica keeps using an access token that it
-// read without reading it again. So a new sign-in reaches every replica
-// within it.
-const planTokenTTL = time.Minute
 
 // PlanSessions exposes the credentials the leader keeps current.
 type PlanSessions interface {
@@ -71,8 +67,8 @@ func (p *planTokens) Token(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("%w: provider %s; run kritika chatgpt login", chatgpt.ErrSignedOut, p.key)
 	}
 	c := s.Credentials
-	until := now.Add(planTokenTTL)
-	if due := c.Expiry().Add(-chatgpt.RefreshLead); due.Before(until) {
+	until := now.Add(tuning.Get().Adapter.PlanTokenTTL)
+	if due := c.Expiry().Add(-tuning.Get().ChatGPT.RefreshLead); due.Before(until) {
 		until = due
 	}
 	p.mu.Lock()
@@ -95,7 +91,7 @@ func (p *planTokens) Expire(ctx context.Context, token string) error {
 // finish after its caller cancels.
 func (p *planTokens) observe(ctx context.Context, allowances []chatgpt.Allowance) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Adapter.RecordTimeout)
 		defer cancel()
 		if err := p.sessions.UpdateChatGPTAllowances(ctx, p.key, allowances); err != nil {
 			slog.WarnContext(ctx, "chatgpt allowances not recorded", "provider", p.key, "error", err)

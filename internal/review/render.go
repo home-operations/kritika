@@ -10,17 +10,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// MaxRenderBytes bounds a rendered comment, marker included. GitHub rejects
-// comment bodies over 65,536 characters, and a character is at least a byte.
-const MaxRenderBytes = 64 << 10
-
-// renderTimeout bounds one render, parse included.
-const renderTimeout = 2 * time.Second
 
 //go:embed templates/summary.md.tmpl
 var defaultSummary string
@@ -127,35 +120,26 @@ type Overlap struct {
 	Stale bool
 }
 
-// How many overlapping pull requests, and shared paths of each, the
-// default template names before it counts the rest: a monorepo can have
-// many open pull requests on one directory, and a comment is not where to
-// list them.
-const (
-	maxNamedOverlaps = 5
-	maxNamedShared   = 3
-)
-
 // NamedOverlaps are the overlaps the default template writes: at most
-// maxNamedOverlaps of them.
+// tuning's Review.MaxNamedOverlaps of them.
 func (d RenderData) NamedOverlaps() []Overlap {
-	return d.Overlaps[:min(len(d.Overlaps), maxNamedOverlaps)]
+	return d.Overlaps[:min(len(d.Overlaps), tuning.Get().Review.MaxNamedOverlaps)]
 }
 
 // MoreOverlaps is how many overlaps NamedOverlaps leaves out.
 func (d RenderData) MoreOverlaps() int {
-	return max(len(d.Overlaps)-maxNamedOverlaps, 0)
+	return max(len(d.Overlaps)-tuning.Get().Review.MaxNamedOverlaps, 0)
 }
 
 // NamedShared are the shared paths the default template writes: at most
-// maxNamedShared of them.
+// tuning's Review.MaxNamedShared of them.
 func (o Overlap) NamedShared() []string {
-	return o.Shared[:min(len(o.Shared), maxNamedShared)]
+	return o.Shared[:min(len(o.Shared), tuning.Get().Review.MaxNamedShared)]
 }
 
 // MoreShared is how many shared paths NamedShared leaves out.
 func (o Overlap) MoreShared() int {
-	return max(len(o.Shared)-maxNamedShared, 0)
+	return max(len(o.Shared)-tuning.Get().Review.MaxNamedShared, 0)
 }
 
 // Spans are NamedShared as Markdown code spans, each read back as the path
@@ -244,21 +228,16 @@ type Offered struct {
 	Names, Used []string
 }
 
-// maxNamedUsed is how many used names the default template writes before it
-// counts the rest. A repository can offer far more commands than a comment
-// needs to list.
-const maxNamedUsed = 10
-
 // Named is the used names the default template writes: sorted, and at
-// most maxNamedUsed of them.
+// most tuning's Review.MaxNamedUsed of them.
 func (o Offered) Named() []string {
 	names := slices.Sorted(slices.Values(o.Used))
-	return names[:min(len(names), maxNamedUsed)]
+	return names[:min(len(names), tuning.Get().Review.MaxNamedUsed)]
 }
 
 // More is how many used names Named leaves out.
 func (o Offered) More() int {
-	return max(len(o.Used)-maxNamedUsed, 0)
+	return max(len(o.Used)-tuning.Get().Review.MaxNamedUsed, 0)
 }
 
 // Approval is whether the reviewed head stands approved by kritika, and
@@ -294,18 +273,15 @@ func FormatCost(amount float64, unpricedCalls int64) string {
 	return FormatUSD(amount) + " + unpriced"
 }
 
-// footerSubjectRunes is how much of a commit subject the footer shows.
-const footerSubjectRunes = 40
-
-// FooterSubject cuts a commit subject to one line of footerSubjectRunes and
-// marks the cut with an ellipsis. It also escapes what Markdown reads as
-// markup, since a pull request's author writes the subject and it lands
-// inside the footer's link text.
+// FooterSubject cuts a commit subject to one line of tuning's
+// Review.FooterSubjectRunes and marks the cut with an ellipsis. It also
+// escapes what Markdown reads as markup, since a pull request's author writes
+// the subject and it lands inside the footer's link text.
 func FooterSubject(subject string) string {
 	subject, _, _ = strings.Cut(subject, "\n")
 	subject = strings.TrimSpace(subject)
-	if runes := []rune(subject); len(runes) > footerSubjectRunes {
-		subject = strings.TrimSpace(string(runes[:footerSubjectRunes])) + "..."
+	if most, runes := tuning.Get().Review.FooterSubjectRunes, []rune(subject); len(runes) > most {
+		subject = strings.TrimSpace(string(runes[:most])) + "..."
 	}
 	return FooterText(subject)
 }
@@ -345,7 +321,7 @@ var (
 // the returned note, also shown in the comment, says why.
 func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string, notes []string) {
 	marker := Marker(d.Number) + "\n"
-	limit := MaxRenderBytes - len(marker)
+	limit := bodyLimit(marker)
 	if t.Summary != "" {
 		out, err := render(ctx, t.Summary, d, limit)
 		if err == nil {
@@ -358,10 +334,61 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	out, err := render(context.WithoutCancel(ctx), defaultSummary, d, limit)
 	if err != nil {
 		// The default renders data that kritika bounds itself. Failing here
-		// is a bug, but the comment must still carry the marker and the take.
-		out = textcut.Prefix(fmt.Sprintf("## Kritika Review\n\n%s\n", d.Result.Summary.Take), limit)
+		// is a bug, but the comment must still carry the marker and the take,
+		// or an incomplete review's warning.
+		out = compactSummary(d, limit)
 	}
 	return marker + out, notes
+}
+
+// compactSummary is the summary in at most limit bytes when the default
+// template does not fit. A complete review lists its findings outside the
+// diff first, one line each, since no inline comment carries them, then its
+// take. An incomplete review states its warning, whose reason is cut so
+// that the notice on earlier heads' findings stays.
+func compactSummary(d RenderData, limit int) string {
+	const heading = "## Kritika Review\n\n"
+	if d.Incomplete == "" {
+		return textcut.Prefix(heading+compactUnanchored(d, limit-len(heading))+d.Result.Summary.Take+"\n", limit)
+	}
+	lead := heading + "**Review incomplete for `" + ShortSHA(d.HeadSHA) + "`:** "
+	const stale = ". Findings posted for earlier heads may no longer apply.\n"
+	reason := textcut.Prefix(d.Incomplete, max(limit-len(lead)-len(stale), 0))
+	return textcut.Prefix(lead+reason+stale, limit)
+}
+
+// compactUnanchored lists d's findings outside the diff in at most room
+// bytes: severity, path and title, whole entries only, and a count of those
+// left out, with the pull request's dashboard page where there is one.
+func compactUnanchored(d RenderData, room int) string {
+	findings := d.Unanchored
+	if len(findings) == 0 {
+		return ""
+	}
+	more := func(n int) string {
+		if d.PullURL != "" {
+			return fmt.Sprintf("- and %d more, on [the dashboard](%s)\n", n, d.PullURL)
+		}
+		return fmt.Sprintf("- and %d more\n", n)
+	}
+	var b strings.Builder
+	b.WriteString("**Outside the diff**\n\n")
+	for i, f := range findings {
+		entry := fmt.Sprintf("- **[%s]** `%s:%d` %s\n", f.Severity.Label(), f.Path, f.Line, oneLine(f.Title))
+		reserve := 0
+		if left := len(findings) - i - 1; left > 0 {
+			reserve = len(more(left))
+		}
+		if b.Len()+len(entry)+reserve > room {
+			if note := more(len(findings) - i); b.Len()+len(note) <= room {
+				b.WriteString(note)
+			}
+			break
+		}
+		b.WriteString(entry)
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 // Label is the severity's badge text, its name in upper case, "" for an
@@ -400,7 +427,7 @@ type InlineData struct {
 // FindingMarker. It falls back to the default template as RenderSummary does.
 func RenderInline(ctx context.Context, t Templates, d InlineData) (string, []string) {
 	marker := FindingMarker(Fingerprint(d.Finding)) + "\n"
-	limit := MaxRenderBytes - len(marker)
+	limit := bodyLimit(marker)
 	var notes []string
 	if t.Inline != "" {
 		out, err := render(ctx, t.Inline, d, limit)
@@ -416,11 +443,19 @@ func RenderInline(ctx context.Context, t Templates, d InlineData) (string, []str
 	return marker + out, notes
 }
 
+// bodyLimit is what tuning's Review.MaxRenderBytes leaves a comment's body
+// after marker, never under zero, which only a test's override reaches.
+func bodyLimit(marker string) int {
+	return max(int(tuning.Get().Review.MaxRenderBytes)-len(marker), 0)
+}
+
 func fallbackNote(which string, err error) string {
 	why := "failed to render"
-	switch {
+	switch limit := int64(tuning.Get().Review.MaxRenderBytes); {
+	case errors.Is(err, errTooLarge) && limit%(1<<10) == 0:
+		why = fmt.Sprintf("produced more than %d KiB", limit>>10)
 	case errors.Is(err, errTooLarge):
-		why = fmt.Sprintf("produced more than %d KiB", MaxRenderBytes>>10)
+		why = fmt.Sprintf("produced more than %d bytes", limit)
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		why = "ran out of time"
 	}
@@ -428,10 +463,10 @@ func fallbackNote(which string, err error) string {
 }
 
 // render parses and executes src in a sandbox, bounded by ctx and
-// renderTimeout. A render that outlives its deadline is abandoned. The guards
-// make it stop at its next loop, call, or write.
+// tuning's Review.RenderTimeout. A render that outlives its deadline is
+// abandoned. The guards make it stop at its next loop, call, or write.
 func render(ctx context.Context, src string, data any, limit int) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
+	ctx, cancel := context.WithTimeout(ctx, tuning.Get().Review.RenderTimeout)
 	defer cancel()
 	type result struct {
 		out string

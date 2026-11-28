@@ -25,6 +25,8 @@ import (
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	gh "github.com/google/go-github/v93/github"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // App is a GitHub App identity: the client id and private key of one App.
@@ -52,7 +54,7 @@ type App struct {
 // for installation lookup and token minting. apiBase is empty for
 // api.github.com. Tests point it at a server of their own.
 func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
-	return newApp(clientID, privateKeyPEM, apiBase, baseTransport)
+	return newApp(clientID, privateKeyPEM, apiBase, baseTransport())
 }
 
 // newApp is NewApp over base, which tests replace.
@@ -61,7 +63,7 @@ func newApp(clientID, privateKeyPEM, apiBase string, base http.RoundTripper) (*A
 	if err != nil {
 		return nil, fmt.Errorf("github: parse App private key: %w", err)
 	}
-	origin, err := url.Parse(cmp.Or(apiBase, "https://api.github.com"))
+	origin, err := url.Parse(cmp.Or(apiBase, tuning.GitHubAPIURL))
 	if err != nil {
 		return nil, fmt.Errorf("github: parse API origin: %w", err)
 	}
@@ -74,46 +76,31 @@ func newApp(clientID, privateKeyPEM, apiBase string, base http.RoundTripper) (*A
 	return a, nil
 }
 
-// responseHeaderTimeout bounds how long a request waits for GitHub to start
-// answering. The leader's poll runs on a context with no deadline, and a
-// worker's job on one of hours. Otherwise, a server that accepts a request
-// and never answers holds either for as long.
-const responseHeaderTimeout = time.Minute
-
 // baseTransport is under every App's clients: the default transport, which
 // bounds the dial and the TLS handshake, with the wait for response headers
-// bounded too. One transport, so every App shares its connection pool.
-var baseTransport = func() *http.Transport {
+// bounded too, by tuning's GitHub.ResponseHeaderTimeout as it is on first
+// use. One transport, so every App shares its connection pool.
+var baseTransport = sync.OnceValue(func() *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.ResponseHeaderTimeout = responseHeaderTimeout
+	t.ResponseHeaderTimeout = tuning.Get().GitHub.ResponseHeaderTimeout
 	return t
-}()
+})
 
 // limit puts the wait for a rate limit that resets soon above rt, a client's
 // authentication. So a request sent again after the wait is authorized again,
 // with a token refreshed while it waited. Each answer's error body is bounded
 // below the wait, so a request sent again has a bound of its own.
 func (a *App) limit(rt http.RoundTripper) http.RoundTripper {
-	return &rateLimitTransport{base: &errorBodyTransport{base: rt}, maxWait: rateLimitMaxWait, observe: a.rateLimited}
+	return &rateLimitTransport{base: &errorBodyTransport{base: rt}, maxWait: tuning.Get().GitHub.RateLimitMaxWait, observe: a.rateLimited}
 }
 
-// errorBodyWait bounds how long the body of an answer that is no success, or
-// is a 202, is read for once its headers arrive. go-github reads such a body
-// to its end to tell its errors apart, a 202's to build its AcceptedError,
-// and a body that stalls would hold the request until
-// its context ends: a worker's job hours on, the leader's poll never. An
-// error's body is a few hundred bytes. Cut off, it leaves the status and the
-// headers, by which a primary rate limit is still told apart; a secondary
-// limit that only its body names is then a plain refusal.
-const errorBodyWait = 10 * time.Second
-
-// errErrorBodyCut is what reading an error body fails with past
-// errorBodyWait.
-var errErrorBodyCut = fmt.Errorf("github: error body not read within %s", errorBodyWait)
+// errErrorBodyCut is what reading an error body fails with past tuning's
+// GitHub.ErrorBodyWait.
+var errErrorBodyCut = errors.New("github: error body not read in time")
 
 // errorBodyTransport cuts off the body of an answer that is no success, or is
-// a 202, errorBodyWait after its headers arrive, whatever the request's
-// context.
+// a 202, tuning's GitHub.ErrorBodyWait after its headers arrive, whatever the
+// request's context.
 type errorBodyTransport struct {
 	base http.RoundTripper
 	// after overrides time.AfterFunc in tests.
@@ -134,7 +121,7 @@ func (t *errorBodyTransport) RoundTrip(req *http.Request) (*http.Response, error
 		if after == nil {
 			after = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 		}
-		body.stop = after(errorBodyWait, func() {
+		body.stop = after(tuning.Get().GitHub.ErrorBodyWait, func() {
 			body.cut.Store(true)
 			cancel()
 		})
@@ -232,7 +219,7 @@ type Installation struct {
 // Installations lists every account the App is installed on.
 func (a *App) Installations(ctx context.Context) ([]Installation, error) {
 	var out []Installation
-	for inst, err := range a.apps.Apps.ListInstallationsIter(ctx, &gh.ListOptions{PerPage: 100}) {
+	for inst, err := range a.apps.Apps.ListInstallationsIter(ctx, &gh.ListOptions{PerPage: perPage}) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list App installations: %w", err)
 		}
@@ -261,7 +248,7 @@ func (a *App) Repositories(ctx context.Context, id int64) ([]Repository, error) 
 		return nil, err
 	}
 	var out []Repository
-	for r, err := range client.Apps.ListReposIter(ctx, &gh.ListOptions{PerPage: 100}) {
+	for r, err := range client.Apps.ListReposIter(ctx, &gh.ListOptions{PerPage: perPage}) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list installation %d repositories: %w", id, err)
 		}
@@ -330,7 +317,7 @@ var ErrRedirectRefused = errors.New("github: redirect refused")
 // following it: the transports withhold credentials from such a hop, but its
 // answer would still be read as GitHub's.
 func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
-	origin, err := url.Parse(cmp.Or(apiBase, "https://api.github.com"))
+	origin, err := url.Parse(cmp.Or(apiBase, tuning.GitHubAPIURL))
 	if err != nil {
 		return nil, fmt.Errorf("github: parse API origin: %w", err)
 	}
@@ -338,8 +325,8 @@ func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
 		if !sameOrigin(req.URL, origin) {
 			return fmt.Errorf("%w: off %s to %s", ErrRedirectRefused, origin.Host, req.URL.Host)
 		}
-		if len(via) >= 10 {
-			return fmt.Errorf("%w: stopped after 10 redirects", ErrRedirectRefused)
+		if limit := tuning.Get().GitHub.MaxRedirects; len(via) >= limit {
+			return fmt.Errorf("%w: stopped after %d redirects", ErrRedirectRefused, limit)
 		}
 		return nil
 	}}
@@ -354,9 +341,9 @@ func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
 	return c, nil
 }
 
-// appJWT mints a short-lived App JWT with the client id as issuer. The
-// 9-minute lifetime stays under GitHub's 10-minute cap. The backdated iat
-// absorbs minor clock skew.
+// appJWT mints a short-lived App JWT with the client id as issuer, which
+// lives for tuning's GitHub.AppJWTLifetime, under GitHub's cap. Its iat,
+// backdated by GitHub.AppJWTBackdate, absorbs minor clock skew.
 func appJWT(clientID string, key *rsa.PrivateKey, now time.Time) (string, error) {
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, (&jose.SignerOptions{}).WithType("JWT"))
 	if err != nil {
@@ -364,8 +351,8 @@ func appJWT(clientID string, key *rsa.PrivateKey, now time.Time) (string, error)
 	}
 	return jwt.Signed(signer).Claims(jwt.Claims{
 		Issuer:   clientID,
-		IssuedAt: jwt.NewNumericDate(now.Add(-30 * time.Second)),
-		Expiry:   jwt.NewNumericDate(now.Add(9 * time.Minute)),
+		IssuedAt: jwt.NewNumericDate(now.Add(-tuning.Get().GitHub.AppJWTBackdate)),
+		Expiry:   jwt.NewNumericDate(now.Add(tuning.Get().GitHub.AppJWTLifetime)),
 	}).Serialize()
 }
 
@@ -413,14 +400,14 @@ func (t *appJWTTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.Header.Set("Authorization", "Bearer "+tok)
+	r.Header.Set("Authorization", tuning.BearerPrefix+tok)
 	return t.base.RoundTrip(r)
 }
 
 func (t *appJWTTransport) jwt() (string, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if time.Until(t.exp) > time.Minute {
+	if time.Until(t.exp) > tuning.Get().GitHub.TokenRefreshLead {
 		return t.tok, nil
 	}
 	now := time.Now()
@@ -428,7 +415,8 @@ func (t *appJWTTransport) jwt() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("github: sign App JWT: %w", err)
 	}
-	t.tok, t.exp = tok, now.Add(9*time.Minute)
+	// The JWT carries its expiry in whole seconds, rounded down.
+	t.tok, t.exp = tok, now.Add(tuning.Get().GitHub.AppJWTLifetime).Truncate(time.Second)
 	return tok, nil
 }
 
@@ -450,7 +438,7 @@ type InstallationTokens struct {
 func (t *InstallationTokens) Token(ctx context.Context) (string, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if time.Until(t.exp) > time.Minute {
+	if time.Until(t.exp) > tuning.Get().GitHub.TokenRefreshLead {
 		return t.tok, nil
 	}
 	it, _, err := t.apps.Apps.CreateInstallationToken(ctx, t.instID, nil)
@@ -506,7 +494,7 @@ func (t *installTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, err
 	}
-	r.Header.Set("Authorization", "Bearer "+tok)
+	r.Header.Set("Authorization", tuning.BearerPrefix+tok)
 	return t.base.RoundTrip(r)
 }
 

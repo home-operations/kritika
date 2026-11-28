@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestSimilarWithoutExclusions(t *testing.T) {
@@ -80,6 +81,7 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 // leaves them out, another account can neither read nor write them nor
 // change what a search leaves out, and they go once the run has finished.
 func TestSimilarExclusions(t *testing.T) {
+	similarExcludeBatch := tuning.Get().Store.SimilarExcludeBatch
 	s := openStore(t)
 	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {

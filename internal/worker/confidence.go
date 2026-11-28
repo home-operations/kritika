@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -15,33 +14,14 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
-)
-
-// confidenceTimeout bounds scoring a review, the wait for a slot on the
-// confidence model included, and confidenceMaxOutputTokens its answer: a
-// score and a sentence or two, with room for a reasoning model's thinking.
-// With the write-back's own bound it stays inside
-// jobtimeout.PublishHeadroom.
-const (
-	confidenceTimeout         = 2 * time.Minute
-	confidenceMaxOutputTokens = 4096
-)
-
-// confidenceBudgetShare is how many times the agent's prompt budget the
-// scorer's prompt can take, up to confidenceBudgetCap tokens and never less
-// than the agent's. The scorer makes one call with no tool outputs to leave
-// room for, and the diff is what its risk rating rests on. But an agent
-// budget set for a large context must not double past what the scorer's model
-// holds.
-const (
-	confidenceBudgetShare = 2
-	confidenceBudgetCap   = 96_000
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // confidenceBudget is the scorer's prompt budget for an agent budget of
 // prompt tokens.
 func confidenceBudget(prompt int) int {
-	return max(prompt, min(confidenceBudgetShare*prompt, confidenceBudgetCap))
+	w := tuning.Get().Worker
+	return max(prompt, min(w.ConfidenceBudgetShare*prompt, w.ConfidenceBudgetCap))
 }
 
 // unscoredNote is what the summary states when the repository asks for a
@@ -60,7 +40,7 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 		return ""
 	}
 	defer p.timeStage("confidence")()
-	ctx, cancel := context.WithTimeout(job, confidenceTimeout)
+	ctx, cancel := context.WithTimeout(job, tuning.Get().Worker.ConfidenceTimeout)
 	defer cancel()
 	// The agent is done with its slot on the review model. Scoring takes a
 	// slot of its own. A job that holds one while it waits for another can
@@ -156,7 +136,7 @@ func (p *publishPhase) score(
 			Body: body, Changed: changed, Diff: diff, Bumps: bumps, Dismissed: dismissedFindings(slices.Concat(p.prior.dismissed, p.answered)),
 		}, res, rec, history, earlier, system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
-		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
+		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: tuning.Get().Worker.ConfidenceMaxOutputTokens,
 	}
 	var resp model.CompletionResponse
 	complete := func(ctx context.Context) error {

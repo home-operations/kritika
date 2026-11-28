@@ -12,10 +12,8 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// maxAPIBody bounds how much of a forge API response is read.
-const maxAPIBody = 1 << 20
 
 // ErrForgeAPI is a forge API call that failed or answered unexpectedly.
 var ErrForgeAPI = errors.New("auth: forge API")
@@ -125,7 +123,7 @@ func (c apiClient) get(ctx context.Context, path string, v any) (int, http.Heade
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("%w: %w", ErrForgeAPI, err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", tuning.BearerPrefix+c.token)
 	req.Header.Set("Accept", "application/json")
 	for k, val := range c.headers {
 		req.Header.Set(k, val)
@@ -135,7 +133,7 @@ func (c apiClient) get(ctx context.Context, path string, v any) (int, http.Heade
 		return 0, nil, nil, fmt.Errorf("%w: GET %s: %w", ErrForgeAPI, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body := io.LimitReader(resp.Body, maxAPIBody)
+	body := io.LimitReader(resp.Body, int64(tuning.Get().Auth.MaxAPIBody))
 	if resp.StatusCode/100 != 2 {
 		refusal, err := io.ReadAll(body)
 		if err != nil {

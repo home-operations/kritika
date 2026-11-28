@@ -23,6 +23,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/grammars"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Decl is one declaration in a file: a function, method, type, constant,
@@ -48,13 +50,11 @@ func (d Decl) Lines() int { return d.EndLine - d.StartLine + 1 }
 // Contains reports whether line falls inside the declaration.
 func (d Decl) Contains(line int) bool { return line >= d.StartLine && line <= d.EndLine }
 
-// Limits bound one parse: a file over MaxBytes, defaultMaxBytes when zero,
-// is not parsed at all.
+// Limits bound one parse: a file over MaxBytes, tuning's
+// Chunk.MaxFileBytes when zero, is not parsed at all.
 type Limits struct {
 	MaxBytes int
 }
-
-const defaultMaxBytes = 1 << 20
 
 // A parse has no timeout. Every limit on it counts the parser's work, not
 // time, so that a file is cut the same on a loaded machine as on an idle
@@ -63,20 +63,9 @@ const defaultMaxBytes = 1 << 20
 // unbounded parse's, with no error and an accepted stop reason
 // (odvcencio/gotreesitter#1600), so a timeout added here would also have to
 // drop a tree whose RetryStopReason, added by odvcencio/gotreesitter#1619,
-// is not ParseStopNone. The limits below and the library's own per-byte
-// ones stop pathological inputs in about a second.
-
-// parseMemoryBudget bounds one parse's arena and scratch memory. The
-// library's default is the larger of 512 MiB and 512 bytes per input byte.
-// That default is past a runner pod's memory limit for a file of the size
-// that defaultMaxBytes lets through. A parse that it stops falls back to
-// fixed windows.
-const parseMemoryBudget = 256 << 20
-
-// parseStackDepthLimit stops a parse whose stack runs deep, as a long run of
-// open brackets drives it: the library recovers at the end of such a file
-// for minutes otherwise.
-const parseStackDepthLimit = 4096
+// is not ParseStopNone. Tuning's Chunk.ParseMemoryBudget and
+// Chunk.ParseStackDepth, which a parser takes when it is made, and the
+// library's own per-byte limits stop pathological inputs in about a second.
 
 // Parser cuts files. It caches one tree-sitter parser per language and
 // serialises every parse, since parsers are not safe for concurrent use.
@@ -126,7 +115,7 @@ type File struct {
 // are the fixed-window cases, not failures.
 func (p *Parser) Parse(path string, src []byte) *File {
 	f := &File{Path: path, Source: src}
-	if len(src) == 0 || len(src) > cmp.Or(p.Limits.MaxBytes, defaultMaxBytes) || bytes.IndexByte(src, 0) >= 0 {
+	if len(src) == 0 || len(src) > cmp.Or(p.Limits.MaxBytes, int(tuning.Get().Chunk.MaxFileBytes)) || bytes.IndexByte(src, 0) >= 0 {
 		return f
 	}
 	lp := p.language(path)
@@ -176,8 +165,9 @@ func (p *Parser) language(path string) *languageParser {
 	}
 	lang := entry.Language()
 	parser := gotreesitter.NewParser(lang)
-	parser.SetMemoryBudgetBytes(parseMemoryBudget)
-	parser.SetParseWorkLimits(gotreesitter.ParseWorkLimits{StackDepthLimit: parseStackDepthLimit})
+	t := tuning.Get().Chunk
+	parser.SetMemoryBudgetBytes(int64(t.ParseMemoryBudget))
+	parser.SetParseWorkLimits(gotreesitter.ParseWorkLimits{StackDepthLimit: t.ParseStackDepth})
 	lp := &languageParser{entry: *entry, lang: lang, parser: parser}
 	if q := strings.TrimSpace(grammars.ResolveTagsQuery(*entry)); q != "" {
 		// A tags query that fails to compile leaves the language without

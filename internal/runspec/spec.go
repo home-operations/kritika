@@ -16,13 +16,13 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Version is the only job document version a runner of this build
@@ -39,10 +39,6 @@ const Version = 45
 // the runner's chunks change, so a runner of the other build refuses the job
 // rather than stage chunks of a format that the worker does not record.
 const IndexFormat = 2
-
-// HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
-// The worker's staleness threshold is several of these.
-const HeartbeatInterval = 15 * time.Second
 
 // Kind is what a run does.
 type Kind string
@@ -93,7 +89,7 @@ type AgentLimits struct {
 	MaxToolOutputBytes int   `json:"maxToolOutputBytes"`
 	MaxTokens          int64 `json:"maxTokens"`
 	// MaxPromptTokens bounds the agent's opening prompt, the diff and
-	// context it starts from. Zero takes review.DefaultBudgetTokens.
+	// context it starts from. Zero takes tuning's Review.DefaultBudgetTokens.
 	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
 	// Parts is the most parts the runner can split a review into, which
 	// the run's grant and deadline cover. Under two, it never splits.
@@ -108,10 +104,10 @@ type AgentLimits struct {
 	Pools          map[string]string `json:"pools,omitempty"`
 	TimeoutSeconds int               `json:"timeoutSeconds,omitempty"`
 	// CommandTimeoutSeconds bounds one command the run tool executes.
-	// Zero takes configfile.DefaultCommandTimeout.
+	// Zero takes tuning's ConfigFile.DefaultCommandTimeout.
 	CommandTimeoutSeconds int `json:"commandTimeoutSeconds,omitempty"`
 	// Fetches bounds fetch_repo's fetches for the run, a split review's
-	// parts between them. Zero takes configfile.DefaultFetches.
+	// parts between them. Zero takes tuning's ConfigFile.DefaultFetches.
 	Fetches int `json:"fetches,omitempty"`
 	// Hosts name what the gateway lets the commands and fetch_repo reach,
 	// as configfile.EgressHosts lists them, for the tools' descriptions.
@@ -381,61 +377,63 @@ func (s Spec) Validate() error {
 	return nil
 }
 
-// Spec size bounds. A spec travels as a key of the run's Secret, which
-// Kubernetes caps at 1 MiB with the credentials beside it. So what grows
-// with a pull request is cut before it is encoded.
-const (
-	// MaxBytes bounds an encoded spec, and it leaves the Secret room for the
-	// git and gateway tokens.
-	MaxBytes = 900 << 10
-	// MaxPriorFindings is how many of the last review's findings a spec
-	// carries, and how many dismissed ones.
-	MaxPriorFindings = 200
-	// MaxBodyBytes bounds the pull request body a spec carries. Encoding
-	// can grow it sixfold (each '<' becomes \u003c), which the spec bound
-	// still holds.
-	MaxBodyBytes = 64 << 10
-	// MaxIssueBytes bounds each linked issue's body a spec carries: the
-	// prompt shows a few thousand characters of one, and three worst-case
-	// issues must leave the body and the findings their room.
-	MaxIssueBytes = 16 << 10
-)
-
-// maxPromptBytes is what Trim leaves an encoded prompt, under MaxBytes
-// with room for the rest of the spec.
-const maxPromptBytes = 768 << 10
-
 // Trim cuts what a pull request can grow without bound to what a spec
-// carries: the body, at a rune boundary, and the prior findings. The
-// findings are cut first to MaxPriorFindings, then, while the encoded
-// prompt is still over its share of the spec, by half at a time. Trim keeps
-// the first in the order the worker read them.
+// carries, as tuning's RunSpec bounds it: the body, at a rune boundary, the
+// linked issues' bodies, and the prior findings. The findings are cut first
+// to RunSpec.MaxPriorFindings, then, while the encoded prompt is still over
+// RunSpec.MaxPromptBytes, its share of the spec, by half at a time. Trim
+// keeps the first in the order the worker read them. A prompt that is over
+// with no findings left, as JSON's escaping can make a body six times as
+// long, has its longest linked issue's body shortened, at a rune boundary,
+// and then the pull request's, until it fits or they are empty. The
+// prompt's budget is a target: Encode refuses only a spec over
+// RunSpec.MaxBytes, which is what a runner reads.
 func (p *Prompt) Trim() {
-	p.PullRequest.Body = textcut.Prefix(p.PullRequest.Body, MaxBodyBytes)
+	t := tuning.Get().RunSpec
+	p.PullRequest.Body = textcut.Prefix(p.PullRequest.Body, int(t.MaxBodyBytes))
 	for i := range p.Issues {
-		p.Issues[i].Body = textcut.Prefix(p.Issues[i].Body, MaxIssueBytes)
+		p.Issues[i].Body = textcut.Prefix(p.Issues[i].Body, int(t.MaxIssueBytes))
 	}
-	p.Prior = p.Prior[:min(len(p.Prior), MaxPriorFindings)]
-	p.Dismissed = p.Dismissed[:min(len(p.Dismissed), MaxPriorFindings)]
-	for len(p.Prior) > 0 || len(p.Dismissed) > 0 {
+	p.Prior = p.Prior[:min(len(p.Prior), t.MaxPriorFindings)]
+	p.Dismissed = p.Dismissed[:min(len(p.Dismissed), t.MaxPriorFindings)]
+	for {
 		b, err := json.Marshal(p)
-		if err != nil || len(b) <= maxPromptBytes {
+		over := len(b) - int(t.MaxPromptBytes)
+		if err != nil || over <= 0 {
 			return
 		}
-		p.Prior = p.Prior[:len(p.Prior)/2]
-		p.Dismissed = p.Dismissed[:len(p.Dismissed)/2]
+		if len(p.Prior) > 0 || len(p.Dismissed) > 0 {
+			p.Prior = p.Prior[:len(p.Prior)/2]
+			p.Dismissed = p.Dismissed[:len(p.Dismissed)/2]
+			continue
+		}
+		text := &p.PullRequest.Body
+		var longest *string
+		for i := range p.Issues {
+			if body := &p.Issues[i].Body; *body != "" && (longest == nil || len(*body) > len(*longest)) {
+				longest = body
+			}
+		}
+		if longest != nil {
+			text = longest
+		}
+		if *text == "" {
+			return
+		}
+		*text = textcut.Prefix(*text, textcut.EscapedRoom(len(*text), over))
 	}
 }
 
-// Encode is the job document a runner reads, refused when it is too
-// large to deliver.
+// Encode is the job document a runner reads, refused when it is over
+// tuning's RunSpec.MaxBytes, too large to deliver beside the credentials in
+// the run's Secret.
 func Encode(s Spec) ([]byte, error) {
 	b, err := json.Marshal(s)
 	if err != nil {
 		return nil, fmt.Errorf("runspec: encode spec: %w", err)
 	}
-	if len(b) > MaxBytes {
-		return nil, fmt.Errorf("runspec: encoded spec is %d bytes, over the %d byte limit", len(b), MaxBytes)
+	if most := int(tuning.Get().RunSpec.MaxBytes); len(b) > most {
+		return nil, fmt.Errorf("runspec: encoded spec is %d bytes, over the %d byte limit", len(b), most)
 	}
 	return b, nil
 }
@@ -447,12 +445,13 @@ func Read(path string) (Spec, error) {
 		return Spec{}, fmt.Errorf("runspec: read spec: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
+	most := int64(tuning.Get().RunSpec.MaxBytes)
+	data, err := io.ReadAll(io.LimitReader(f, most+1))
 	if err != nil {
 		return Spec{}, fmt.Errorf("runspec: read spec: %w", err)
 	}
-	if len(data) > MaxBytes {
-		return Spec{}, fmt.Errorf("runspec: spec at %s is over the %d byte limit", path, MaxBytes)
+	if int64(len(data)) > most {
+		return Spec{}, fmt.Errorf("runspec: spec at %s is over the %d byte limit", path, most)
 	}
 	return Decode(data)
 }

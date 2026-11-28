@@ -1,6 +1,11 @@
 package review
 
-import "testing"
+import (
+	"math"
+	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
+)
 
 func TestHoldBack(t *testing.T) {
 	delta := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -10,3 +10,4 @@\n x\n+y\n z\n w\n" +
@@ -42,5 +47,26 @@ func TestHoldBack(t *testing.T) {
 				t.Fatalf("held(%s:%d) = %v, want %v", tt.f.Path, tt.f.Line, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestHoldBackUnderTheLargestRadius: a radius as large as an int goes keeps
+// every new finding in a touched file, at a touched line and far from one,
+// rather than wrapping the range it is compared with.
+func TestHoldBackUnderTheLargestRadius(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.HeldBackLines = math.MaxInt })
+	delta := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -10,3 +10,4 @@\n x\n+y\n z\n w\n"
+	held := HoldBack(nil, nil, delta, []string{"a.go"})
+	for _, f := range []Finding{
+		{Path: "a.go", Line: 11, Title: "at the line"},
+		{Path: "a.go", Line: 1, EndLine: 5, Title: "before it"},
+		{Path: "a.go", Line: 900_000, Title: "far after it"},
+	} {
+		if held(f) {
+			t.Errorf("%s (line %d) held back under the largest radius", f.Title, f.Line)
+		}
+	}
+	if !near(math.MaxInt, 0, 0, math.MaxInt) || near(math.MaxInt, 0, 0, math.MaxInt-1) || !near(0, math.MaxInt, math.MaxInt, math.MaxInt) {
+		t.Error("near does not compare distances as far apart as an int's range")
 	}
 }

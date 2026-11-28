@@ -129,7 +129,7 @@ func TestBench(t *testing.T) {
 		}
 		headTree, _ := res.Head.Tree()
 		baseTree, _ := res.Base.Tree()
-		chunks, stats, err := contextpack.Build(ctx, contextpack.Input{Head: headTree, Base: baseTree, Diff: res.Diff, Changed: res.Changed}, contextpack.DefaultOptions)
+		chunks, stats, err := contextpack.Build(ctx, contextpack.Input{Head: headTree, Base: baseTree, Diff: res.Diff, Changed: res.Changed}, contextpack.DefaultOptions())
 		if err != nil {
 			t.Logf("%s: context failed: %v", c.ID, err)
 		}

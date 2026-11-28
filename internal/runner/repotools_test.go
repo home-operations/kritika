@@ -26,6 +26,7 @@ import (
 	"github.com/home-operations/kritika/internal/aqua"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // testRegistry is an aqua registry for the runner's tests: repo-tool, a
@@ -340,13 +341,11 @@ func standInGateway(t *testing.T, payload []byte, serve func(w http.ResponseWrit
 }
 
 // TestRepoToolsInstallAfterAStall: an attempt at the download that stalls
-// takes its own installTimeout, and leaves the next attempt its own: here
-// one around the cache, which the stand-in gateway refuses at once.
+// takes its own Runner.InstallTimeout, and leaves the next attempt its own:
+// here one around the cache, which the stand-in gateway refuses at once.
 func TestRepoToolsInstallAfterAStall(t *testing.T) {
 	useTestRegistry(t)
-	was := installTimeout
-	t.Cleanup(func() { installTimeout = was })
-	installTimeout = 300 * time.Millisecond
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.InstallTimeout = 300 * time.Millisecond })
 	payload := []byte("#!/bin/sh\necho upstream\n")
 	connected := make(chan struct{}, 1)
 	env := standInGateway(t, payload, func(w http.ResponseWriter, r *http.Request) {

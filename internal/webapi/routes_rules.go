@@ -12,10 +12,8 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// rulesRepoPage is how many repositories one read of the list takes.
-const rulesRepoPage = 500
 
 // listRules serves the rules, review instructions and context files that the
 // account's running repositories read: the configuration's, and each
@@ -38,7 +36,7 @@ func (s *Server) accountRules(ctx context.Context, t *accountScope, repo string)
 	var cited []store.RuleCitation
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		f := store.RepoFilter{}
-		page := store.Page{Limit: rulesRepoPage}
+		page := store.Page{Limit: tuning.Get().WebAPI.RulesRepoPage}
 		for {
 			rows, next, err := store.ListRepos(ctx, tx, f, page)
 			if err != nil {

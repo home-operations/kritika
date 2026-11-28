@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // A runner's writes are safe to repeat. A runner sends one again when the
@@ -41,7 +42,8 @@ func SetRunnerPhase(ctx context.Context, tx pgx.Tx, runID, phase string) error {
 // RecordRunnerFailure accepts an already redacted error. Only the executor can
 // write finished_at. A runner can report its phase and error alone.
 func RecordRunnerFailure(ctx context.Context, tx pgx.Tx, runID, cause string) error {
-	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`, runID, cause); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, $3) WHERE id = $1`,
+		runID, cause, tuning.Get().Store.ErrorTextChars); err != nil {
 		return fmt.Errorf("store: record runner failure: %w", err)
 	}
 	return nil
@@ -63,11 +65,6 @@ func WriteRunnerContext(ctx context.Context, tx pgx.Tx, runID string, p runspec.
 	return SetRunnerPhase(ctx, tx, runID, phase)
 }
 
-// similarExcludeBatch is the most paths that one statement of
-// SetSimilarExclude writes, so that a statement stays small however many
-// paths a report holds.
-const similarExcludeBatch = 1000
-
 // SetSimilarExclude records the paths the run's similar-code searches leave
 // out, in the run's account, a batch at a time within tx, each path once. The
 // first report holds: a later one, which can only be the same report sent
@@ -83,7 +80,7 @@ func SetSimilarExclude(ctx context.Context, tx pgx.Tx, runID string, paths []str
 	}
 	// No key keeps a path from being written twice: a B-tree entry cannot
 	// hold a long path, and the paths' hash index cannot be unique.
-	for batch := range slices.Chunk(slices.Compact(slices.Sorted(slices.Values(paths))), similarExcludeBatch) {
+	for batch := range slices.Chunk(slices.Compact(slices.Sorted(slices.Values(paths))), tuning.Get().Store.SimilarExcludeBatch) {
 		if _, err := tx.Exec(ctx, `INSERT INTO similar_exclusions (runner_run_id, account_id, path)
 			SELECT r.id, r.account_id, p.path FROM runner_runs r, unnest($2::text[]) AS p (path) WHERE r.id = $1`,
 			runID, batch); err != nil {
@@ -101,14 +98,14 @@ func WriteRunnerAgent(ctx context.Context, tx pgx.Tx, runID string, rec runspec.
 			input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
 			skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts,
 			unpriced_steps, command_errors, command_counts, forced_by)
-		SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
+		SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, $25), $14, $15, $16, $17, $18,
 			nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21, $22, coalesce($23::jsonb, '{}'::jsonb), $24
 		FROM runner_runs WHERE id = $1
 		ON CONFLICT (runner_run_id) DO NOTHING`,
 		runID, rec.Stop, rec.Result, rec.Steps, rec.ToolCalls, rec.Timeline,
 		rec.Usage.Input, rec.Usage.CacheRead, rec.Usage.CacheWrite, rec.Usage.Output, rec.CostUSD, rec.Model, rec.Error,
 		rec.Sources, rec.SkillsOffered, rec.SkillsOpened, rec.CommandsOffered, rec.CommandsRun, rec.ContinuedFrom, rec.Parts,
-		rec.UnpricedSteps, rec.CommandErrors, rec.CommandCounts, rec.ForcedBy)
+		rec.UnpricedSteps, rec.CommandErrors, rec.CommandCounts, rec.ForcedBy, tuning.Get().Store.ErrorTextChars)
 	if err != nil {
 		return fmt.Errorf("store: write agent run: %w", err)
 	}

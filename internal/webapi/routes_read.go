@@ -19,10 +19,8 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// recentIndexRuns is how many index runs a repository's detail lists.
-const recentIndexRuns = 20
 
 // registerReads mounts the read-only API.
 func (s *Server) registerReads(mux *http.ServeMux) {
@@ -339,7 +337,7 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 		if queue, err = readIndexQueue(ctx, tx, t); err != nil {
 			return err
 		}
-		if runs, _, err = store.ListIndexRuns(ctx, tx, row.ID, store.Page{Limit: recentIndexRuns}); err != nil {
+		if runs, _, err = store.ListIndexRuns(ctx, tx, row.ID, store.Page{Limit: tuning.Get().WebAPI.RecentIndexRuns}); err != nil {
 			return err
 		}
 		f, err := store.LastRepoFile(ctx, tx, row.ID)

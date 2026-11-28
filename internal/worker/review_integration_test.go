@@ -48,13 +48,13 @@ import (
 	"github.com/home-operations/kritika/internal/gittest"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
@@ -1021,7 +1021,7 @@ func pushDuringBuild(
 // build that can still be running beside it.
 func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], exec *gateExecutor, accountID, repoID string) {
 	t.Helper()
-	killed := plantBuild(ctx, t, st, accountID, repoID, jobtimeout.RescueStuckJobsAfter+time.Minute)
+	killed := plantBuild(ctx, t, st, accountID, repoID, tuning.Get().JobTimeout.RescueStuckJobsAfter()+time.Minute)
 	running := plantBuild(ctx, t, st, accountID, repoID, 0)
 	exec.setBeforeIndex(func() error { return errors.New("node went away") })
 	t.Cleanup(func() { exec.setBeforeIndex(nil) })
@@ -1408,12 +1408,12 @@ func checkReplyAnswers(t *testing.T, r *replyThreads, fc *fakeCompleter) {
 	}
 }
 
-// checkReplyBounds: past repliesPerThread of the bot's replies a thread is
-// left to a mention. A concession in the other thread dismisses the finding
-// and resolves the thread, which then takes no more replies.
+// checkReplyBounds: past tuning's Worker.RepliesPerThread of the bot's replies
+// a thread is left to a mention. A concession in the other thread dismisses
+// the finding and resolves the thread, which then takes no more replies.
 func checkReplyBounds(t *testing.T, r *replyThreads, fc *fakeCompleter) {
 	t.Helper()
-	for i := 2; i <= repliesPerThread; i++ {
+	for i := 2; i <= tuning.Get().Worker.RepliesPerThread; i++ {
 		id := r.reply(r.root, "onedr0p", fmt.Sprintf("Still not convinced, take %d.", i))
 		if status, reason := r.waitFollowUp(id); status != "answered" {
 			t.Fatalf("reply %d: status = %s (%s), want answered", i, status, reason)
@@ -2074,8 +2074,8 @@ func checkSnoozeWhileSlotsHeld(
 		t.Fatalf("a snoozed review recorded %d reviews and %d runner runs, %v", reviews, runs, err)
 	}
 
-	// The review was snoozed for at least half of snoozeMin a moment ago,
-	// so it is still asleep: letting the slot go wakes it.
+	// The review was snoozed for at least half of tuning's Worker.SnoozeMin a
+	// moment ago, so it is still asleep: letting the slot go wakes it.
 	if woken, err := lease.Release(ctx); err != nil || woken != jobID {
 		t.Fatalf("Release woke job %d, %v, want the snoozed review's job %d", woken, err, jobID)
 	}

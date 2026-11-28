@@ -12,20 +12,17 @@ import (
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/lexical"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
-// lexicalTimeout bounds the search by name, which a request can do without:
-// its first statement (store.LexicalChunks) and its looks past full files
-// together, each statement's timeout what is left of it.
-const lexicalTimeout = 5 * time.Second
-
 // lexicalWithin is how long the search by name of a request due by answerBy
-// can take, starting at now: lexicalTimeout, or what is left before
-// answerBy when that is less, in whole milliseconds, which is what a
-// statement timeout takes. Under a millisecond is none, and not a timeout of
-// 0, which would not bound the search at all.
+// can take, starting at now: Gateway.LexicalTimeout, which bounds its first
+// statement (store.LexicalChunks) and its looks past full files together,
+// or what is left before answerBy when that is less, in whole milliseconds,
+// which is what a statement timeout takes. Under a millisecond is none, and
+// not a timeout of 0, which would not bound the search at all.
 func lexicalWithin(now, answerBy time.Time) time.Duration {
-	return max(min(lexicalTimeout, answerBy.Sub(now)).Truncate(time.Millisecond), 0)
+	return max(min(tuning.Get().Gateway.LexicalTimeout, answerBy.Sub(now)).Truncate(time.Millisecond), 0)
 }
 
 // searchByName is lexicalHits for the request in a savepoint of tx, within
@@ -92,7 +89,7 @@ func namedWithin(
 
 // pastFullNames adds to named, the search by name's window of each of texts,
 // what search finds for a query past the files of which its hits hold
-// similarPerFile or more, while the file cap leaves the query short of
+// Gateway.SimilarPerFile or more, while the file cap leaves the query short of
 // target chunks, its window is full, and its query's names still vouch for
 // the window's last hit (namedBy): pastFullFiles' looking, for the search by
 // name. search is the search by name of texts, of languages, and their
@@ -114,30 +111,24 @@ func pastFullNames(
 	})
 }
 
-// lexicalTerms is how many words of a query are searched for, the longest
-// first.
-const lexicalTerms = 32
-
 // lexicalCommon bars the words too common to tell a generation's chunks
-// apart: a word in a hundredth of them, rounded down, or more is left out of
-// the search, the cutoff raised to 20 when it is less and lowered to
-// store.LexicalCommonMax, 200, when it is more, and so is a word in more than
-// half of them. The half bars, in a generation of fewer
-// than 40 chunks, a word that nearly all of them hold: its weight is too
-// small to say anything of a chunk, yet it would be its query's best by
-// name, and every chunk holding it would clear lexicalShare.
-var lexicalCommon = store.LexicalBar{Per: 100, Least: 20, Share: 2}
+// apart, as Gateway.LexicalCommonPer, LexicalCommonLeast and
+// LexicalCommonShare say.
+func lexicalCommon() store.LexicalBar {
+	g := tuning.Get().Gateway
+	return store.LexicalBar{Per: g.LexicalCommonPer, Least: g.LexicalCommonLeast, Share: g.LexicalCommonShare}
+}
 
 // lexicalAlone is the most of a generation's chunks that a word of a query
 // can be in and still find a chunk alone, without another of the query's
 // words or a compound identifier of it: no more than a query keeps.
-const lexicalAlone = similarPerQuery
+func lexicalAlone() int { return tuning.Get().Gateway.SimilarPerQuery }
 
 // lexicalHits finds, for each query text, the perQuery chunks that hold the
-// most weight of its lexicalTerms longest words, outside the excluded paths:
-// its words as lexical.CodeWords has them of its language in languages, or
-// of none when languages is nil. Each hit's Matched are the query's
-// spellings of the words that the chunk holds.
+// most weight of its Gateway.LexicalTerms longest words, outside the
+// excluded paths: its words as lexical.CodeWords has them of its language
+// in languages, or of none when languages is nil. Each hit's Matched are
+// the query's spellings of the words that the chunk holds.
 func lexicalHits(
 	ctx context.Context, tx pgx.Tx, runID string, texts, languages []string, vectors [][]float32, exclude store.Exclusions, perQuery int,
 ) ([]store.SimilarHit, error) {
@@ -150,13 +141,13 @@ func lexicalHits(
 		}
 		w := lexical.CodeWords(language, text)
 		slices.SortStableFunc(w, func(a, b lexical.Word) int { return cmp.Compare(len(b.Lexeme), len(a.Lexeme)) })
-		words[i] = w[:min(len(w), lexicalTerms)]
+		words[i] = w[:min(len(w), tuning.Get().Gateway.LexicalTerms)]
 		queries[i].Vector = vectors[i]
 		for _, w := range words[i] {
 			queries[i].Terms = append(queries[i].Terms, store.LexicalTerm{Lexeme: w.Lexeme, Compound: w.Compound})
 		}
 	}
-	hits, err := store.LexicalChunks(ctx, tx, runID, queries, exclude, perQuery, lexicalCommon, lexicalAlone)
+	hits, err := store.LexicalChunks(ctx, tx, runID, queries, exclude, perQuery, lexicalCommon(), lexicalAlone())
 	if err != nil {
 		return nil, err
 	}

@@ -47,9 +47,6 @@ func (t *readDiffTool) Def() model.ToolDef {
 	}
 }
 
-// pageNoteRoom is kept free on a page for the note that numbers it.
-const pageNoteRoom = 96
-
 func (t *readDiffTool) Run(_ context.Context, input json.RawMessage) (string, error) {
 	var req struct {
 		Path string `json:"path"`
@@ -64,7 +61,8 @@ func (t *readDiffTool) Run(_ context.Context, input json.RawMessage) (string, er
 	if !ok {
 		return "", fmt.Errorf("agent: read_diff: %q is not a file the pull request changes", req.Path)
 	}
-	pages := diffPages(numberDiff(section), t.maxBytes-pageNoteRoom)
+	text := numberDiff(section)
+	pages := diffPages(text, t.maxBytes-pageNoteRoom(text))
 	page := max(req.Page, 1)
 	if page > len(pages) {
 		return "", fmt.Errorf("agent: read_diff: %s's diff ends at page %d", req.Path, len(pages))
@@ -72,11 +70,26 @@ func (t *readDiffTool) Run(_ context.Context, input json.RawMessage) (string, er
 	out := pages[page-1]
 	switch {
 	case page < len(pages):
-		out += fmt.Sprintf("[page %d of %d of this file's diff; read_diff with page %d reads on]", page, len(pages), page+1)
+		out += fmt.Sprintf(pageNote, page, len(pages), page+1)
 	case len(pages) > 1:
-		out += fmt.Sprintf("[page %d of %d of this file's diff]", page, len(pages))
+		out += fmt.Sprintf(lastPageNote, page, len(pages))
 	}
 	return out, nil
+}
+
+// pageNote ends a page of read_diff that another follows, and lastPageNote
+// the last of several.
+const (
+	pageNote     = "[page %d of %d of this file's diff; read_diff with page %d reads on]"
+	lastPageNote = "[page %d of %d of this file's diff]"
+)
+
+// pageNoteRoom is the most that the note of a page of text's diff takes:
+// text has no more pages than lines, so no page number is longer than its
+// count of lines.
+func pageNoteRoom(text string) int {
+	digits := len(strconv.Itoa(strings.Count(text, "\n") + 1))
+	return len(pageNote) - 3*len("%d") + 3*digits
 }
 
 // numberDiff leads each line of a file section's hunks with the line's

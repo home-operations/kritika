@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // EnvOutbound is a Proxy's Outbound from the environment: HTTPS_PROXY,
@@ -35,17 +37,17 @@ func (p *Proxy) dialThrough(ctx context.Context, via *url.URL, addr string) (net
 	case plainScheme:
 		port = cmp.Or(port, "80")
 	case upgradedScheme:
-		port = cmp.Or(port, "443")
+		port = cmp.Or(port, tuning.HTTPSPort)
 	default:
 		return fail(fmt.Errorf("scheme %q is not supported", via.Scheme))
 	}
-	conn, err := (&net.Dialer{Timeout: connectTimeout}).DialContext(ctx, "tcp", net.JoinHostPort(via.Hostname(), port))
+	conn, err := (&net.Dialer{Timeout: tuning.Get().Egress.ConnectTimeout}).DialContext(ctx, "tcp", net.JoinHostPort(via.Hostname(), port))
 	if err != nil {
 		return fail(err)
 	}
 	// A cancelled request must not wait out a proxy that does not answer.
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
-	_ = conn.SetDeadline(time.Now().Add(connectTimeout))
+	_ = conn.SetDeadline(time.Now().Add(tuning.Get().Egress.ConnectTimeout))
 	tunnel, err := p.connectThrough(ctx, conn, via, addr)
 	if err == nil {
 		err = conn.SetDeadline(time.Time{})
@@ -70,7 +72,9 @@ func (p *Proxy) connectThrough(ctx context.Context, conn net.Conn, via *url.URL,
 		}
 		conn = secure
 	}
-	req := &http.Request{Method: http.MethodConnect, URL: &url.URL{Opaque: addr}, Host: addr, Header: http.Header{"User-Agent": {"kritika"}}}
+	req := &http.Request{
+		Method: http.MethodConnect, URL: &url.URL{Opaque: addr}, Host: addr, Header: http.Header{"User-Agent": {tuning.Product}},
+	}
 	if via.User != nil {
 		password, _ := via.User.Password()
 		req.Header.Set("Proxy-Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(via.User.Username()+":"+password)))

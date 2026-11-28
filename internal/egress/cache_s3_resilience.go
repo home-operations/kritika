@@ -9,28 +9,11 @@ import (
 
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"golang.org/x/sync/errgroup"
-)
 
-const (
-	s3LookupTimeout = 2 * time.Second
-	s3ReadTimeout   = 10 * time.Second
-	s3UploadTimeout = 30 * time.Second
-	// s3UploadRate is the slowest upload allowed past the fixed budget: one
-	// second per MiB. So a 256Mi entry has about five minutes and the 5Gi
-	// cap about ninety, instead of a deadline that no large entry can meet.
-	s3UploadRate    = 1 << 20
-	s3Cooldown      = 30 * time.Second
-	s3Failures      = 3
-	s3UploadWorkers = 2
-	s3UploadQueue   = 16
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 var errS3CircuitOpen = errors.New("egress: cache: S3 circuit is open")
-
-// uploadDeadline is the fixed budget plus what size bytes take at s3UploadRate.
-func uploadDeadline(size int64) time.Duration {
-	return s3UploadTimeout + time.Duration(size/s3UploadRate)*time.Second
-}
 
 // The SDK detaches credential refresh from request cancellation and holds its
 // credential mutex during retrieval, so discovery needs its own total budget.
@@ -45,7 +28,7 @@ func (p *s3Credentials) RetrieveWithCredContext(cc *credentials.CredContext) (cr
 	if parent == nil {
 		parent = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(parent, s3LookupTimeout)
+	ctx, cancel := context.WithTimeout(parent, tuning.Get().Egress.S3LookupTimeout)
 	defer cancel()
 	bounded.Context = ctx
 	return p.Provider.RetrieveWithCredContext(&bounded)
@@ -101,8 +84,8 @@ func (b *s3Circuit) complete(a s3Attempt, err error, now time.Time) {
 		return
 	}
 	b.failures++
-	if a.probe || b.failures >= s3Failures {
-		b.retryAt, b.probing = now.Add(s3Cooldown), false
+	if t := tuning.Get().Egress; a.probe || b.failures >= t.S3Failures {
+		b.retryAt, b.probing = now.Add(t.S3Cooldown), false
 		b.generation++
 	}
 }
@@ -111,7 +94,7 @@ func (b *s3Circuit) complete(a s3Attempt, err error, now time.Time) {
 // cancels active uploads. Uploads never extend gateway shutdown.
 func (c *Cache) RunUploads(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
-	for range s3UploadWorkers {
+	for range tuning.Get().Egress.S3UploadWorkers {
 		g.Go(func() error {
 			for {
 				select {
@@ -147,7 +130,7 @@ type s3ResponseBody struct {
 
 func (b *s3ResponseBody) Read(p []byte) (int, error) {
 	done := make(chan struct{})
-	timer := time.AfterFunc(s3ReadTimeout, func() {
+	timer := time.AfterFunc(tuning.Get().Egress.S3ReadTimeout, func() {
 		b.cancel(context.DeadlineExceeded)
 		close(done)
 	})

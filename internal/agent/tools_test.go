@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestReadFileTool(t *testing.T) {
@@ -273,4 +275,39 @@ func TestListFilesTool(t *testing.T) {
 			t.Fatal("expected error for invalid glob")
 		}
 	})
+}
+
+// TestGrepBoundsAreTunable: grep clamps to tuning's Agent grep bounds as
+// they are when it runs, and its schema states them.
+func TestGrepBoundsAreTunable(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Agent.DefaultGrepMaxResults, v.Agent.GrepMaxResultsCap, v.Agent.GrepContextLinesCap = 2, 3, 1
+	})
+	tool := GrepTool(NewTree(testTree(t), nil), 1<<20)
+	for _, tt := range []struct{ name, input, want string }{
+		{"the default", `{"pattern":"^MANY$","path_glob":"many.txt"}`, numberedMatches(2)},
+		{"the results cap", `{"pattern":"^MANY$","path_glob":"many.txt","max_results":999}`, numberedMatches(3)},
+		{"the context cap", `{"pattern":"^MANY$","path_glob":"many.txt","max_results":1,"context_lines":9}`, numberedMatches(2)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, err := tool.Run(t.Context(), json.RawMessage(tt.input)); err != nil || got != tt.want {
+				t.Fatalf("grep = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+	var schema struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+			Maximum     int    `json:"maximum"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(tool.Def().InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if got := schema.Properties["max_results"].Description; got != "Maximum matches to return; defaults to 2, capped at 3." {
+		t.Fatalf("max_results description = %q", got)
+	}
+	if got := schema.Properties["context_lines"]; got.Maximum != 1 || !strings.Contains(got.Description, "cap 1)") {
+		t.Fatalf("context_lines = %+v, want the cap of 1", got)
+	}
 }

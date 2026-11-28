@@ -15,6 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Notes the runner adds to the pack about the repository's rule files.
@@ -22,10 +23,6 @@ const (
 	noteRuleFileSkipped = "%s: skipped, %s"
 	noteRuleFilesCapped = "more than %d rule files found; the rest were left out"
 )
-
-// maxRuleFileDepth bounds how deep below a rule file directory files are
-// looked for, against a tree that nests without end.
-const maxRuleFileDepth = 8
 
 // withRuleFiles is p with the rule files that its spec has discovered added
 // after its rules, and files with their text, from the merge-base tree. A
@@ -57,15 +54,16 @@ func withRuleFiles(base *object.Tree, p runspec.Spec, files repoconfig.Files) (r
 // file without them applies to every change. A file that a configured rule
 // names is that rule's, and one whose id a configured rule or an earlier
 // file has is left out with a note, as is one too long to ever fit a
-// review's rule files. At most MaxRuleFiles files are read, kept or not.
-// The rules come scoped ones first, then the rest, each by path: so a long
-// file that applies everywhere does not take the room of ones narrowed to
-// the change.
+// review's rule files. At most RepoConfig.MaxRuleFiles files are read, kept
+// or not. The rules come scoped ones first, then the rest, each by path: so
+// a long file that applies everywhere does not take the room of ones
+// narrowed to the change.
 func discoverRuleFiles(
 	base *object.Tree, rf *runspec.RuleFiles,
 ) (rules []configfile.Rule, texts repoconfig.Files, notes []string, err error) {
 	readFile := treeReader(base)
 	texts = repoconfig.Files{}
+	limits := tuning.Get().RepoConfig
 	configured := make([]string, len(rf.Files))
 	for i, f := range rf.Files {
 		configured[i] = path.Clean(f)
@@ -88,12 +86,12 @@ func discoverRuleFiles(
 			return !slices.Contains(configured, file) && !seen[file]
 		}
 		var names []string
-		markdownFiles(t, "", 0, &names, repoconfig.MaxRuleFiles+1-read, wanted)
+		markdownFiles(t, "", 0, &names, limits.MaxRuleFiles+1-read, wanted)
 		slices.Sort(names)
 		for _, rel := range names {
 			file := path.Join(dir, rel)
-			if read == repoconfig.MaxRuleFiles {
-				notes = append(notes, fmt.Sprintf(noteRuleFilesCapped, repoconfig.MaxRuleFiles))
+			if read == limits.MaxRuleFiles {
+				notes = append(notes, fmt.Sprintf(noteRuleFilesCapped, limits.MaxRuleFiles))
 				return orderRuleFiles(rules), texts, notes, nil
 			}
 			seen[file], read = true, read+1
@@ -103,7 +101,7 @@ func discoverRuleFiles(
 				continue
 			case rerr != nil:
 				return nil, nil, nil, rerr
-			case len(data) > repoconfig.MaxFileBytes:
+			case len(data) > int(limits.MaxFileBytes):
 				notes = append(notes, repoconfig.TooLarge(file))
 				continue
 			}
@@ -121,8 +119,8 @@ func discoverRuleFiles(
 				skip = "another rule file has the id " + id
 			case parsed.Scoped && len(parsed.Paths) == 0:
 				skip = "none of its paths is a valid glob"
-			case len(id)+len(parsed.Text) > repoconfig.MaxRuleFileBytes:
-				skip = fmt.Sprintf("it is longer than the %d KiB of rule files a review is given; split it", repoconfig.MaxRuleFileBytes>>10)
+			case len(id)+len(parsed.Text) > int(limits.MaxRuleFileBytes):
+				skip = fmt.Sprintf("it is longer than the %s of rule files a review is given; split it", sizeNote(limits.MaxRuleFileBytes))
 			}
 			if skip != "" {
 				notes = append(notes, fmt.Sprintf(noteRuleFileSkipped, file, skip))
@@ -153,8 +151,8 @@ func orderRuleFiles(rules []configfile.Rule) []configfile.Rule {
 
 // markdownFiles appends to names the paths below t, joined to prefix, of
 // the files t holds with the rule file extension that wanted keeps, at
-// most maxRuleFileDepth directories down and at most limit of them in all.
-// A symlink is passed over: the tree holds its target's path, not that
+// most Runner.MaxRuleFileDepth directories down and at most limit of them in
+// all. A symlink is passed over: the tree holds its target's path, not that
 // file's text.
 func markdownFiles(t *object.Tree, prefix string, depth int, names *[]string, limit int, wanted func(string) bool) {
 	for _, e := range t.Entries {
@@ -171,7 +169,7 @@ func markdownFiles(t *object.Tree, prefix string, depth int, names *[]string, li
 			}
 			continue
 		}
-		if depth == maxRuleFileDepth {
+		if depth == tuning.Get().Runner.MaxRuleFileDepth {
 			continue
 		}
 		if sub, err := t.Tree(e.Name); err == nil {

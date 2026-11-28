@@ -9,6 +9,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestParseSkill(t *testing.T) {
@@ -52,8 +53,8 @@ func TestParseSkill(t *testing.T) {
 			want: Skill{Name: "review-go", Description: "Go.", Dir: dir},
 		},
 		{
-			name: "a description of the most characters allowed", data: "---\ndescription: " + strings.Repeat("x", MaxSkillDescription) + "\n---\n",
-			want: Skill{Name: "review-go", Description: strings.Repeat("x", MaxSkillDescription), Dir: dir},
+			name: "a description of the most characters allowed", data: "---\ndescription: " + strings.Repeat("x", tuning.Get().RepoConfig.MaxSkillDescription) + "\n---\n",
+			want: Skill{Name: "review-go", Description: strings.Repeat("x", tuning.Get().RepoConfig.MaxSkillDescription), Dir: dir},
 		},
 		{name: "no frontmatter", data: "# Reviewing Go\n\nname: review-go\n", wantErr: "no frontmatter"},
 		{name: "an empty file", wantErr: "no frontmatter"},
@@ -69,7 +70,7 @@ func TestParseSkill(t *testing.T) {
 		},
 		{name: "a folder that is no name", dir: ".agents/skills/Review Go", data: "---\ndescription: Go.\n---\n", wantErr: `name "Review Go" must be`},
 		{
-			name: "an overlong description", data: "---\ndescription: " + strings.Repeat("x", MaxSkillDescription+1) + "\n---\n",
+			name: "an overlong description", data: "---\ndescription: " + strings.Repeat("x", tuning.Get().RepoConfig.MaxSkillDescription+1) + "\n---\n",
 			wantErr: "description is over 1024 characters",
 		},
 	}
@@ -94,7 +95,8 @@ func TestParseSkill(t *testing.T) {
 // characters, so one in a script of multibyte characters fits as one in
 // ASCII does.
 func TestParseSkillCountsCharacters(t *testing.T) {
-	for n, wantErr := range map[int]bool{MaxSkillDescription: false, MaxSkillDescription + 1: true} {
+	limit := tuning.Get().RepoConfig.MaxSkillDescription
+	for n, wantErr := range map[int]bool{limit: false, limit + 1: true} {
 		_, err := ParseSkill(".agents/skills/go", []byte("---\ndescription: "+strings.Repeat("語", n)+"\n---\n"))
 		if (err != nil) != wantErr {
 			t.Errorf("a description of %d characters: err = %v, want an error %v", n, err, wantErr)
@@ -114,15 +116,17 @@ func TestOfferedSkills(t *testing.T) {
 		"conditioned": {When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}},
 	}
 	scoped := []Skill{{Name: "go", Description: "Go."}, {Name: "conditioned", Description: "Bumps."}}
+	listingBytes := int(tuning.Get().RepoConfig.MaxSkillListingBytes)
+	loadedBytes := int(tuning.Get().RepoConfig.MaxSkillLoadedBytes)
 	// The loaded skills' budget holds the whole of one at most.
-	huge := Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", MaxSkillLoadedBytes/2+1)}
+	huge := Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", loadedBytes/2+1)}
 	// Each of the big skills takes 1000 bytes of the listing, so four fit.
 	big := make([]Skill, 0, 6)
 	for i := range 6 {
 		name := fmt.Sprintf("big-%d", i)
 		big = append(big, Skill{Name: name, Description: strings.Repeat("x", 1000-len(name))})
 	}
-	small := Skill{Name: "small", Description: strings.Repeat("y", MaxSkillListingBytes-4000-len("small"))}
+	small := Skill{Name: "small", Description: strings.Repeat("y", listingBytes-4000-len("small"))}
 	tests := []struct {
 		name         string
 		found        []Skill
@@ -183,11 +187,11 @@ func TestOfferedSkills(t *testing.T) {
 				t.Fatalf("listed %q, loaded %q, %d left, %d unloaded; want %q, %q, %d, %d",
 					got, loaded, out.Left, out.Unloaded, tt.want, tt.wantLoaded, tt.wantLeft, tt.wantUnloaded)
 			}
-			if size > MaxSkillListingBytes {
-				t.Fatalf("the listing takes %d bytes, over %d", size, MaxSkillListingBytes)
+			if size > listingBytes {
+				t.Fatalf("the listing takes %d bytes, over %d", size, listingBytes)
 			}
-			if loadedSize > MaxSkillLoadedBytes {
-				t.Fatalf("the loaded skills take %d bytes, over %d", loadedSize, MaxSkillLoadedBytes)
+			if loadedSize > loadedBytes {
+				t.Fatalf("the loaded skills take %d bytes, over %d", loadedSize, loadedBytes)
 			}
 		})
 	}

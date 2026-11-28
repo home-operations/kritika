@@ -5,13 +5,18 @@ package store
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/riverqueue/river/rivertype"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // insertRiverJob puts a running job into River's table as a worker that
@@ -487,5 +492,314 @@ func TestRescuePublication(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestRescueByTheOwnersWindow: a job is abandoned by the window that its
+// owner's last beat carries, not the leader's, so that replicas on
+// different heartbeat settings during a rollout never rescue a live job. A
+// beat that carries no window, from a replica before the column, is judged
+// by the fixed window of that replica.
+func TestRescueByTheOwnersWindow(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	beat := func(id int64, interval time.Duration, beats int, ago time.Duration) {
+		t.Helper()
+		tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.HeartbeatInterval, v.JobTimeout.AbandonedBeats = interval, beats })
+		if err := s.HeartbeatJob(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - make_interval(secs => $2),
+			abandon_after_at = now() - make_interval(secs => $2) WHERE job_id = $1`,
+			id, ago.Seconds()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A slow owner, 6m to abandonment, 3m silent: alive to a leader whose
+	// own window is 1m.
+	slow := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	beat(slow, time.Minute, 6, 3*time.Minute)
+	// A fast owner, 30s to abandonment, 2m silent: abandoned to a leader
+	// whose own window is 3m.
+	fast := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	beat(fast, 10*time.Second, 3, 2*time.Minute)
+	// Beats that carry no window, from replicas before it was recorded,
+	// whose window was the fixed 3m: 2m silent, alive whatever the leader's
+	// window, and 4m silent, abandoned.
+	legacy := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	beat(legacy, time.Minute, 6, 2*time.Minute)
+	legacyGone := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	beat(legacyGone, time.Minute, 6, 4*time.Minute)
+	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET abandon_after = DEFAULT, abandon_after_at = NULL WHERE job_id = ANY($1)`, []int64{legacy, legacyGone}); err != nil {
+		t.Fatal(err)
+	}
+	ours := []int64{slow, fast, legacy, legacyGone}
+	abandoned := func(stale time.Duration) []int64 {
+		t.Helper()
+		got, err := s.AbandonedJobs(ctx, stale, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []int64
+		for _, j := range got {
+			if slices.Contains(ours, j.ID) {
+				ids = append(ids, j.ID)
+			}
+		}
+		return ids
+	}
+	if got, want := abandoned(time.Minute), []int64{fast, legacyGone}; !slices.Equal(got, want) {
+		t.Fatalf("abandoned to a 1m leader = %v, want %v: the slow owner's 6m window and the legacy 3m have not passed", got, want)
+	}
+	if got, want := abandoned(3*time.Minute), []int64{fast, legacyGone}; !slices.Equal(got, want) {
+		t.Fatalf("abandoned to a 3m leader = %v, want %v: the fast owner's 30s window and the legacy 3m have passed", got, want)
+	}
+	// The rescue's own check judges as the listing does.
+	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: slow, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost"); err != nil || rescued {
+		t.Fatalf("RescueJob of the slow owner's job = %v, %v; want it left alone", rescued, err)
+	}
+	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: legacy, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost"); err != nil || rescued {
+		t.Fatalf("RescueJob of the legacy beat 2m silent = %v, %v; want it left alone under a 1m leader", rescued, err)
+	}
+	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: fast, Kind: "review", Attempt: 1, MaxAttempts: 25}, 3*time.Minute, "lost"); err != nil || !rescued {
+		t.Fatalf("RescueJob of the fast owner's job = %v, %v; want it rescued", rescued, err)
+	}
+}
+
+// TestStartJob: the horizon that a replica records on its attempt's
+// row is the one River's rescuer reads back from the row, whatever the
+// reading replica's settings, and only for that attempt.
+func TestStartJob(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{"kept": true}`)
+	read := func() *rivertype.JobRow {
+		t.Helper()
+		var r rivertype.JobRow
+		r.ID = id
+		if err := s.owner.QueryRow(ctx, `SELECT attempted_at, metadata FROM river_job WHERE id = $1`, id).Scan(&r.AttemptedAt, &r.Metadata); err != nil {
+			t.Fatal(err)
+		}
+		return &r
+	}
+	claimed := read()
+	if _, ok := JobRescueAfter(claimed); ok {
+		t.Fatal("a row as claimed carries a rescue horizon")
+	}
+	// The working replica's maxJobTimeout 6h, with its 1h grace.
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.MaxJobTimeout = 6 * time.Hour })
+	if _, err := s.StartJob(ctx, claimed); err != nil {
+		t.Fatal(err)
+	}
+	// The rescuer's own settings are the defaults, a 4h horizon.
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.MaxJobTimeout = 3 * time.Hour })
+	got := read()
+	if after, ok := JobRescueAfter(got); !ok || after != 7*time.Hour {
+		t.Fatalf("JobRescueAfter = %s, %v; want the working replica's 7h", after, ok)
+	}
+	if !strings.Contains(string(got.Metadata), `"kept"`) {
+		t.Fatalf("metadata = %s, want the keys it held kept", got.Metadata)
+	}
+	// A later attempt is claimed anew: the record does not match it.
+	if _, err := s.owner.Exec(ctx, `UPDATE river_job SET attempted_at = now() WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if after, ok := JobRescueAfter(read()); ok {
+		t.Fatalf("JobRescueAfter of a later attempt = %s, want no record", after)
+	}
+}
+
+// TestStartJobOfARescuedAttempt: an attempt that the leader rescued before
+// its replica took it does not start, and stamps no beat.
+func TestStartJobOfARescuedAttempt(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	var claimed rivertype.JobRow
+	claimed.ID = id
+	if err := s.owner.QueryRow(ctx, `SELECT attempted_at, metadata FROM river_job WHERE id = $1`, id).Scan(&claimed.AttemptedAt, &claimed.Metadata); err != nil {
+		t.Fatal(err)
+	}
+	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: id, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost"); err != nil || !rescued {
+		t.Fatalf("RescueJob = %v, %v", rescued, err)
+	}
+	if _, err := s.StartJob(ctx, &claimed); !errors.Is(err, ErrJobNotRunning) {
+		t.Fatalf("StartJob of a rescued attempt = %v, want ErrJobNotRunning", err)
+	}
+	var beats int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM job_heartbeats WHERE job_id = $1`, id).Scan(&beats); err != nil || beats != 0 {
+		t.Fatalf("beats = %d, %v; want none", beats, err)
+	}
+}
+
+// TestLegacyBeatOverATunedWindow: a beat of a replica from before the window
+// was written, which updates heartbeat_at alone, is judged by 180 seconds,
+// not by the window that an earlier attempt's beat left on the row.
+func TestLegacyBeatOverATunedWindow(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.HeartbeatInterval, v.JobTimeout.AbandonedBeats = 4*time.Second, 3 })
+	if err := s.HeartbeatJob(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	// The pre-upgrade upsert, which writes heartbeat_at alone, dated 30s
+	// back: past the 12s window, within the legacy 180s.
+	if _, err := s.app.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at) VALUES ($1, now() - interval '30 seconds')
+		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = excluded.heartbeat_at`, id); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AbandonedJobs(ctx, time.Minute, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range got {
+		if j.ID == id {
+			t.Fatal("a legacy beat 30s old is abandoned by an earlier beat's 12s window")
+		}
+	}
+}
+
+// TestRescueWaitsOutAStartingAttempt: a rescue that starts while an
+// attempt's first beat is being written, before it commits, sees the beat
+// once it does, and leaves the attempt running.
+func TestRescueWaitsOutAStartingAttempt(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	tx, err := s.app.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `UPDATE river_job SET metadata = metadata || '{}' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := heartbeatJob(ctx, tx, id); err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		rescued bool
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		rescued, err := s.RescueJob(ctx, AbandonedJob{ID: id, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost")
+		done <- result{rescued, err}
+	}()
+	waitBlockedBy(t, ctx, s, backendPID(t, ctx, tx), done)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-done; r.err != nil || r.rescued {
+		t.Fatalf("RescueJob = %v, %v; want the attempt left running", r.rescued, r.err)
+	}
+	if r := readJob(t, ctx, s, id); r.state != "running" {
+		t.Fatalf("job = %+v, want running", r)
+	}
+}
+
+// TestStartJobStampsAfterTheLock: StartJob's first beat is dated after it
+// got the job's row, not when its transaction began, which a wait on the
+// row can leave older than the window.
+func TestStartJobStampsAfterTheLock(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	var job rivertype.JobRow
+	job.ID = id
+	if err := s.owner.QueryRow(ctx, `SELECT attempted_at FROM river_job WHERE id = $1`, id).Scan(&job.AttemptedAt); err != nil {
+		t.Fatal(err)
+	}
+	hold, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback(ctx) }()
+	if _, err := hold.Exec(ctx, `SELECT 1 FROM river_job WHERE id = $1 FOR UPDATE`, id); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.StartJob(ctx, &job)
+		done <- err
+	}()
+	waitBlockedBy(t, ctx, s, backendPID(t, ctx, hold), done)
+	var released time.Time
+	if err := s.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&released); err != nil {
+		t.Fatal(err)
+	}
+	if err := hold.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	var beat time.Time
+	if err := s.owner.QueryRow(ctx, `SELECT heartbeat_at FROM job_heartbeats WHERE job_id = $1`, id).Scan(&beat); err != nil {
+		t.Fatal(err)
+	}
+	if beat.Before(released) {
+		t.Fatalf("first beat at %v, before the lock was released at %v", beat, released)
+	}
+}
+
+// TestOpenRefusesAOneConnectionOwnerPool: an owner pool of one connection,
+// which the leader lock would hold for its whole tenure, is refused as a
+// configuration error, whichever of the DSN or tuning sets it.
+func TestOpenRefusesAOneConnectionOwnerPool(t *testing.T) {
+	ctx := t.Context()
+	owner, err := url.Parse(testEnv(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := owner.Query()
+	q.Set("pool_max_conns", "1")
+	owner.RawQuery = q.Encode()
+	opts := Options{AppURL: testEnv(t, "KRITIKA_TEST_APP_URL"), OwnerURL: owner.String(), Logger: slog.New(slog.DiscardHandler)}
+	if _, err := Open(ctx, opts); !errors.Is(err, ErrOwnerPoolTooSmall) || !IsConfigurationError(err) {
+		t.Fatalf("Open with pool_max_conns=1 = %v, want ErrOwnerPoolTooSmall", err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Store.OwnerPoolMaxConns = 1 })
+	opts.OwnerURL = testEnv(t, "KRITIKA_TEST_OWNER_URL")
+	if _, err := Open(ctx, opts); !errors.Is(err, ErrOwnerPoolTooSmall) {
+		t.Fatalf("Open with ownerPoolMaxConns 1 = %v, want ErrOwnerPoolTooSmall", err)
+	}
+}
+
+// backendPID is the Postgres backend that tx runs on.
+func backendPID(t *testing.T, ctx context.Context, tx pgx.Tx) uint32 {
+	t.Helper()
+	var pid uint32
+	if err := tx.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	return pid
+}
+
+// waitBlockedBy waits until a backend waits on pid's locks, and fails if done
+// reports first that what was to wait ended, or ten seconds pass.
+func waitBlockedBy[T any](t *testing.T, ctx context.Context, s *Store, pid uint32, done <-chan T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var blocked bool
+		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`,
+			pid).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		if blocked {
+			return
+		}
+		select {
+		case r := <-done:
+			t.Fatalf("ended without waiting on backend %d: %v", pid, r)
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatalf("nothing waited on backend %d", pid)
+		}
 	}
 }

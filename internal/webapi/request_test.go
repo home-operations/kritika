@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestReadBody(t *testing.T) {
@@ -20,7 +22,7 @@ func TestReadBody(t *testing.T) {
 		{name: "a name twice", body: `{"on":true,"on":false}`, wantErr: `duplicate object member name "on"`},
 		{name: "two documents", body: `{"on":true}{"on":false}`, wantErr: "after top-level value"},
 		{name: "a name in another case", body: `{"On":true}`, wantErr: `unknown object member name "On"`},
-		{name: "oversized", body: strings.Repeat(" ", maxBodyBytes+1) + "{}", wantErr: "too large"},
+		{name: "oversized", body: strings.Repeat(" ", int(tuning.Get().WebAPI.MaxBodyBytes)+1) + "{}", wantErr: "too large"},
 		{name: "empty", body: "", wantErr: "not valid JSON"},
 	}
 	for _, tt := range tests {

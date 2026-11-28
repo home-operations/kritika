@@ -9,6 +9,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestParseAlias(t *testing.T) {
@@ -190,13 +192,13 @@ func TestModelCatalogRefresh(t *testing.T) {
 	answer([]string{"v1"}, nil)
 	get("v1")
 	// The expired catalog is served while its refresh, unanswered, runs.
-	now = now.Add(modelCatalogTTL)
+	now = now.Add(tuning.Get().Model.CatalogTTL)
 	get("v1")
 	answer(nil, errors.New("catalog unavailable"))
 	fetched(2)
 	get("v1")
 	fetched(2)
-	now = now.Add(modelCatalogRetry)
+	now = now.Add(tuning.Get().Model.CatalogRetry)
 	get("v1")
 	answer([]string{"v2"}, nil)
 	fetched(3)

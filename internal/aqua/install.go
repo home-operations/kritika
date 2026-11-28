@@ -21,16 +21,8 @@ import (
 	"strings"
 
 	"github.com/aquaproj/aqua/v2/pkg/checksum"
-)
 
-// What bounds an install. maxDownloadBytes bounds a package's download: the
-// largest that the registry's tools ship is a few hundred MiB.
-// maxChecksumFileBytes bounds a checksum file, which lists a release's
-// assets. maxReleaseBytes bounds the GitHub API's description of a release.
-const (
-	maxDownloadBytes     = 1 << 30
-	maxChecksumFileBytes = 4 << 20
-	maxReleaseBytes      = 16 << 20
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 var (
@@ -158,7 +150,7 @@ func (in *Installer) Checksum(ctx context.Context, p *Package) (Sum, error) {
 // once s, the signatures declared of the file, pass. releaseErr is why the
 // release gave none, joined to the file's own failure.
 func (in *Installer) checksumFile(ctx context.Context, p *Package, s signatures, releaseErr error) (Sum, error) {
-	content, err := get(ctx, in.Client, p.ChecksumURL, nil, maxChecksumFileBytes)
+	content, err := get(ctx, in.Client, p.ChecksumURL, nil, int64(tuning.Get().Aqua.MaxChecksumFileBytes))
 	if err != nil {
 		return Sum{}, fmt.Errorf("aqua: %s: checksum file: %w", p.Name, errors.Join(err, releaseErr))
 	}
@@ -181,11 +173,12 @@ func (in *Installer) checksumFile(ctx context.Context, p *Package, s signatures,
 func (in *Installer) releaseDigest(ctx context.Context, p *Package) (Sum, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/releases/tags/%s", strings.TrimSuffix(in.APIURL, "/"),
 		neturl.PathEscape(p.Owner), neturl.PathEscape(p.Repo), neturl.PathEscape(p.Version))
-	header := http.Header{"Accept": {"application/vnd.github+json"}, "X-Github-Api-Version": {"2022-11-28"}}
+	header := http.Header{"Accept": {tuning.GitHubAccept}}
+	header.Set(tuning.GitHubAPIVersionHeader, tuning.GitHubAPIVersion)
 	if in.Token != "" {
-		header.Set("Authorization", "Bearer "+in.Token)
+		header.Set("Authorization", tuning.BearerPrefix+in.Token)
 	}
-	body, err := get(ctx, in.Client, url, header, maxReleaseBytes)
+	body, err := get(ctx, in.Client, url, header, int64(tuning.Get().Aqua.MaxReleaseBytes))
 	if errors.Is(err, errNotFound) {
 		return Sum{}, unreleased(fmt.Sprintf("%s/%s has no release tagged %s", p.Owner, p.Repo, p.Version))
 	}
@@ -260,9 +253,9 @@ func request(ctx context.Context, client *http.Client, url string, header http.H
 	return resp, nil
 }
 
-// download writes url's body to w, at most maxDownloadBytes of it. It makes
-// sure that the body matches sum, and returns its SHA-256, which a signature
-// is of.
+// download writes url's body to w, at most tuning's Aqua.MaxDownloadBytes
+// of it. It makes sure that the body matches sum, and returns its SHA-256,
+// which a signature is of.
 func (in *Installer) download(ctx context.Context, url string, sum Sum, w io.Writer) ([]byte, error) {
 	h, err := hasher(sum.Algorithm)
 	if err != nil {
@@ -278,12 +271,13 @@ func (in *Installer) download(ctx context.Context, url string, sum Sum, w io.Wri
 	}
 	defer func() { _ = resp.Body.Close() }()
 	digest := sha256.New()
-	n, err := io.Copy(io.MultiWriter(w, h, digest), io.LimitReader(resp.Body, maxDownloadBytes+1))
+	limit := int64(tuning.Get().Aqua.MaxDownloadBytes)
+	n, err := io.Copy(io.MultiWriter(w, h, digest), io.LimitReader(resp.Body, limit+1))
 	switch {
 	case err != nil:
 		return nil, fmt.Errorf("%s: %w", url, err)
-	case n > maxDownloadBytes:
-		return nil, fmt.Errorf("%s: over %d bytes", url, maxDownloadBytes)
+	case n > limit:
+		return nil, fmt.Errorf("%s: over %d bytes", url, limit)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != sum.Hex {
 		return nil, fmt.Errorf("%s: %w: %s %s, want %s", url, ErrChecksum, sum.Algorithm, got, sum.Hex)

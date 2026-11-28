@@ -10,9 +10,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Reviewer is an agent of review.agents, by its Name. One with Categories
@@ -139,17 +139,9 @@ func (r Reviewer) Models(defaults Models) Models {
 	return out
 }
 
-// MaxReviewerChars bounds an agent's instructions written as text.
-const MaxReviewerChars = 8000
-
-// MaxReviewers bounds how many agents a configuration, or a repository's
-// file, writes: each runs an agent of its own over the change, or picks
-// the one the default pass runs.
-const MaxReviewers = 8
-
 // CheckAgents rejects agents with a name that is not valid, is the default
-// pass's, or is given twice. It rejects more than MaxReviewers. It rejects a
-// specialist whose instructions are both or overlong, or whose file is
+// pass's, or is given twice. It rejects more than tuning's
+// ConfigFile.MaxReviewers. It rejects a specialist whose instructions are both or overlong, or whose file is
 // outside the repository. It also rejects a specialist whose categories are
 // not categories, or whose paths, rules, skills, or bounds are not valid. It
 // rejects an agent that replaces the default pass with no model or with
@@ -160,8 +152,8 @@ const MaxReviewers = 8
 // their models are valid, because what they can name depends on the scope.
 // The error starts with the agent's place, as review.agents[0] (security).
 func CheckAgents(agents []Reviewer) error {
-	if len(agents) > MaxReviewers {
-		return fmt.Errorf("review.agents: %d agents are over the %d allowed", len(agents), MaxReviewers)
+	if limit := tuning.Get().ConfigFile.MaxReviewers; len(agents) > limit {
+		return fmt.Errorf("review.agents: %d agents are over the %d allowed", len(agents), limit)
 	}
 	for i := range agents {
 		r := &agents[i]
@@ -201,8 +193,8 @@ func checkAgent(r *Reviewer) error {
 	if strings.TrimSpace(r.Instructions) != "" && r.File != "" {
 		return errors.New(": set one of instructions or file")
 	}
-	if n := utf8.RuneCountInString(r.Instructions); n > MaxReviewerChars {
-		return fmt.Errorf(".instructions is %d characters, over the %d allowed", n, MaxReviewerChars)
+	if n, limit := utf8.RuneCountInString(r.Instructions), tuning.Get().ConfigFile.MaxReviewerChars; n > limit {
+		return fmt.Errorf(".instructions is %d characters, over the %d allowed", n, limit)
 	}
 	if r.File != "" {
 		if err := CheckRepoPath(r.File); err != nil {
@@ -257,8 +249,8 @@ func (a ReviewerAgent) check() error {
 		return errors.New(".agent.tokens must be positive")
 	}
 	// The job document carries whole seconds.
-	if a.Timeout != nil && (*a.Timeout < time.Second || *a.Timeout > jobtimeout.MaxAgentTimeout) {
-		return fmt.Errorf(".agent.timeout must be at least 1s and at most %s", jobtimeout.MaxAgentTimeout)
+	if limit := tuning.Get().JobTimeout.MaxAgentTimeout(); a.Timeout != nil && (*a.Timeout < time.Second || *a.Timeout > limit) {
+		return fmt.Errorf(".agent.timeout must be at least 1s and at most %s", limit)
 	}
 	return nil
 }

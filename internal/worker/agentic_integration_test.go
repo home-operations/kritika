@@ -43,13 +43,13 @@ import (
 	"github.com/home-operations/kritika/internal/indexer"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 	"github.com/home-operations/kritika/internal/transcript"
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
@@ -1212,7 +1212,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Lock()
 	asked := h.sm.maxTokens[len(h.sm.maxTokens)-1]
 	h.sm.mu.Unlock()
-	if limit := agent.DefaultLimits.MaxOutputTokensPerStep; asked != limit {
+	if limit := agent.DefaultLimits().MaxOutputTokensPerStep; asked != limit {
 		t.Fatalf("the provider was asked for %d tokens, want the step cap %d", asked, limit)
 	}
 	if grant, err := h.st.LookupGatewayToken(h.ctx, token); err != nil || grant.Spent != 110 {
@@ -2167,7 +2167,7 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 		if limits == nil {
 			t.Fatalf("concurrency %d: the run had no agent", tc.parallel)
 		}
-		want := min(time.Duration(8*limits.TimeoutSeconds)*time.Second, jobtimeout.MaxAgentTimeout) + jobtimeout.AgentFetchHeadroom
+		want := min(time.Duration(8*limits.TimeoutSeconds)*time.Second, tuning.Get().JobTimeout.MaxAgentTimeout()) + tuning.Get().JobTimeout.AgentFetchHeadroom
 		if limits.Parts != 8 || limits.Slots[limits.Pools["default"]] != tc.parallel || budget != 8*limits.MaxTokens || deadline != want {
 			t.Fatalf("concurrency %d: agent = %+v, budget = %d, deadline = %s; want 8 parts, %d at once, 8 times the tokens and %s",
 				tc.parallel, limits, budget, deadline, tc.parallel, want)
@@ -2559,7 +2559,7 @@ func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoI
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _, _, err := indexer.Build(h.ctx, tree, nil, nil, indexer.DefaultOptions)
+	chunks, _, _, err := indexer.Build(h.ctx, tree, nil, nil, indexer.DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2643,7 +2643,7 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	}
 	for name, body := range map[string]string{
 		"an empty query": `{"queries":[" "]}`, "not json": `{`, "an unknown kind": `{"queries":["x"],"kind":"other"}`,
-		"too many queries": encode(contextpack.SimilarRequest{Queries: slices.Repeat([]string{query}, contextpack.SimilarQueries+1)}),
+		"too many queries": encode(contextpack.SimilarRequest{Queries: slices.Repeat([]string{query}, tuning.Get().ContextPack.SimilarQueries+1)}),
 	} {
 		if code, _ := similar(token, body); code != http.StatusBadRequest {
 			t.Fatalf("%s = %d", name, code)

@@ -12,8 +12,8 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritika/internal/executor"
-	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Causes supervision cancels a run with.
@@ -28,18 +28,6 @@ type supersededBy string
 
 func (supersededBy) Error() string { return errSuperseded.Error() }
 func (supersededBy) Unwrap() error { return errSuperseded }
-
-const (
-	// superviseInterval is how often supervision looks at a running run.
-	superviseInterval = 10 * time.Second
-	// heartbeatStale is how old a runner's heartbeat can get before the run
-	// is treated as dead. A heartbeat goes through the gateway as a report
-	// does, so an outage silences both. This outlasts a report's last attempt,
-	// and the beats either side of it, because ending the run sooner can lose
-	// an answer already paid for. A pod that dies is seen sooner, by its Job.
-	// Only a wedged runner waits this long.
-	heartbeatStale = runspec.ReportRetryWindow + runspec.ReportTimeout + 2*runspec.HeartbeatInterval
-)
 
 // supervision is what the worker watches while a runner works.
 type supervision struct {
@@ -161,13 +149,19 @@ func runEnd(jobCause error, res executor.Result) (warning bool, reason, note str
 	return false, "", ""
 }
 
+// legacyHeartbeatStale is the stale cutoff from before it was tuned.
+const legacyHeartbeatStale = 5*time.Minute + 30*time.Second
+
 // runSupervision builds the supervision of one runner run. Heartbeat age is
 // measured by the database's clock, the same clock that stamped it. prID
 // empty skips the supersede and replacement checks of a review's run,
-// reviewID.
+// reviewID. The stale cutoff is at least legacyHeartbeatStale: a runner
+// image pinned to a release from before the heartbeat was tuned beats every
+// 15 seconds whatever this replica hands it, and nothing tells it apart.
 func runSupervision(st *store.Store, accountID, runID, prID, reviewID, head string, every time.Duration, logger *slog.Logger) supervision {
 	s := supervision{
-		every: cmp.Or(every, superviseInterval), stale: heartbeatStale, logger: logger,
+		every: cmp.Or(every, tuning.Get().Worker.SuperviseInterval), logger: logger,
+		stale: max(tuning.Get().HeartbeatStale(), legacyHeartbeatStale),
 		heartbeat: func(ctx context.Context) (time.Duration, bool, error) {
 			var age time.Duration
 			var seen bool

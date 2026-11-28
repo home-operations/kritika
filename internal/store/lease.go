@@ -11,19 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
-)
-
-// Lease timing. A holder renews every heartbeat. A lease older than expiry
-// belongs to a process that died and is free to take.
-const (
-	leaseHeartbeat = 30 * time.Second
-	leaseExpiry    = 2 * time.Minute
-)
-
-// How long AcquireLease waits between tries for a slot, per try.
-const (
-	leasePollMin = 2 * time.Second
-	leasePollMax = 30 * time.Second
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Backoff is base doubled n times, capped at limit, then jittered into its
@@ -68,12 +56,13 @@ type Lease struct {
 // shares them. Rows are created on demand, so a raised limit takes effect
 // on the next review and a lowered one leaves the extra rows unused.
 func (s *Store) AcquireLease(ctx context.Context, accountID, modelKey string, slots configfile.Slots, jobID int64) (*Lease, error) {
+	t := tuning.Get().Store
 	for try := 0; ; try++ {
 		l, err := s.TakeLease(ctx, accountID, modelKey, slots, jobID)
 		if err != nil || l != nil {
 			return l, err
 		}
-		if err := leaseWait(ctx, modelKey, Backoff(try, leasePollMin, leasePollMax)); err != nil {
+		if err := leaseWait(ctx, modelKey, Backoff(try, t.LeasePollMin, t.LeasePollMax)); err != nil {
 			return nil, err
 		}
 	}
@@ -101,13 +90,14 @@ const indexBuildClaimLock = `hashtextextended('kritika-index-build-claim ' || $1
 func (s *Store) AcquireIndexLease(
 	ctx context.Context, accountID, modelKey string, slots configfile.Slots, jobID int64, update bool,
 ) (*Lease, error) {
+	t := tuning.Get().Store
 	if !update {
 		for try := 0; ; try++ {
 			l, err := s.TakeIndexBuildLease(ctx, accountID, modelKey, slots, jobID)
 			if err != nil || l != nil {
 				return l, err
 			}
-			if err := leaseWait(ctx, modelKey, Backoff(try, leasePollMin, leasePollMax)); err != nil {
+			if err := leaseWait(ctx, modelKey, Backoff(try, t.LeasePollMin, t.LeasePollMax)); err != nil {
 				return nil, err
 			}
 		}
@@ -160,29 +150,22 @@ func (s *Store) AcquireIndexLease(
 		if err != nil || l != nil {
 			return l, err
 		}
-		if err := leaseWait(ctx, modelKey, Backoff(0, leasePollMin, leasePollMin)); err != nil {
+		if err := leaseWait(ctx, modelKey, Backoff(0, t.LeasePollMin, t.LeasePollMin)); err != nil {
 			return nil, err
 		}
 	}
 }
 
-// indexWaitSetup bounds setting up, its login and its wait lock, and
-// indexWaitClose closing, the session of an index update's wait for a slot.
-const (
-	indexWaitSetup = 5 * time.Second
-	indexWaitClose = 5 * time.Second
-)
-
 // openIndexWait opens the session of an index update's wait for a slot of
 // scope and model, which holds the wait lock shared. The login and the
-// lock share indexWaitSetup, so a setup that hangs at either costs the
-// update its priority alone: a pooler can finish a login without a server
-// connection and then hold the first query until one is free. The lock
+// lock share tuning's Store.IndexWaitSetup, so a setup that hangs at either
+// costs the update its priority alone: a pooler can finish a login without a
+// server connection and then hold the first query until one is free. The lock
 // waits only for a build's claim, a transaction of a moment.
 func (s *Store) openIndexWait(ctx context.Context, scope, modelKey string) (*pgx.Conn, error) {
 	cfg := s.app.Config().ConnConfig
-	cfg.RuntimeParams["application_name"] = "kritika-index-wait"
-	sctx, cancel := context.WithTimeout(ctx, indexWaitSetup)
+	cfg.RuntimeParams[applicationNameParam] = applicationName("index-wait")
+	sctx, cancel := context.WithTimeout(ctx, tuning.Get().Store.IndexWaitSetup)
 	defer cancel()
 	conn, err := pgx.ConnectConfig(sctx, cfg)
 	if err != nil {
@@ -198,7 +181,7 @@ func (s *Store) openIndexWait(ctx context.Context, scope, modelKey string) (*pgx
 // closeIndexWait closes the session of an index update's wait, which lets
 // its lock go, however ctx ended.
 func (s *Store) closeIndexWait(ctx context.Context, conn *pgx.Conn, modelKey string) {
-	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexWaitClose)
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Store.IndexWaitClose)
 	defer cancel()
 	if err := conn.Close(cctx); err != nil {
 		s.logger.Warn("index slot wait not closed cleanly", "model", modelKey, "error", err)
@@ -372,7 +355,7 @@ func (s *Store) takeLease(
 				AND ($7::int <> `+claimSQL(claimReview)+` OR NOT (coalesce((SELECT `+draftReview+` FROM river_job j WHERE j.id = $3), false)
 					AND `+draftWaits("$6")+`))
 				ORDER BY slot LIMIT 1 FOR UPDATE SKIP LOCKED)
-			RETURNING slot`, scope, modelKey, jobID, accountID, leaseExpiry, slots.Limit, int(claim)).Scan(&slot)
+			RETURNING slot`, scope, modelKey, jobID, accountID, tuning.Get().Store.LeaseExpiry, slots.Limit, int(claim)).Scan(&slot)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -415,7 +398,7 @@ func heldSlots(ctx context.Context, tx pgx.Tx, scope, modelKey string, slots int
 
 func (l *Lease) heartbeat(ctx context.Context) {
 	defer close(l.done)
-	t := time.NewTicker(leaseHeartbeat)
+	t := time.NewTicker(tuning.Get().Store.LeaseHeartbeat)
 	defer t.Stop()
 	for {
 		select {
@@ -428,7 +411,7 @@ func (l *Lease) heartbeat(ctx context.Context) {
 			err := l.st.WithAccount(ctx, l.accountID, func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, `UPDATE model_leases SET expires_at = now() + $4::interval
 					WHERE scope = $1 AND model_key = $2 AND slot = $3 AND job_id = $5`,
-					leaseScope(l.accountID, l.slots), l.modelKey, l.slot, leaseExpiry, l.jobID)
+					leaseScope(l.accountID, l.slots), l.modelKey, l.slot, tuning.Get().Store.LeaseExpiry, l.jobID)
 				return err
 			})
 			if err != nil && ctx.Err() == nil {

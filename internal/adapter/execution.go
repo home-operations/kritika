@@ -10,6 +10,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Reservation is the gateway budget to reserve before a provider call.
@@ -117,7 +118,7 @@ func (e *Execution) Begin(ctx context.Context) error {
 	if r := e.Reservation; r != nil {
 		token, reserved = r.Token, r.Tokens
 	}
-	id, err := e.Recorder.Store.BeginModelInvocation(ctx, e.Usage, token, reserved, deadline.Add(2*time.Minute))
+	id, err := e.Recorder.Store.BeginModelInvocation(ctx, e.Usage, token, reserved, deadline.Add(tuning.Get().Adapter.ReservationPad))
 	if err == nil {
 		e.invocation = id
 	}
@@ -152,9 +153,10 @@ func (e *Execution) invoke(ctx context.Context, req model.StepRequest) (model.St
 }
 
 // charge saves the provider outcome before settlement, so a failed usage write
-// can be reconciled without repeating the paid request.
+// can be reconciled without repeating the paid request. tuning's
+// Adapter.ChargeTimeout bounds it.
 func (e *Execution) charge(ctx context.Context, resp model.StepResponse, answered bool) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Adapter.ChargeTimeout)
 	defer cancel()
 	usage := e.Usage
 	usage.Model, usage.Upstream = resp.Model, resp.Upstream
@@ -166,10 +168,6 @@ func (e *Execution) charge(ctx context.Context, resp model.StepResponse, answere
 	_, err := e.Recorder.Store.SettleModelInvocation(ctx, usage.AccountID, e.invocation)
 	return err
 }
-
-// leaseReleaseTimeout bounds letting a fallback's slot go once the step is
-// over, whose ctx is usually done by then.
-const leaseReleaseTimeout = 10 * time.Second
 
 // admitFallback takes a slot on fallback's model for the step (Call.Admit),
 // waiting for one as long as ctx allows, and records the wait.
@@ -186,7 +184,7 @@ func (e *Execution) admitFallback(ctx context.Context, fallback Route) (func(), 
 	}
 	e.Recorder.Metrics.LeaseWait(e.account.Key(), key, time.Since(waited))
 	return func() {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), leaseReleaseTimeout)
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Adapter.LeaseReleaseTimeout)
 		defer cancel()
 		if _, err := lease.Release(rctx); err != nil {
 			e.logger.Warn("lease not released", "key", key, "error", err)

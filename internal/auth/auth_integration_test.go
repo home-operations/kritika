@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func randomHex(t *testing.T) string {
@@ -301,8 +302,9 @@ func TestOIDCSignIn(t *testing.T) {
 	})
 	t.Run("expired state", func(t *testing.T) {
 		l := e.startLogin("oidc", "")
-		e.now = e.now.Add(store.LoginStateTTL + time.Second)
-		defer func() { e.now = e.now.Add(-store.LoginStateTTL - time.Second) }()
+		past := tuning.Get().Store.LoginStateTTL + time.Second
+		e.now = e.now.Add(past)
+		defer func() { e.now = e.now.Add(-past) }()
 		assertFailed(t, e.callback("oidc", url.Values{"code": {"x"}, "state": {l.state()}}, l.cookie), http.StatusBadRequest, "invalid_state")
 	})
 	t.Run("nonce mismatch", func(t *testing.T) {
@@ -513,7 +515,7 @@ func TestSessionLifecycle(t *testing.T) {
 		}
 	})
 	t.Run("expiry", func(t *testing.T) {
-		e.now = e.now.Add(configfile.DefaultSessionTTL)
+		e.now = e.now.Add(tuning.Get().ConfigFile.DefaultSessionTTL)
 		if p := e.principal(cookie); p != nil {
 			t.Fatalf("principal = %+v after the session TTL", p)
 		}

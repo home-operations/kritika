@@ -3,9 +3,10 @@ package metrics
 import (
 	"context"
 	"log/slog"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // QueueStats is a queue snapshot supplied by the application's storage layer.
@@ -47,7 +48,7 @@ func (c *QueueCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector.
 func (c *QueueCollector) Collect(ch chan<- prometheus.Metric) {
-	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, tuning.Get().Metrics.QueueCollectTimeout)
 	defer cancel()
 	stats, err := c.stats(ctx)
 	if err != nil {

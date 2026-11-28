@@ -417,6 +417,21 @@ tests:
       - failedTemplate:
           errorPattern: "env.KRITIKA_RUNNER_POD_TEMPLATE conflicts with config.runner.podTemplate"
 
+  - it: refuses env duplicating a tuning file setting
+    set:
+      config.tuning.gitHub.rateLimitMaxWait: 1m
+      env.KRITIKA_TUNING_GITHUB_RATE_LIMIT_MAX_WAIT: 2m
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_TUNING_GITHUB_RATE_LIMIT_MAX_WAIT conflicts with config.tuning.gitHub.rateLimitMaxWait"
+
+  - it: refuses a tuning area that is not a mapping
+    set:
+      config.tuning.gateway: 5
+    asserts:
+      - failedTemplate:
+          errorPattern: "config.tuning.gateway"
+
   - it: gives each replica an emptyDir for the gateway's cache when it is enabled
     set:
       gatewayCache.enabled: true

@@ -31,6 +31,7 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestIndexDocumentPrompt: the worker embeds every chunk led by the document
@@ -173,9 +174,12 @@ func TestIndexWaitsForTheAppliedEmbedder(t *testing.T) {
 // one the leader's build applied, as during a rollout, snoozes the job
 // instead of building an index that the onboarding feeder rebuilds again.
 // Each wait is counted on kritika_index_snoozes_total{reason="build"}, and a
-// job that has waited buildWaitWarn times says so as a warning, since a
-// leader that never applies this pod's build keeps it waiting for good.
+// job that has waited tuning's Worker.BuildWaitWarn times says so as a
+// warning, since a leader that never applies this pod's build keeps it waiting
+// for good.
 func TestIndexWaitsForTheAppliedFormat(t *testing.T) {
+	appliedBuildWait := tuning.Get().Worker.AppliedBuildWait
+	buildWaitWarn := tuning.Get().Worker.BuildWaitWarn
 	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")

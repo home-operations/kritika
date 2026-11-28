@@ -252,7 +252,7 @@ func TestPartPromptsContext(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		path, text := "lib/z.go", "func z() {}"
 		if len(req.Queries) > 0 && strings.HasPrefix(req.Queries[0], "yyyy") {
-			path, text = "lib/big.go", strings.Repeat("x", indexer.DefaultOptions.MaxChunkBytes)
+			path, text = "lib/big.go", strings.Repeat("x", indexer.DefaultOptions().MaxChunkBytes)
 		}
 		_ = json.NewEncoder(w).Encode(contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
 			{Stage: contextpack.StageSimilar, Path: path, StartLine: 1, EndLine: 1, Text: text},

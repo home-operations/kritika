@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestWords(t *testing.T) {
@@ -121,22 +123,30 @@ func TestDocument(t *testing.T) {
 }
 
 func TestDocumentBounds(t *testing.T) {
+	limits := tuning.Get().Lexical
 	var b strings.Builder
-	for i := range 2 * maxDocumentLexemes {
+	for i := range 2 * limits.MaxDocumentLexemes {
 		b.WriteString("word")
 		for n := i; n > 0; n /= 26 {
 			b.WriteByte(byte('a' + n%26))
 		}
 		b.WriteByte(' ')
 	}
-	if got := Document("", "", "", "", b.String()); len(got) != maxDocumentLexemes {
-		t.Errorf("Document kept %d lexemes, want %d", len(got), maxDocumentLexemes)
+	if got := Document("", "", "", "", b.String()); len(got) != limits.MaxDocumentLexemes {
+		t.Errorf("Document kept %d lexemes, want %d", len(got), limits.MaxDocumentLexemes)
 	}
-	long := strings.Repeat("a", 3*maxLexemeBytes)
+	long := strings.Repeat("a", 3*limits.MaxLexemeBytes)
 	for _, l := range Document("", "", "", "", long+" "+long+"Tail") {
-		if len(l) > maxLexemeBytes {
-			t.Errorf("lexeme of %d bytes, want at most %d", len(l), maxLexemeBytes)
+		if len(l) > limits.MaxLexemeBytes {
+			t.Errorf("lexeme of %d bytes, want at most %d", len(l), limits.MaxLexemeBytes)
 		}
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Lexical.MaxDocumentLexemes, v.Lexical.MaxLexemeBytes = 3, 4 })
+	if got := Document("", "", "", "", "alpha beta gamma delta epsilon zeta"); !slices.Equal(got, []string{"beta", "zeta"}) {
+		t.Errorf("Document at a configured 3 lexemes of at most 4 bytes = %q, want beta and zeta", got)
+	}
+	if got := Document("", "", "", "", "cat dog owl fox"); len(got) != 3 {
+		t.Errorf("Document at a configured 3 lexemes kept %q", got)
 	}
 }
 
@@ -241,5 +251,24 @@ func TestCodeWordsHyphens(t *testing.T) {
 				t.Errorf("CodeWords(%q, %q) = %q, want %q", tt.language, tt.text, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestDocumentWithinTsvectorBytes: distinct lexemes each within the
+// per-lexeme limit, more than a tsvector holds together, are kept only
+// until their bytes reach PostgreSQL's total.
+func TestDocumentWithinTsvectorBytes(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Lexical.MaxLexemeBytes, v.Lexical.MaxDocumentLexemes = 2047, 100000 })
+	var text strings.Builder
+	for i := range 700 {
+		text.WriteString(string(rune('a'+i/26%26)) + string(rune('a'+i%26)) + string(rune('a'+i/676)) + strings.Repeat("x", 1997) + " ")
+	}
+	got := Document("go", "", "", "", text.String())
+	total := 0
+	for _, l := range got {
+		total += len(l)
+	}
+	if total > postgresMaxLexemesBytes || len(got) < 500 {
+		t.Fatalf("%d lexemes of %d bytes, want as many as fit %d", len(got), total, postgresMaxLexemesBytes)
 	}
 }

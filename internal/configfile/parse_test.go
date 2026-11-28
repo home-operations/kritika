@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // fileApp is an app named name serving accounts, its secrets read from
@@ -98,6 +99,8 @@ func TestParseRejectsEntries(t *testing.T) {
 			`embedding.model takes no floating alias, got "or/~vendor/embed-latest"`},
 		{"an embedder too wide for the index", embeddingDoc("dims: 4096"), "embedding.dims must be between 1 and 4000"},
 		{"an embedder with a negative bound", embeddingDoc("maxBatch: -1"), "must not be negative"},
+		{"an embedder whose batch cannot hold a rune", embeddingDoc("maxBatchChars: 2"), "must be at least 4, a whole rune"},
+		{"an embedder whose item cannot hold a rune", embeddingDoc("maxItemChars: 3"), "must be at least 4, a whole rune"},
 		{"an embedder with a floor above 1", embeddingDoc("similarFloor: 1.5"), "embedding.similarFloor must be between 0 and 1"},
 		{"an embedder with a margin above 1", embeddingDoc("similarMargin: 1.5"), "embedding.similarMargin must be between 0 and 1"},
 		{"an embedder with a negative margin", embeddingDoc("similarMargin: -0.1"), "embedding.similarMargin must be between 0 and 1"},
@@ -156,9 +159,9 @@ func TestParseRerank(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	r := f.Embedding.Rerank
+	r, cf := f.Embedding.Rerank, tuning.Get().ConfigFile
 	if r.BaseURL != "https://api.cohere.com/v2" || r.Model != "rerank-v3.5" || r.APIKeyValue().Value() != "rk" ||
-		r.CandidateCount() != DefaultRerankCandidates || r.Deadline() != DefaultRerankTimeout {
+		r.CandidateCount() != cf.DefaultRerankCandidates || r.Deadline() != cf.DefaultRerankTimeout {
 		t.Fatalf("rerank = %+v", r)
 	}
 	if !f.Embedding.LexicalSearch() {
@@ -185,17 +188,18 @@ func TestParseEmbedding(t *testing.T) {
 	if e == nil || e.Model != "voyage-code-3" || e.BaseURL != model.OpenRouterBaseURL || e.Dims != 1024 || e.APIKeyValue().Value() != "ek" {
 		t.Fatalf("embedding = %+v", e)
 	}
-	if batch, chars, item := e.Bounds(); batch != 8 || chars != model.DefaultEmbedMaxBatchChars || item != model.DefaultEmbedMaxItemChars {
+	mt, cf := tuning.Get().Model, tuning.Get().ConfigFile
+	if batch, chars, item := e.Bounds(); batch != 8 || chars != mt.DefaultEmbedMaxBatchChars || item != mt.DefaultEmbedMaxItemChars {
 		t.Fatalf("Bounds = %d, %d, %d", batch, chars, item)
 	}
-	if e.Floor() != DefaultSimilarFloor {
-		t.Fatalf("Floor = %g, want the default %g", e.Floor(), DefaultSimilarFloor)
+	if e.Floor() != cf.DefaultSimilarFloor {
+		t.Fatalf("Floor = %g, want the default %g", e.Floor(), cf.DefaultSimilarFloor)
 	}
 	if f, err := Parse([]byte(embeddingDoc("similarFloor: 0.7"))); err != nil || f.Embedding.Floor() != 0.7 {
 		t.Fatalf("Parse(similarFloor: 0.7) = %v, floor %v", err, f)
 	}
-	if e.Margin() != DefaultSimilarMargin {
-		t.Fatalf("Margin = %g, want the default %g", e.Margin(), DefaultSimilarMargin)
+	if e.Margin() != cf.DefaultSimilarMargin {
+		t.Fatalf("Margin = %g, want the default %g", e.Margin(), cf.DefaultSimilarMargin)
 	}
 	for _, margin := range []float64{0.05, 0} {
 		doc := embeddingDoc(fmt.Sprintf("similarMargin: %g", margin))

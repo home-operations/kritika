@@ -15,27 +15,57 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
-)
-
-// What a re-review is shown of a finding's thread: its latest replies, each
-// cut.
-const (
-	maxAnswers  = 4
-	answerBytes = 600
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // threadAnswers are the replies in the threads of the findings whose inline
 // comments roots holds, by that comment's id, oldest first and the latest
-// maxAnswers of each. Only the replies of people with write access count:
-// on a public repository anyone can reply, and an answer can end a finding.
-// The bot's own replies, login's, are kept as its own, so that a review does
-// not contradict them unknowing. Another bot's reply is none. A finding's comment can
-// itself sit in a conversation that an older one opened, as Forgejo and
-// Gitea group the comments on one line of a review, and then the replies to
-// that conversation are its.
+// tuning's Worker.MaxAnswers of each. Only the replies of people with write
+// access count: on a public repository anyone can reply, and an answer can end
+// a finding. The bot's own replies, login's, are kept as its own, so that a
+// review does not contradict them unknowing. Another bot's reply is none. A
+// finding's comment can itself sit in a conversation that an older one opened,
+// as Forgejo and Gitea group the comments on one line of a review, and then
+// the replies to that conversation are its.
 func threadAnswers(ctx context.Context, client forge.Client, owner, repo string, number int, login string, roots map[int64]bool) (
 	map[int64][]review.Answer, error,
 ) {
+	return threadAnswersUnder(ctx, client, owner, repo, number, login, roots, currentCaps())
+}
+
+// answerCaps are how many of a thread's latest replies a review is shown,
+// and how many bytes of each.
+type answerCaps struct{ count, bytes int }
+
+// currentCaps are the process's answerCaps: tuning's Worker.MaxAnswers and
+// Worker.AnswerBytes.
+func currentCaps() answerCaps {
+	w := tuning.Get().Worker
+	return answerCaps{count: w.MaxAnswers, bytes: w.AnswerBytes}
+}
+
+// legacyCaps are the caps of the answers kept before review.Answer recorded
+// them: the constants of the builds that kept them.
+var legacyCaps = answerCaps{count: 4, bytes: 600}
+
+// shownCaps are the caps that the answers in shown were taken under. One
+// review takes all of its answers under one set, so the first recorded is
+// every one's. Answers that record none are under legacyCaps.
+func shownCaps(shown map[string][]review.Answer) answerCaps {
+	for _, as := range shown {
+		for _, a := range as {
+			if a.Window > 0 && a.Cut > 0 {
+				return answerCaps{count: a.Window, bytes: a.Cut}
+			}
+		}
+	}
+	return legacyCaps
+}
+
+// threadAnswersUnder is threadAnswers under caps.
+func threadAnswersUnder(ctx context.Context, client forge.Client, owner, repo string, number int, login string,
+	roots map[int64]bool, caps answerCaps,
+) (map[int64][]review.Answer, error) {
 	if len(roots) == 0 {
 		return nil, nil
 	}
@@ -69,7 +99,7 @@ func threadAnswers(ctx context.Context, client forge.Client, owner, repo string,
 			if _, finding := review.MarkedFinding(c.Body); finding {
 				continue
 			}
-			a := answerOf(c)
+			a := answerOf(c, caps)
 			a.Own = true
 			replies[c.InReplyTo] = append(replies[c.InReplyTo], a)
 			continue
@@ -86,22 +116,32 @@ func threadAnswers(ctx context.Context, client forge.Client, owner, repo string,
 			writes[c.Author] = can
 		}
 		if can {
-			replies[c.InReplyTo] = append(replies[c.InReplyTo], answerOf(c))
+			replies[c.InReplyTo] = append(replies[c.InReplyTo], answerOf(c, caps))
 		}
 	}
 	out := map[int64][]review.Answer{}
 	for id, t := range thread {
 		if rs := replies[t]; len(rs) > 0 {
-			out[id] = rs[max(0, len(rs)-maxAnswers):]
+			out[id] = rs[max(0, len(rs)-caps.count):]
 		}
 	}
 	return out, nil
 }
 
-// answerOf is a reply as a review is shown it and publication compares it.
-func answerOf(c forge.Comment) review.Answer {
+// answerOf is a reply as a review is shown it under caps, which it
+// records, and publication compares it.
+func answerOf(c forge.Comment, caps answerCaps) review.Answer {
 	sum := sha256.Sum256([]byte(c.Body))
-	return review.Answer{ID: c.ID, Digest: hex.EncodeToString(sum[:16]), Author: c.Author, Text: textcut.Truncate(c.Body, answerBytes)}
+	text := textcut.Truncate(c.Body, caps.bytes)
+	return review.Answer{
+		ID: c.ID, Digest: hex.EncodeToString(sum[:16]), Author: c.Author, Text: text, Cut: caps.bytes, Window: caps.count,
+	}
+}
+
+// sameAnswer reports whether a and b are the same reply as a review is
+// shown it, whatever caps each records: a legacy answer records none.
+func sameAnswer(a, b review.Answer) bool {
+	return a.ID == b.ID && a.Digest == b.Digest && a.Author == b.Author && a.Text == b.Text && a.Own == b.Own
 }
 
 // answeredThreads are the threads that the findings of the answered
@@ -131,14 +171,16 @@ func answerRoots(prior []priorFinding) map[int64]bool {
 
 // withAnswers is findings, the last review's as prior holds them, with the
 // answers in their threads. It also returns those answers by each finding's
-// id in the prompt, to keep as what the review was shown.
+// id in the prompt, to keep as what the review was shown, with the caps
+// they were taken under. The findings' answers carry no caps: the runner
+// decodes its spec strictly and is shown the replies alone.
 func withAnswers(findings []review.Finding, prior []priorFinding, answers map[int64][]review.Answer) (
 	[]review.Finding, map[string][]review.Answer,
 ) {
 	var shown map[string][]review.Answer
 	for i, pf := range prior {
 		if as := answers[pf.commentID]; pf.commentID != 0 && len(as) > 0 {
-			findings[i].Answers = as
+			findings[i].Answers = withoutCaps(as)
 			if shown == nil {
 				shown = map[string][]review.Answer{}
 			}
@@ -146,6 +188,15 @@ func withAnswers(findings []review.Finding, prior []priorFinding, answers map[in
 		}
 	}
 	return findings, shown
+}
+
+// withoutCaps is answers without the caps they record.
+func withoutCaps(answers []review.Answer) []review.Answer {
+	out := slices.Clone(answers)
+	for i := range out {
+		out[i].Cut, out[i].Window = 0, 0
+	}
+	return out
 }
 
 // answeredPrior is a finding of the last review that this review accepted
@@ -159,8 +210,9 @@ type answeredPrior struct {
 // finding that this review listed as answered, where the thread holds the
 // answers that the review was shown and no other. A thread that changed
 // since, by a reply edited, removed or added, holds an answer the review did
-// not weigh, so its finding stays open for the next review. A thread that
-// cannot be read holds none.
+// not weigh, so its finding stays open for the next review. The thread is
+// read again under the caps the review was shown it under, so that tuning
+// changed since moves no answer. A thread that cannot be read holds none.
 func (p *publishPhase) heldAnswers(ctx context.Context, ids []string) map[string]review.Answer {
 	if len(ids) == 0 {
 		return nil
@@ -187,7 +239,7 @@ func (p *publishPhase) heldAnswers(ctx context.Context, ids []string) map[string
 		p.logger.Warn("answered findings kept open", "error", err)
 		return nil
 	}
-	now, err := threadAnswers(ctx, p.client, owner, repo, p.pr.number, login, roots)
+	now, err := threadAnswersUnder(ctx, p.client, owner, repo, p.pr.number, login, roots, shownCaps(shown))
 	if err != nil {
 		p.logger.Warn("answered findings kept open", "error", err)
 		return nil
@@ -208,7 +260,7 @@ func heldOf(prior []priorFinding, ids []string, shown map[string][]review.Answer
 		for last >= 0 && was[last].Own {
 			last--
 		}
-		if pf.commentID != 0 && slices.Contains(ids, id) && last >= 0 && slices.Equal(was, now[pf.commentID]) {
+		if pf.commentID != 0 && slices.Contains(ids, id) && last >= 0 && slices.EqualFunc(was, now[pf.commentID], sameAnswer) {
 			held[id] = was[last]
 		}
 	}
@@ -223,7 +275,8 @@ func answeredDismissals(accountID, pullRequestID, login string, answered []answe
 	for _, a := range answered {
 		out = append(out, store.Dismissal{
 			AccountID: accountID, PullRequestID: pullRequestID, Fingerprint: review.Fingerprint(a.Finding), Finding: a.Finding,
-			Reason: "kritika accepted the answer of " + a.answer.Author + ": " + textcut.Truncate(a.answer.Text, 200),
+			Reason: "kritika accepted the answer of " + a.answer.Author + ": " +
+				textcut.Truncate(a.answer.Text, tuning.Get().Worker.ConcessionReasonBytes),
 			Author: login, CommentID: a.answer.ID, Source: store.DismissedByConcession,
 		})
 	}

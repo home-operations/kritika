@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Rules is what the proxy allows, refuses and adds.
@@ -60,7 +62,7 @@ func (c Credential) For(account string) bool {
 func (c Credential) Header() string {
 	switch c.Scheme {
 	case SchemeBearer:
-		return "Bearer " + c.Secret
+		return tuning.BearerPrefix + c.Secret
 	case SchemeBasic:
 		return "Basic " + c.Basic()
 	}

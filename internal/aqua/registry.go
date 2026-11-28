@@ -19,10 +19,9 @@ import (
 	"github.com/aquaproj/aqua/v2/pkg/config/registry"
 	"github.com/aquaproj/aqua/v2/pkg/runtime"
 	"go.yaml.in/yaml/v4"
-)
 
-// maxRegistryBytes bounds the registry's fetch, many times its size.
-const maxRegistryBytes = 64 << 20
+	"github.com/home-operations/kritika/internal/tuning"
+)
 
 // discard takes aqua's own logging, which is for its CLI.
 var discard = slog.New(slog.DiscardHandler)
@@ -52,7 +51,7 @@ type Registry struct {
 
 // FetchRegistry fetches the registry at url with client, and sends header.
 func FetchRegistry(ctx context.Context, client *http.Client, url string, header http.Header) (*Registry, error) {
-	data, err := get(ctx, client, url, header, maxRegistryBytes)
+	data, err := get(ctx, client, url, header, int64(tuning.Get().Aqua.MaxRegistryBytes))
 	if err != nil {
 		return nil, fmt.Errorf("aqua: registry: %w", err)
 	}

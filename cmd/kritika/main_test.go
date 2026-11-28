@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,6 +25,7 @@ import (
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/server"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func parseAccount(t *testing.T, slug string) *configfile.File {
@@ -185,11 +188,24 @@ func TestConfigurationSnapshot(t *testing.T) {
 
 func TestCheckConfig(t *testing.T) {
 	const admin = "auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\n"
+	// Each case sets the tuning variables it needs, and only those.
+	for _, kv := range os.Environ() {
+		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "KRITIKA_TUNING_") {
+			t.Setenv(name, "")
+			if err := os.Unsetenv(name); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	for _, tt := range []struct {
 		name, raw string
 		webURL    string
 		noFile    bool
 		wantErr   string
+		// similarEnv sets KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY, and
+		// similar is the value that the check leaves the process with.
+		similarEnv string
+		similar    int
 	}{
 		{name: "valid", raw: admin + "webUrl: https://kritika.example.com\n"},
 		{name: "web URL from environment", raw: admin, webURL: "https://kritika.example.com"},
@@ -208,6 +224,17 @@ func TestCheckConfig(t *testing.T) {
 		{name: "unknown pod template field", raw: admin + "webUrl: https://kritika.example.com\n" +
 			"runner: {podTemplate: {spec: {bogusField: 1}}}\n", wantErr: "runner.podTemplate"},
 		{name: "no file named", noFile: true, wantErr: "usage"},
+		{name: "tuning", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {similarPerQuery: 6}}\n", similar: 6},
+		{name: "tuning from environment", raw: admin + "webUrl: https://kritika.example.com\n", similarEnv: "6", similar: 6},
+		{name: "tuning from both", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {similarPerQuery: 6}}\n",
+			similarEnv: "6", wantErr: "tuning.gateway.similarPerQuery conflicts with KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY"},
+		{name: "invalid tuning", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {similarPerQuery: 0}}\n",
+			wantErr: "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY must be positive"},
+		{name: "unknown tuning key", raw: admin + "webUrl: https://kritika.example.com\ntuning: {gateway: {bogus: 1}}\n", wantErr: "bogus"},
+		{name: "rescue wait past the ceiling", raw: admin + "webUrl: https://kritika.example.com\ntuning: {jobTimeout: {rescueGrace: 2562047h}}\n",
+			wantErr: "KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE must be at most 87600h0m0s"},
+		{name: "queue drain past the ceiling", raw: admin + "webUrl: https://kritika.example.com\ntuning: {process: {queueDrain: 2562047h, queueStopHeadroom: 2h}}\n",
+			wantErr: "KRITIKA_TUNING_PROCESS_QUEUE_DRAIN must be at most 87600h0m0s"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			// A check needs neither the database nor KRITIKA_CONFIG_FILE.
@@ -218,6 +245,17 @@ func TestCheckConfig(t *testing.T) {
 			if tt.webURL != "" {
 				t.Setenv("KRITIKA_WEB_URL", tt.webURL)
 			}
+			// Unset, not empty, where the case sets none: a variable that
+			// is present conflicts with the file's setting.
+			const similarKey = "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY"
+			t.Setenv(similarKey, tt.similarEnv)
+			if tt.similarEnv == "" {
+				if err := os.Unsetenv(similarKey); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// The check sets the process's tuning. Override restores it after.
+			tuning.Override(t, func(*tuning.Values) {})
 			t.Setenv("TEST_ADMIN_PASSWORD", "pw")
 			var args []string
 			if !tt.noFile {
@@ -237,6 +275,9 @@ func TestCheckConfig(t *testing.T) {
 			}
 			if err != nil || !strings.Contains(out.String(), "the configuration is valid") {
 				t.Fatalf("checkConfig = %v, output %q", err, out.String())
+			}
+			if tt.similar != 0 && tuning.Get().Gateway.SimilarPerQuery != tt.similar {
+				t.Fatalf("tuning.gateway.similarPerQuery = %d after the check, want %d", tuning.Get().Gateway.SimilarPerQuery, tt.similar)
 			}
 		})
 	}
@@ -285,13 +326,68 @@ func TestWorkerQueuesAreMonitored(t *testing.T) {
 // the application role can never run. It gives a job that its timeout cut
 // the headroom that its detached end takes before calling it stuck.
 func TestRiverConfig(t *testing.T) {
+	// Not the default, so that a hardcoded threshold shows.
+	const headroom = 45 * time.Second
+	tuning.Override(t, func(v *tuning.Values) { v.Process.QueueStopHeadroom = headroom })
 	c := riverConfig(&config.Config{}, river.NewWorkers(), nil, slog.New(slog.DiscardHandler))
 	if c.ReindexerIndexNames == nil || len(c.ReindexerIndexNames) != 0 {
 		t.Errorf("reindexer indexes = %#v, want an empty list: nil is River's default set", c.ReindexerIndexNames)
 	}
-	if c.JobStuckThreshold != queueStopHeadroom {
-		t.Errorf("stuck threshold = %s, want %s", c.JobStuckThreshold, queueStopHeadroom)
+	if c.JobStuckThreshold != headroom {
+		t.Errorf("stuck threshold = %s, want the tuned %s", c.JobStuckThreshold, headroom)
 	}
+}
+
+// TestRiverRescueHorizonFloor: River's rescuer waits at least the horizon
+// from before it was tuned, however short the tuned one.
+func TestRiverRescueHorizonFloor(t *testing.T) {
+	for _, tt := range []struct {
+		name                string
+		maxJob, grace, want time.Duration
+	}{
+		{"a shorter tuned horizon", 90 * time.Minute, time.Minute, tuning.LegacyRescueAfter},
+		{"a horizon under a minute", 40 * time.Second, 10 * time.Second, tuning.LegacyRescueAfter},
+		{"a longer one", 6 * time.Hour, time.Hour, 7 * time.Hour},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tuning.Override(t, func(v *tuning.Values) {
+				v.JobTimeout.MaxJobTimeout, v.JobTimeout.RescueGrace = tt.maxJob, tt.grace
+			})
+			c := riverConfig(&config.Config{}, river.NewWorkers(), nil, slog.New(slog.DiscardHandler))
+			if c.RescueStuckJobsAfter != tt.want {
+				t.Fatalf("RescueStuckJobsAfter = %s, want %s", c.RescueStuckJobsAfter, tt.want)
+			}
+		})
+	}
+}
+
+// TestStartQueueGivesUpAtTheLastAttempt: once the last attempt fails, the
+// error comes back at once, without the wait for a retry that none follows.
+func TestStartQueueGivesUpAtTheLastAttempt(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Process.QueueStartAttempts, v.Process.QueueStartRetry = 2, time.Hour })
+	synctest.Test(t, func(t *testing.T) {
+		boom := errors.New("boom")
+		q := &failingQueue{err: boom}
+		start := time.Now()
+		err := startQueue(t.Context(), q, slog.New(slog.DiscardHandler))
+		if !errors.Is(err, boom) || q.starts != 2 {
+			t.Fatalf("startQueue = %v after %d starts, want the failure after 2", err, q.starts)
+		}
+		if waited := time.Since(start); waited != time.Hour {
+			t.Fatalf("startQueue waited %s, want the one retry's hour and no wait after the last attempt", waited)
+		}
+	})
+}
+
+// failingQueue is a queue whose every start fails with err.
+type failingQueue struct {
+	err    error
+	starts int
+}
+
+func (q *failingQueue) Start(context.Context) error {
+	q.starts++
+	return q.err
 }
 
 func TestRunnerTemplateErrorsNameBothSources(t *testing.T) {

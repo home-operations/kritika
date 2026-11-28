@@ -5,9 +5,12 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestCarryWindow(t *testing.T) {
+	continueWindow := tuning.Get().Worker.ContinueWindow
+	anthropicContinueWindow := tuning.Get().Worker.AnthropicContinueWindow
 	for _, tc := range []struct {
 		name string
 		t    configfile.ProviderType

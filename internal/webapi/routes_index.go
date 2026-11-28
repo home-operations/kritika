@@ -3,16 +3,14 @@ package webapi
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
-
-// indexChunkLimit bounds the chunks one file's listing returns.
-const indexChunkLimit = 200
 
 // indexQueue is where each of the account's repositories stands for its next
 // index: its index jobs queued or running, with the running ones first, or
@@ -38,7 +36,7 @@ func readIndexQueue(ctx context.Context, tx pgx.Tx, t *accountScope) (indexQueue
 	if t.file.Embedding == nil {
 		return q, nil
 	}
-	waiting, err := store.OnboardBacklog(ctx, tx, jobs.OnboardRetryAfter)
+	waiting, err := store.OnboardBacklog(ctx, tx, tuning.Get().Jobs.OnboardRetryAfter)
 	if err != nil {
 		return q, err
 	}
@@ -128,20 +126,21 @@ func (s *Server) listIndexChunks(w http.ResponseWriter, r *http.Request, t *acco
 		return errBadRequest(CodeBadRequest, "path is required")
 	}
 	ctx := r.Context()
+	limit := tuning.Get().WebAPI.IndexChunkLimit
 	var rows []store.IndexChunkRow
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
 		runID, err := activeRun(ctx, tx, r)
 		if err != nil || runID == "" {
 			return err
 		}
-		rows, err = store.ListIndexChunks(ctx, tx, runID, path, indexChunkLimit+1)
+		rows, err = store.ListIndexChunks(ctx, tx, runID, path, min(limit, math.MaxInt-1)+1)
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	out := IndexChunks{Path: path, Items: []IndexChunk{}, Truncated: len(rows) > indexChunkLimit}
-	for _, c := range rows[:min(len(rows), indexChunkLimit)] {
+	out := IndexChunks{Path: path, Items: []IndexChunk{}, Truncated: len(rows) > limit}
+	for _, c := range rows[:min(len(rows), limit)] {
 		chunk := IndexChunk{StartLine: c.StartLine, EndLine: c.EndLine, Language: c.Language, Symbol: c.Symbol, Kind: c.Kind, Scope: c.Scope}
 		if t.principal.Admin {
 			chunk.Text = c.Text

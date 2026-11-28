@@ -28,6 +28,7 @@ import (
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type rerankFunc func(context.Context, string, []string) ([]float64, model.RerankUsage, error)
@@ -212,8 +213,7 @@ apps:
 		{"answer due before the reranking", 0, 0, []string{"near.go"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func(was time.Duration) { similarAnswerWithin = was }(similarAnswerWithin)
-			similarAnswerWithin = tt.within
+			tuning.Override(t, func(v *tuning.Values) { v.Gateway.SimilarWithin = tt.within })
 			var reranks atomic.Int32
 			var sent time.Time
 			var embedded atomic.Pointer[time.Time]

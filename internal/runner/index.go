@@ -43,7 +43,7 @@ func runIndex(ctx context.Context, report *reporter, p runspec.Spec, secrets run
 			return fmt.Errorf("runner: base tree: %w", err)
 		}
 	}
-	chunks, changed, stats, mode, err := buildIndex(ctx, headTree, baseTree, p.Ignore, indexer.DefaultOptions, logger)
+	chunks, changed, stats, mode, err := buildIndex(ctx, headTree, baseTree, p.Ignore, indexer.DefaultOptions(), logger)
 	if err != nil {
 		return err
 	}

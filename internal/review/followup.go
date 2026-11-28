@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Message is one comment in a thread, as the follow-up prompt shows it.
@@ -23,11 +24,11 @@ type Message struct {
 }
 
 // NewMessage is a thread comment as the prompt shows it: its body trimmed
-// and cut to maxMessageChars.
+// and cut to tuning's Review.MaxMessageChars.
 func NewMessage(author, body string, when time.Time) Message {
 	body = strings.TrimSpace(body)
-	if len(body) > maxMessageChars {
-		body = textcut.Prefix(body, maxMessageChars) + " …"
+	if most := tuning.Get().Review.MaxMessageChars; len(body) > most {
+		body = textcut.Prefix(body, most) + " …"
 	}
 	return Message{Author: author, Body: body, When: when}
 }
@@ -180,9 +181,6 @@ func ParseFollowUp(raw, repository string) (string, error) {
 	return out.Reply, nil
 }
 
-// maxMessageChars bounds one thread message in the prompt.
-const maxMessageChars = 2000
-
 // BuildFollowUp renders the follow-up user message: the review input as Build
 // renders it, then the findings that kritika posted, then the thread. The
 // thread holds each message as NewMessage cut it, with the one to answer
@@ -230,16 +228,17 @@ func buildThread(in Input, findings []Finding, thread []Message, reply bool) str
 		fmt.Fprintf(&tail, "\nReply to the last message from %s.\n", thread[len(thread)-1].Author)
 	}
 
-	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens)
-	in.BudgetTokens = max(budget-tail.Len()/charsPerToken, minUserBudget)
+	r := tuning.Get().Review
+	budget := cmp.Or(in.BudgetTokens, r.DefaultBudgetTokens)
+	in.BudgetTokens = max(budget-tail.Len()/r.CharsPerToken, r.MinUserBudget)
 	msg, _, _, _ := Build(in)
 	return msg + tail.String()
 }
 
 func oneLine(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 200 {
-		return textcut.Prefix(s, 200) + " …"
+	if n := tuning.Get().Review.OneLineBytes; len(s) > n {
+		return textcut.Prefix(s, n) + " …"
 	}
 	return s
 }

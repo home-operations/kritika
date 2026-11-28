@@ -21,6 +21,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // publishPhase writes a prepared review's answer back to the forge and the
@@ -293,8 +294,8 @@ func unfinishedParts(parts []store.AgentPart) []string {
 			continue
 		}
 		files := part.Paths
-		if n := len(files); n > maxNamedFiles {
-			files = append(slices.Clone(files[:maxNamedFiles]), fmt.Sprintf("%d more", n-maxNamedFiles))
+		if n, most := len(files), tuning.Get().Worker.MaxNamedFiles; n > most {
+			files = append(slices.Clone(files[:most]), fmt.Sprintf("%d more", n-most))
 		}
 		if part.Reviewer != "" {
 			notes = append(notes, fmt.Sprintf("Part %d of %d, the %s agent's, ended before it submitted, so it did not review: %s",
@@ -306,9 +307,6 @@ func unfinishedParts(parts []store.AgentPart) []string {
 	}
 	return notes
 }
-
-// maxNamedFiles is how many files a note names before it counts the rest.
-const maxNamedFiles = 5
 
 // skipDescription is how the commit status states a skip: a repository's
 // own reason or a bot's unchanged patch, and for a filtered one the name

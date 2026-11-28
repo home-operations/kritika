@@ -17,6 +17,8 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func testKeyPEM(t *testing.T) (*rsa.PrivateKey, string) {
@@ -284,18 +286,19 @@ func TestReach(t *testing.T) {
 }
 
 // TestBaseTransportBoundsTheHeaderWait: a server that accepts a request and
-// never answers fails the request after responseHeaderTimeout. So a caller
-// with no deadline of its own does not wait for good.
+// never answers fails the request after tuning's
+// GitHub.ResponseHeaderTimeout. So a caller with no deadline of its own does
+// not wait for good.
 func TestBaseTransportBoundsTheHeaderWait(t *testing.T) {
-	if baseTransport.ResponseHeaderTimeout != responseHeaderTimeout {
-		t.Fatalf("ResponseHeaderTimeout = %s, want %s", baseTransport.ResponseHeaderTimeout, responseHeaderTimeout)
+	if got, want := baseTransport().ResponseHeaderTimeout, tuning.Get().GitHub.ResponseHeaderTimeout; got != want {
+		t.Fatalf("ResponseHeaderTimeout = %s, want %s", got, want)
 	}
 	hang := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-hang }))
 	// Close waits for the handler, which waits for hang.
 	defer srv.Close()
 	defer close(hang)
-	tr := baseTransport.Clone()
+	tr := baseTransport().Clone()
 	tr.ResponseHeaderTimeout = 50 * time.Millisecond
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 	if err != nil {
@@ -303,5 +306,29 @@ func TestBaseTransportBoundsTheHeaderWait(t *testing.T) {
 	}
 	if _, err := tr.RoundTrip(req); err == nil || !strings.Contains(err.Error(), "timeout awaiting response headers") {
 		t.Fatalf("RoundTrip error = %v, want a response header timeout", err)
+	}
+}
+
+// TestAppJWTCacheExpiresWithTheToken: the cached JWT is replaced by the
+// expiry it carries, in whole seconds, not by the moment it was minted
+// plus its lifetime, which a sub-second refresh lead would outlast.
+func TestAppJWTCacheExpiresWithTheToken(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.GitHub.TokenRefreshLead = 100 * time.Millisecond })
+	key, _ := testKeyPEM(t)
+	tr := &appJWTTransport{clientID: "Iv1.abc", key: key}
+	tok, err := tr.jwt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := jwt.ParseSigned(tok, []jose.SignatureAlgorithm{jose.RS256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var claims jwt.Claims
+	if err := parsed.Claims(&key.PublicKey, &claims); err != nil {
+		t.Fatal(err)
+	}
+	if !tr.exp.Equal(claims.Expiry.Time()) {
+		t.Fatalf("cached expiry = %v, want the token's %v", tr.exp, claims.Expiry.Time())
 	}
 }

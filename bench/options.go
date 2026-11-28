@@ -36,8 +36,8 @@ func readOptions(getenv func(string) string) (benchOptions, error) {
 		fallback int64
 	}{
 		{"KRITIKA_BENCH_STEPS", 1},
-		{"KRITIKA_BENCH_OUTPUT_TOKENS", agent.DefaultLimits.MaxOutputTokensPerStep},
-		{"KRITIKA_BENCH_TOOL_BYTES", int64(agent.DefaultLimits.MaxToolOutputBytes)},
+		{"KRITIKA_BENCH_OUTPUT_TOKENS", agent.DefaultLimits().MaxOutputTokensPerStep},
+		{"KRITIKA_BENCH_TOOL_BYTES", int64(agent.DefaultLimits().MaxToolOutputBytes)},
 	}
 	n := make([]int64, len(values))
 	for i, v := range values {

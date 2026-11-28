@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,8 @@ import (
 	"github.com/aquaproj/aqua/v2/pkg/config/registry"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // entry is one entry of an archive a test builds.
@@ -509,8 +512,7 @@ func TestCommandOutOfDownload(t *testing.T) {
 // TestUnpackBounded: what an archive decompresses to is bounded, the
 // bodies of the entries it leaves out included.
 func TestUnpackBounded(t *testing.T) {
-	limit, most := maxUnpackedBytes, maxEntries
-	t.Cleanup(func() { maxUnpackedBytes, maxEntries = limit, most })
+	limit, most := int64(tuning.Get().Aqua.MaxUnpackedBytes), tuning.Get().Aqua.MaxEntries
 	body := strings.Repeat("x", 4<<10)
 	root := entry{name: "./", typ: tar.TypeDir, mode: 0o755}
 	for _, tt := range []struct {
@@ -525,7 +527,9 @@ func TestUnpackBounded(t *testing.T) {
 		{"the root, again", limit, 3, []entry{root, root, root, root}, "over 3 entries"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			maxUnpackedBytes, maxEntries = tt.bytes, tt.entries
+			tuning.Override(t, func(v *tuning.Values) {
+				v.Aqua.MaxUnpackedBytes, v.Aqua.MaxEntries = tuning.ByteSize(tt.bytes), tt.entries
+			})
 			dir := t.TempDir()
 			download := filepath.Join(dir, "download")
 			if err := os.WriteFile(download, gzipped(t, tarball(t, tt.archive...)), 0o644); err != nil {
@@ -552,5 +556,31 @@ func TestUnpackCanceled(t *testing.T) {
 	cancel()
 	if err := unpack(ctx, download, "tar", "x.tar", dir); !errors.Is(err, context.Canceled) {
 		t.Errorf("unpack error = %v, want it canceled", err)
+	}
+}
+
+// TestGetLimit: a body at the limit is read, and one a byte over it refused.
+func TestGetLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("abcd")) }))
+	defer srv.Close()
+	if body, err := get(t.Context(), srv.Client(), srv.URL, nil, 4); err != nil || string(body) != "abcd" {
+		t.Fatalf("get at the limit = %q, %v", body, err)
+	}
+	if _, err := get(t.Context(), srv.Client(), srv.URL, nil, 3); err == nil || !strings.Contains(err.Error(), "over 3 bytes") {
+		t.Fatalf("get over the limit = %v, want it refused", err)
+	}
+}
+
+// TestBoundedAtTheLimit: a reader whose end comes on a read of its own is
+// read whole at exactly the limit, and refused a byte over it.
+func TestBoundedAtTheLimit(t *testing.T) {
+	for _, tt := range []struct {
+		limit int64
+		fails bool
+	}{{4, false}, {3, true}} {
+		got, err := io.ReadAll(&bounded{r: strings.NewReader("abcd"), limit: tt.limit, left: tt.limit})
+		if (err != nil) != tt.fails || !tt.fails && string(got) != "abcd" {
+			t.Fatalf("limit %d: read %q, %v; want a failure: %v", tt.limit, got, err, tt.fails)
+		}
 	}
 }

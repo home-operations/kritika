@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/rolemap"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Auth configures how people sign in to the dashboard and what each can do:
@@ -18,7 +19,7 @@ import (
 // values use explicit environment references.
 type Auth struct {
 	// SessionTTL is how long a dashboard session lasts. Zero means
-	// DefaultSessionTTL.
+	// tuning's ConfigFile.DefaultSessionTTL.
 	SessionTTL time.Duration `yaml:"sessionTTL,omitempty"`
 	// Admin is the local admin, signed in with a password. It exists only
 	// while a password is set.
@@ -143,18 +144,9 @@ func (s *SignIn) Mapping() *rolemap.Program { return s.mapping }
 // place reads every account rather than being refused.
 func (s *SignIn) MembersByDefault() bool { return s.DefaultRole == DefaultRoleMember }
 
-// DefaultSessionTTL applies when the file sets no sessionTTL.
-const DefaultSessionTTL = 12 * time.Hour
-
-// Bounds on a configured sessionTTL.
-const (
-	minSessionTTL = 5 * time.Minute
-	maxSessionTTL = 30 * 24 * time.Hour
-)
-
 // SessionTTLOrDefault returns the session lifetime or its default.
 func (a *Auth) SessionTTLOrDefault() time.Duration {
-	return cmp.Or(a.SessionTTL, DefaultSessionTTL)
+	return cmp.Or(a.SessionTTL, tuning.Get().ConfigFile.DefaultSessionTTL)
 }
 
 // SignIns lists the configured providers, OIDC first.
@@ -238,8 +230,9 @@ func (a *Auth) resolve(sec *secrets) error {
 }
 
 func (a *Auth) validate() error {
-	if a.SessionTTL != 0 && (a.SessionTTL < minSessionTTL || a.SessionTTL > maxSessionTTL) {
-		return fmt.Errorf("configfile: auth.sessionTTL must be between %s and %s", minSessionTTL, maxSessionTTL)
+	t := tuning.Get().ConfigFile
+	if a.SessionTTL != 0 && (a.SessionTTL < t.MinSessionTTL || a.SessionTTL > t.MaxSessionTTL) {
+		return fmt.Errorf("configfile: auth.sessionTTL must be between %s and %s", t.MinSessionTTL, t.MaxSessionTTL)
 	}
 	if !a.Admin.Password.empty() && a.Admin.password.Value() == "" {
 		return errors.New("configfile: auth.admin.password resolved to an empty value")

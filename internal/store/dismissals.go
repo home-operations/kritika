@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Dismissal is a finding that a maintainer dismissed on a pull request, by
@@ -58,10 +59,10 @@ func insertDismissal(ctx context.Context, tx pgx.Tx, d Dismissal, onConflict str
 	f := d.Finding
 	if _, err := tx.Exec(ctx, `INSERT INTO dismissals
 		(account_id, pull_request_id, fingerprint, path, line, severity, title, explanation, reason, author, comment_id, source)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, 500), $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, $13), $10, $11, $12)
 		ON CONFLICT (pull_request_id, fingerprint) `+onConflict,
 		d.AccountID, d.PullRequestID, d.Fingerprint, f.Path, f.Line, string(f.Severity), f.Title, f.Explanation,
-		d.Reason, d.Author, d.CommentID, string(d.Source)); err != nil {
+		d.Reason, d.Author, d.CommentID, string(d.Source), tuning.Get().Store.DismissalReasonChars); err != nil {
 		return fmt.Errorf("store: record dismissal: %w", err)
 	}
 	return nil

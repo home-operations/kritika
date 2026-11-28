@@ -20,6 +20,8 @@ import (
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
 	"cel.dev/cel-go/interpreter"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // Role is an instance-wide role that a mapping can yield.
@@ -51,11 +53,6 @@ const (
 	// person is a member of, directly or through an ancestor group.
 	GitLab
 )
-
-// evalCostLimit bounds one evaluation. The expression is the admin's and its
-// inputs come from the identity provider. So this is a guard against an
-// accident rather than an attack. No real mapping comes near it.
-const evalCostLimit = 1_000_000
 
 // Program is a compiled, type-checked role mapping.
 type Program struct {
@@ -126,7 +123,8 @@ func Compile(kind Kind, expr string) (*Program, error) {
 	}
 	// OptimizeRegex compiles a constant pattern here, so a malformed one
 	// fails Compile instead of every Eval.
-	prg, err := env.Program(ast, cel.CostLimit(evalCostLimit), cel.OptimizeRegex(interpreter.MatchesRegexOptimization))
+	cost := uint64(tuning.Get().RoleMap.EvalCostLimit)
+	prg, err := env.Program(ast, cel.CostLimit(cost), cel.OptimizeRegex(interpreter.MatchesRegexOptimization))
 	if err != nil {
 		return nil, fmt.Errorf("rolemap: program: %w", err)
 	}

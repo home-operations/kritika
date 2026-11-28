@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -37,9 +38,7 @@ func TestEgressRefusals(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM egress_refusals WHERE runner_run_id IN ($1, $2)`, run, other)
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM runner_runs WHERE id IN ($1, $2)`, run, other)
 	})
-	limit := refusalsPerRun
-	refusalsPerRun = 3
-	t.Cleanup(func() { refusalsPerRun = limit })
+	tuning.Override(t, func(v *tuning.Values) { v.Store.RefusalsPerRun = 3 })
 
 	record := func(runID, repoID, kind, host, reason string) bool {
 		t.Helper()

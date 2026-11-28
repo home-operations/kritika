@@ -46,7 +46,7 @@ const (
 )
 
 // jobReview is Outcome.Job for a review.
-const jobReview = "review"
+const jobReview = jobs.QueueReview
 
 // The poller's synthetic actions: ActionPoll for an open pull request it
 // lists, and ActionBaseline for one that predates kritika's knowing its
@@ -318,7 +318,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
-	out := Outcome{Status: Enqueued, Job: "followup"}
+	out := Outcome{Status: Enqueued, Job: jobs.QueueFollowUp}
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
@@ -332,7 +332,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 			return fmt.Errorf("ingest: enqueue follow-up: %w", err)
 		}
 		if res.UniqueSkippedAsDuplicate {
-			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "followup"}
+			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobs.QueueFollowUp}
 		}
 		return nil
 	})
@@ -358,7 +358,7 @@ func (s *Service) thread(ctx context.Context, req Request) (Outcome, error) {
 	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
-	out := Outcome{Status: Enqueued, Job: "thread"}
+	out := Outcome{Status: Enqueued, Job: jobs.QueueThread}
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
@@ -372,7 +372,7 @@ func (s *Service) thread(ctx context.Context, req Request) (Outcome, error) {
 			return fmt.Errorf("ingest: enqueue thread: %w", err)
 		}
 		if res.UniqueSkippedAsDuplicate {
-			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "thread"}
+			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobs.QueueThread}
 		}
 		return nil
 	})
@@ -393,7 +393,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
-	out := Outcome{Status: Enqueued, Job: "index"}
+	out := Outcome{Status: Enqueued, Job: jobs.QueueIndex}
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
@@ -417,7 +417,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 			return fmt.Errorf("ingest: enqueue index: %w", err)
 		}
 		if res.UniqueSkippedAsDuplicate {
-			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "index"}
+			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobs.QueueIndex}
 		}
 		return nil
 	})

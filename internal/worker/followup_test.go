@@ -12,6 +12,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // threadForge answers the comment listings from fixed comments and counts
@@ -250,6 +251,7 @@ func TestThreadWrites(t *testing.T) {
 // follow-up marker, not the finding's own comment. They are counted over the
 // whole thread when the prompt keeps only its last messages.
 func TestBotReplies(t *testing.T) {
+	threadMessages := tuning.Get().Worker.ThreadMessages
 	at := func(s int64) time.Time { return time.Unix(s, 0) }
 	const root = int64(1)
 	inline := []forge.Comment{
@@ -260,7 +262,7 @@ func TestBotReplies(t *testing.T) {
 		{ID: 5, Author: "kritika[bot]", Body: review.FollowUpMarker(4) + "\nThe test is not the caller.", CreatedAt: at(5), Inline: true, InReplyTo: root},
 		{ID: 6, Author: "kritika[bot]", Body: review.FollowUpMarker(4) + "\nAnother thread's reply.", CreatedAt: at(6), Inline: true, InReplyTo: 99},
 	}
-	for id := int64(7); id < 7+threadMessages+5; id++ {
+	for id := int64(7); id < int64(7+threadMessages+5); id++ {
 		inline = append(inline, forge.Comment{ID: id, Author: "onedr0p", Body: "more", CreatedAt: at(id), Inline: true, InReplyTo: root})
 	}
 	asking := inline[len(inline)-1]

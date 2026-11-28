@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
@@ -21,6 +23,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/egresspolicy"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // cacheProxy is a proxy with a cache in front of an HTTPS server that
@@ -404,17 +407,29 @@ func TestCacheKeepsNothingRedirectedOut(t *testing.T) {
 	}
 }
 
-// TestCacheBoundsFills: a fill past maxFills, or past the bytes the fills
-// under way can write, is not made, and the request is forwarded.
+// TestCacheBoundsFills: a fill past Egress.MaxFills, or past the bytes the
+// fills under way can write, is not made, and the request is forwarded.
 func TestCacheBoundsFills(t *testing.T) {
+	t.Run("configured", func(t *testing.T) {
+		tuning.Override(t, func(v *tuning.Values) { v.Egress.MaxFills = 3 })
+		c := &Cache{MaxBytes: 100}
+		for range 3 {
+			if !c.begin() {
+				t.Fatal("a fill was refused below the configured 3")
+			}
+		}
+		if c.begin() {
+			t.Fatal("a fill past the configured 3 was let through")
+		}
+	})
 	c := &Cache{MaxBytes: 100}
-	for range maxFills {
+	for range tuning.Get().Egress.MaxFills {
 		if !c.begin() {
-			t.Fatal("a fill was refused below maxFills")
+			t.Fatal("a fill was refused below Egress.MaxFills")
 		}
 	}
 	if c.begin() {
-		t.Fatal("a fill past maxFills was let through")
+		t.Fatal("a fill past Egress.MaxFills was let through")
 	}
 	if !c.reserve(60) || c.reserve(41) || !c.reserve(40) {
 		t.Fatalf("reserved = %d: want 60 and 40 of 100 held, 41 more refused", c.reserved)
@@ -578,5 +593,47 @@ func TestOpenCache(t *testing.T) {
 		if _, err := OpenCache(readOnly, 1<<20); err == nil {
 			t.Error("a directory the cache cannot write was accepted")
 		}
+	}
+}
+
+// TestCacheStoreRefusesUnreadableHeader: an entry whose first line, with
+// its newline, passes egress.maxEntryHeader is refused before its body is
+// read, and one at the bound is stored and read back.
+func TestCacheStoreRefusesUnreadableHeader(t *testing.T) {
+	const body = "tool archive"
+	entry := entryOf("https://example.com/tool.tar.gz", body)
+	line, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name   string
+		header tuning.ByteSize
+		fails  bool
+	}{
+		{"one byte short", tuning.ByteSize(len(line)), true},
+		{"at the bound", tuning.ByteSize(len(line) + 1), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tuning.Override(t, func(v *tuning.Values) { v.Egress.MaxEntryHeader = tt.header })
+			c := &Cache{Dir: t.TempDir(), MaxBytes: 1 << 20}
+			read := &countedReader{Reader: strings.NewReader(body)}
+			err := c.store(keyOf(body), entry, read, nil)
+			if tt.fails {
+				if !errors.Is(err, errEntryHeader) || entries(t, c) != 0 || read.bytes != 0 {
+					t.Fatalf("store = %v with %d entries after reading %d bytes, want errEntryHeader, none and none read",
+						err, entries(t, c), read.bytes)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, _, _, err := c.open(keyOf(body))
+			if err != nil {
+				t.Fatalf("open of the stored entry: %v", err)
+			}
+			_ = f.Close()
+		})
 	}
 }

@@ -20,6 +20,16 @@ func Prefix(s string, n int) string {
 	return s[:n]
 }
 
+// JSONGrowth is the most bytes that encoding/json writes for one byte of a
+// string: \u003c for a <, as it escapes HTML, or for a control byte, and
+// \ufffd for a byte of invalid UTF-8.
+const JSONGrowth = 6
+
+// EscapedRoom is how many of the n bytes of a text to keep when the JSON
+// that holds it is over bytes over its limit: no byte encodes as more than
+// JSONGrowth, so the text must lose at least that share of the excess.
+func EscapedRoom(n, over int) int { return max(0, n-(over+JSONGrowth-1)/JSONGrowth) }
+
 // Truncate is Prefix with a note appended that says how many bytes it cut. If
 // n has room for the note, the result is at most n bytes long, including the
 // note. A non-positive n disables the cut. The note must fit. If a result is

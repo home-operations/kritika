@@ -7,8 +7,8 @@ package jobs
 
 import (
 	"strings"
-	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 )
@@ -61,14 +61,6 @@ const (
 	TriggerPush    = "push"
 )
 
-// OnboardRetryAfter is how long a repository whose onboarding job ended
-// without building an index waits to be offered again: the feeder's pace,
-// and the dashboard's, which shows where a repository waits for it. The
-// poller waits as long to look again at the default branch of a repository
-// whose index job ended without moving its index. River keeps finished jobs
-// longer than that.
-const OnboardRetryAfter = time.Hour
-
 // Index job priorities, highest first. River fetches a higher priority first
 // only as a worker frees, and an onboarding job holds its worker for a whole
 // build. So updates have a queue of their own, QueueIndexUpdate, which an
@@ -79,18 +71,6 @@ const (
 	indexPriorityReindex = 2
 	indexPriorityOnboard = 4
 )
-
-// indexAttempts bounds an index job's tries: transient failures (a fetch
-// timeout, a runner killed at its deadline) get River's backoff, and an
-// onboarding that fails every try is offered again later.
-const indexAttempts = 3
-
-// reviewAttempts bounds a review, follow-up or thread job's tries. With
-// River's backoff, the last try comes over an hour after the first, which
-// outlasts a restart or a database failover. A job that fails every try
-// fails on its input, and each further try only repeats its failed review
-// and commit status.
-const reviewAttempts = 8
 
 // LiveStates are the states a job is in while queued or running: what a
 // job's unique key spans, and what counts as a job still to come.
@@ -139,11 +119,11 @@ type ReviewArgs struct {
 }
 
 // Kind implements river.JobArgs.
-func (ReviewArgs) Kind() string { return "review" }
+func (ReviewArgs) Kind() string { return QueueReview }
 
 // InsertOpts implements river.JobArgsWithInsertOpts.
 func (ReviewArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueueReview, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	return river.InsertOpts{Queue: QueueReview, MaxAttempts: tuning.Get().Jobs.ReviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
 // PrepareArgs finalizes a saved runner answer. This includes merge and
@@ -156,7 +136,7 @@ type PrepareArgs struct {
 func (PrepareArgs) Kind() string { return QueuePrepare }
 
 func (PrepareArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueuePrepare, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	return river.InsertOpts{Queue: QueuePrepare, MaxAttempts: tuning.Get().Jobs.ReviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
 // PublishArgs delivers a finalized answer without calling a model.
@@ -165,7 +145,7 @@ type PublishArgs PrepareArgs
 func (PublishArgs) Kind() string { return QueuePublish }
 
 func (PublishArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueuePublish, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	return river.InsertOpts{Queue: QueuePublish, MaxAttempts: tuning.Get().Jobs.ReviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
 // FollowUpArgs answers one comment that addressed the bot, or, with Reply,
@@ -182,11 +162,11 @@ type FollowUpArgs struct {
 }
 
 // Kind implements river.JobArgs.
-func (FollowUpArgs) Kind() string { return "followup" }
+func (FollowUpArgs) Kind() string { return QueueFollowUp }
 
 // InsertOpts implements river.JobArgsWithInsertOpts.
 func (FollowUpArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueueFollowUp, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	return river.InsertOpts{Queue: QueueFollowUp, MaxAttempts: tuning.Get().Jobs.ReviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
 // ThreadArgs applies a review thread someone resolved or unresolved to the
@@ -207,7 +187,7 @@ type ThreadArgs struct {
 }
 
 // Kind implements river.JobArgs.
-func (ThreadArgs) Kind() string { return "thread" }
+func (ThreadArgs) Kind() string { return QueueThread }
 
 // InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
 // thread and state while queued or running. A thread resolved and then
@@ -215,7 +195,7 @@ func (ThreadArgs) Kind() string { return "thread" }
 // thread resolved again later is a new job.
 func (ThreadArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
-		Queue: QueueThread, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},
+		Queue: QueueThread, MaxAttempts: tuning.Get().Jobs.ReviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},
 	}
 }
 
@@ -241,7 +221,7 @@ type IndexArgs struct {
 }
 
 // Kind implements river.JobArgs.
-func (IndexArgs) Kind() string { return "index" }
+func (IndexArgs) Kind() string { return QueueIndex }
 
 // InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
 // repository while queued or running (River requires running in the set),
@@ -258,7 +238,7 @@ func (a IndexArgs) InsertOpts() river.InsertOpts {
 		queue, priority = QueueIndex, indexPriorityOnboard
 	}
 	return river.InsertOpts{
-		Queue: queue, Priority: priority, MaxAttempts: indexAttempts,
+		Queue: queue, Priority: priority, MaxAttempts: tuning.Get().Jobs.IndexAttempts,
 		UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},
 	}
 }

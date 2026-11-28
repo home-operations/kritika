@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // catalogModel is a model as the Models API lists it, with only the
@@ -135,7 +137,7 @@ func TestAnthropicLatestModels(t *testing.T) {
 	catalog[6].ID = "brand-new-opus-id"
 	catalogMu.Unlock()
 	step(t, "~opus-latest", "opaque-opus-id", 0.0003)
-	now = now.Add(modelCatalogTTL)
+	now = now.Add(tuning.Get().Model.CatalogTTL)
 	step(t, "~opus-latest", "opaque-opus-id", 0.0003)
 	settle(&c.catalogCache, "")
 	step(t, "~opus-latest", "brand-new-opus-id", 0.0007)

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // FindingStatus is whether a finding was addressed or dismissed by a
@@ -275,20 +276,17 @@ type FindingSummary struct {
 	Categories, Rules, Agents, Directories []FindingGroup
 }
 
-// summaryTop is how many groups of each kind a FindingSummary keeps.
-const summaryTop = 6
-
 // SummarizeFindings counts the account's findings f keeps, and the
-// summaryTop most common groups of each kind among them, the most common
-// first. A finding that cites several rules, or that several agents
-// raised, counts in each of their groups.
+// tuning's Store.SummaryTop most common groups of each kind among them, the
+// most common first. A finding that cites several rules, or that several
+// agents raised, counts in each of their groups.
 func SummarizeFindings(ctx context.Context, tx pgx.Tx, f FindingFilter) (FindingSummary, error) {
 	var out FindingSummary
 	where, args, err := f.where()
 	if err != nil {
 		return out, err
 	}
-	args["top"] = summaryTop
+	args["top"] = tuning.Get().Store.SummaryTop
 	rows, err := tx.Query(ctx, `WITH `+findingIssues+`,
 		kept AS (
 			SELECT l.category, l.rules, l.agents, l.path, l.addressed, l.dismissed, l.reactions_down, r.name AS repository

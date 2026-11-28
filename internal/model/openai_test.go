@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // capture is one request a fake provider received.
@@ -638,19 +640,20 @@ func TestOpenAIConfiguredHeaders(t *testing.T) {
 }
 
 // TestRequestTimeoutOverrides: a client built with its own request timeout
-// gives up on a stalled server by that timeout, not by DefaultStepTimeout.
-// The gateway's budgets nest, so the runner always outlasts the gateway,
+// gives up on a stalled server by that timeout, not by the default step
+// timeout. The gateway's budgets nest, so the runner always outlasts the gateway,
 // which outlasts one provider request on either of a step's providers.
 func TestRequestTimeoutOverrides(t *testing.T) {
+	step := tuning.Get().Model.DefaultStepTimeout
 	for _, tt := range []struct{ primary, fallback time.Duration }{
-		{DefaultStepTimeout, DefaultStepTimeout}, {DefaultStepTimeout, 30 * time.Minute}, {30 * time.Minute, time.Minute},
+		{step, step}, {step, 30 * time.Minute}, {30 * time.Minute, time.Minute},
 	} {
 		budget := StepBudget(tt.primary, tt.fallback)
 		if request := GatewayRequestTimeout(budget); request <= budget || budget <= tt.primary+tt.fallback {
 			t.Fatalf("timeouts do not nest: request %s, budget %s, steps %s and %s", request, budget, tt.primary, tt.fallback)
 		}
 	}
-	if got := StepBudget(DefaultStepTimeout, DefaultStepTimeout); got != 12*time.Minute {
+	if got := StepBudget(step, step); got != 12*time.Minute {
 		t.Fatalf("the default budget = %s, want 12m", got)
 	}
 	release := make(chan struct{})
@@ -663,8 +666,8 @@ func TestRequestTimeoutOverrides(t *testing.T) {
 	}
 	start := time.Now()
 	_, err = s.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
-	if err == nil || !Transient(err) || time.Since(start) > DefaultStepTimeout/2 {
-		t.Fatalf("err = %v after %s, want a transient timeout well before DefaultStepTimeout", err, time.Since(start))
+	if err == nil || !Transient(err) || time.Since(start) > step/2 {
+		t.Fatalf("err = %v after %s, want a transient timeout well before the default step timeout", err, time.Since(start))
 	}
 }
 

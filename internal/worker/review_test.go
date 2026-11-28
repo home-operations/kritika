@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestDedupesBotPatch(t *testing.T) {
@@ -38,6 +39,7 @@ func TestDedupesBotPatch(t *testing.T) {
 }
 
 func TestSnooze(t *testing.T) {
+	snoozeMin, snoozeMax := tuning.Get().Worker.SnoozeMin, tuning.Get().Worker.SnoozeMax
 	tests := []struct {
 		name     string
 		metadata string

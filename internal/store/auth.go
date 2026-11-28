@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/home-operations/kritika/internal/tuning"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -103,23 +104,13 @@ type LoginState struct {
 	ReturnTo     string
 }
 
-// LoginStateTTL is how long a sign-in can take between leaving for the
-// provider and coming back.
-const LoginStateTTL = 10 * time.Minute
-
-// MaxLoginStates caps the sign-ins in flight at once. Starting one needs
-// no session. So without a cap, anyone can grow login_states without bound
-// for LoginStateTTL. The cap is far more than any real dashboard's users
-// start in ten minutes.
-const MaxLoginStates = 10_000
-
 var (
 	// ErrSession is a session cookie that is unknown or expired.
 	ErrSession = errors.New("store: session is not valid")
 	// ErrLoginState is an OAuth state that is unknown, used or expired.
 	ErrLoginState = errors.New("store: login state is not valid")
-	// ErrLoginStatesFull is a sign-in refused because MaxLoginStates are
-	// already in flight.
+	// ErrLoginStatesFull is a sign-in refused because tuning's
+	// Store.MaxLoginStates are already in flight.
 	ErrLoginStatesFull = errors.New("store: too many sign-ins in flight")
 )
 
@@ -291,10 +282,11 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	return nil
 }
 
-// CreateLoginState stores ls for LoginStateTTL, bound to browser, the value
-// of the kritika_login cookie set in the browser starting the sign-in. It
-// returns the random state parameter that names ls. Only SHA-256s of the
-// state and browser values are kept. Expired states are swept on the way.
+// CreateLoginState stores ls for tuning's Store.LoginStateTTL, bound to
+// browser, the value of the kritika_login cookie set in the browser starting
+// the sign-in. It returns the random state parameter that names ls. Only
+// SHA-256s of the state and browser values are kept. Expired states are swept
+// on the way.
 func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser string, now time.Time) (string, error) {
 	if browser == "" {
 		return "", errors.New("store: create login state: no browser binding")
@@ -305,7 +297,8 @@ func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser str
 	}
 	tag, err := s.app.Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, return_to, expires_at, browser_hash)
 		SELECT $1, $2, $3, $4, $5, $6, $7 WHERE (SELECT count(*) FROM login_states) < $8`,
-		tokenHash(state), ls.Provider, ls.Nonce, ls.PKCEVerifier, ls.ReturnTo, now.Add(LoginStateTTL), tokenHash(browser), MaxLoginStates)
+		tokenHash(state), ls.Provider, ls.Nonce, ls.PKCEVerifier, ls.ReturnTo, now.Add(tuning.Get().Store.LoginStateTTL),
+		tokenHash(browser), tuning.Get().Store.MaxLoginStates)
 	if err != nil {
 		return "", fmt.Errorf("store: create login state: %w", err)
 	}

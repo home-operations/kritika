@@ -15,16 +15,6 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// defaultUsageWindow is the span that a usage series covers without ?from=.
-// maxUsageWindow is the most that ?from= and ?to= can span. The series are
-// read from every row in the span, and the analytics page reads the span
-// before it too. So a span of years scans the account's history twice on one
-// request.
-const (
-	defaultUsageWindow = 30 * 24 * time.Hour
-	maxUsageWindow     = 366 * 24 * time.Hour
-)
-
 // parseTime reads an RFC 3339 time or a YYYY-MM-DD date (midnight UTC).
 func parseTime(s string) (time.Time, bool) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
@@ -34,8 +24,8 @@ func parseTime(s string) (time.Time, bool) {
 	return t, err == nil
 }
 
-// usageQuery reads ?group=, ?from= and ?to=: by day over the last 30 days
-// unless given.
+// usageQuery reads ?group=, ?from= and ?to=: by day over tuning's
+// WebAPI.DefaultUsageWindow unless given.
 func (s *Server) usageQuery(r *http.Request, instance bool) (store.UsageGroup, time.Time, time.Time, error) {
 	group := cmp.Or(store.UsageGroup(r.URL.Query().Get("group")), store.UsageByDay)
 	if !group.Valid() && (!instance || group != usageByAccount) {

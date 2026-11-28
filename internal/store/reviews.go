@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // NewReview is a review the worker starts: its pull request and head, and
@@ -220,11 +221,11 @@ type ReviewEnd struct {
 // end.OnlyUnfinished is set and the review already ended.
 func EndReview(ctx context.Context, tx pgx.Tx, reviewID string, end ReviewEnd) (bool, error) {
 	tag, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = CASE WHEN $3 = '' THEN patch_id ELSE $3 END,
-		skip_reason = CASE WHEN $4 = '' THEN skip_reason ELSE $4 END, error = left($5, 2000), finished_at = now(),
+		skip_reason = CASE WHEN $4 = '' THEN skip_reason ELSE $4 END, error = left($5, $7), finished_at = now(),
 		publication = CASE WHEN publication IS NOT NULL OR (status = 'prepared' AND cancel_requested_at IS NOT NULL)
 			THEN '{}'::jsonb END
 		WHERE id = $1 AND (NOT $6 OR finished_at IS NULL)`,
-		reviewID, end.Status, end.PatchID, end.SkipReason, end.Error, end.OnlyUnfinished)
+		reviewID, end.Status, end.PatchID, end.SkipReason, end.Error, end.OnlyUnfinished, tuning.Get().Store.ErrorTextChars)
 	if err != nil {
 		return false, fmt.Errorf("store: end review: %w", err)
 	}
@@ -285,8 +286,8 @@ func InsertRunnerRun(ctx context.Context, tx pgx.Tx, accountID string, kind Runn
 // FailRunnerRun ends a runner run that never got a Job, so it does not
 // stay 'created' for good.
 func FailRunnerRun(ctx context.Context, tx pgx.Tx, runID, errText string) error {
-	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000), finished_at = now() WHERE id = $1`,
-		runID, errText); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, $3), finished_at = now() WHERE id = $1`,
+		runID, errText, tuning.Get().Store.ErrorTextChars); err != nil {
 		return fmt.Errorf("store: fail runner run: %w", err)
 	}
 	return nil
@@ -320,10 +321,10 @@ func RecordRunnerRun(ctx context.Context, tx pgx.Tx, runID string, r RunnerResul
 	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET job_name = $2, pod_name = $3, node_name = $4,
 		scheduled_at = $5, started_at = $6, finished_at = now(),
 		exit_code = $7, termination_reason = $8, deadline_exceeded = $9, log_tail = $10,
-		phase = CASE WHEN $11 THEN phase ELSE 'failed' END, error = CASE WHEN $11 THEN error ELSE left($12, 2000) END
+		phase = CASE WHEN $11 THEN phase ELSE 'failed' END, error = CASE WHEN $11 THEN error ELSE left($12, $13) END
 		WHERE id = $1`,
 		runID, r.JobName, r.PodName, r.NodeName, scheduled, started,
-		r.ExitCode, r.TerminationReason, r.DeadlineExceeded, r.LogTail, r.Error == "", r.Error); err != nil {
+		r.ExitCode, r.TerminationReason, r.DeadlineExceeded, r.LogTail, r.Error == "", r.Error, tuning.Get().Store.ErrorTextChars); err != nil {
 		return fmt.Errorf("store: record runner run: %w", err)
 	}
 	return nil

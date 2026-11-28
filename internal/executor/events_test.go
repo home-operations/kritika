@@ -9,6 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // TestEvents: an Event lands on the run's Job or on this replica's pod,
@@ -42,7 +44,7 @@ func TestEvents(t *testing.T) {
 	}
 	pod := list.Items[byReason["ConfigRefused"]]
 	if pod.Regarding != (corev1.ObjectReference{APIVersion: "v1", Kind: "Pod", Namespace: "kritika", Name: "kritika-7c9f5d6b8-xk2lp", UID: "pod-uid"}) ||
-		pod.Type != corev1.EventTypeWarning || pod.Action != "ApplyConfiguration" || len(pod.Note) > eventNoteBytes {
+		pod.Type != corev1.EventTypeWarning || pod.Action != "ApplyConfiguration" || len(pod.Note) > int(tuning.Get().Executor.EventNoteBytes) {
 		t.Fatalf("pod event = %+v (note %d bytes)", pod, len(pod.Note))
 	}
 }
@@ -63,5 +65,39 @@ func TestEventsLongNames(t *testing.T) {
 	if e.ReportingInstance != "0c3a0bde-5c6d-4f6c-9a43-1f2b1e4e8a10" || e.Regarding.Name != pod ||
 		len(validation.IsDNS1123Subdomain(e.Name)) != 0 {
 		t.Fatalf("instance %q, regarding %q, name %q", e.ReportingInstance, e.Regarding.Name, e.Name)
+	}
+}
+
+// TestEventsInstanceWithinALoweredLimit: under an executor.eventInstanceBytes
+// lower than the pod's UID, a long pod name is cut to the limit, not given up
+// for a UID that is longer still.
+func TestEventsInstanceWithinALoweredLimit(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Executor.EventInstanceBytes = 16 })
+	client := fake.NewSimpleClientset()
+	pod := strings.Repeat("p", 250)
+	NewEvents(client, "kritika", pod, "0c3a0bde-5c6d-4f6c-9a43-1f2b1e4e8a10", slog.New(slog.DiscardHandler)).
+		PodEvent(t.Context(), false, "LeaderElected", "Lead", "this replica took the lead")
+	list, err := client.EventsV1().Events("kritika").List(t.Context(), metav1.ListOptions{})
+	if err != nil || len(list.Items) != 1 {
+		t.Fatalf("events = %+v, %v", list, err)
+	}
+	if got := list.Items[0].ReportingInstance; got != pod[:16] {
+		t.Fatalf("instance %q, want %q", got, pod[:16])
+	}
+}
+
+// TestEventsNoteWithinALoweredLimit: an executor.eventNoteBytes too small
+// for the note that a cut note ends with still bounds the note.
+func TestEventsNoteWithinALoweredLimit(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Executor.EventNoteBytes = 8 })
+	client := fake.NewSimpleClientset()
+	NewEvents(client, "kritika", "kritika-0", "pod-uid", slog.New(slog.DiscardHandler)).
+		PodEvent(t.Context(), true, "ConfigRefused", "ApplyConfiguration", strings.Repeat("x", 2000))
+	list, err := client.EventsV1().Events("kritika").List(t.Context(), metav1.ListOptions{})
+	if err != nil || len(list.Items) != 1 {
+		t.Fatalf("events = %+v, %v", list, err)
+	}
+	if note := list.Items[0].Note; note != "xxxxxxxx" {
+		t.Fatalf("note = %q, want its first 8 bytes", note)
 	}
 }
