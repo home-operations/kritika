@@ -67,7 +67,7 @@ type GitHub struct {
 // GitLab holds the tunable values of package forge/gitlab.
 type GitLab struct {
 	// PageSize is how many items a paginated listing asks for per page.
-	// GitLab serves at most 100, the default.
+	// At most 100, the default: the largest page that GitLab serves.
 	PageSize int `env:"KRITIKA_TUNING_GITLAB_PAGE_SIZE" envDefault:"100" yaml:"pageSize,omitempty"`
 	// MaxDiffBytes bounds a merge request's diff read whole.
 	MaxDiffBytes ByteSize `env:"KRITIKA_TUNING_GITLAB_MAX_DIFF_BYTES" envDefault:"8Mi" yaml:"maxDiffBytes,omitempty"`
@@ -130,6 +130,12 @@ func init() {
 		},
 		func(v Values) error {
 			return exceeds("forgejo.tokenTtl", v.Forgejo.TokenTTL, "forgejo.tokenReuseMargin", v.Forgejo.TokenReuseMargin)
+		},
+		func(v Values) error {
+			if v.GitLab.PageSize > GitLabMaxPageSize {
+				return fmt.Errorf("%s %w GitLab's largest page, %d", fieldLabel("gitLab.pageSize"), errMustNotExceed, GitLabMaxPageSize)
+			}
+			return nil
 		},
 		func(v Values) error {
 			// A token's expiry is whole seconds, rounded down.

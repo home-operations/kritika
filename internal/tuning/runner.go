@@ -263,6 +263,10 @@ const (
 	// whatever its build: a runner of a build before runSpec.maxBytes was
 	// tunable reads no larger one.
 	specV1Bytes = 900 << 10
+	// minSpecBytes is the least runSpec.maxBytes: room for a spec's fields
+	// that nothing trims, its run, repository, model and limits, beside
+	// what is left of its prompt.
+	minSpecBytes = 64 << 10
 	// kubeEventInstanceBytes and kubeEventNoteBytes are the longest
 	// reporting instance and note that Kubernetes takes in an Event.
 	kubeEventInstanceBytes = 128
@@ -291,6 +295,13 @@ func init() {
 				return fmt.Errorf("%s (%s) %w %s, what a runner of spec version 1 reads, "+
 					"inside Kubernetes' %s Secret limit, which the run's credentials share",
 					fieldLabel("runSpec.maxBytes"), v.RunSpec.MaxBytes, errMustNotExceed, ByteSize(specV1Bytes), ByteSize(SecretBytes))
+			}
+			return nil
+		},
+		func(v Values) error {
+			if v.RunSpec.MaxBytes < minSpecBytes {
+				return fmt.Errorf("%s (%s) must be at least %s, room for the fields of a spec that are not trimmed",
+					fieldLabel("runSpec.maxBytes"), v.RunSpec.MaxBytes, ByteSize(minSpecBytes))
 			}
 			return nil
 		},

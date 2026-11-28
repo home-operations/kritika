@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v4"
@@ -376,6 +377,10 @@ func (f *File) validateEmbedding() error {
 	}
 	if e.MaxBatch < 0 || e.MaxBatchChars < 0 || e.MaxItemChars < 0 {
 		return errors.New("configfile: embedding.maxBatch, maxBatchChars and maxItemChars must not be negative")
+	}
+	// A cut keeps whole runes, and an input cut to nothing is refused.
+	if (e.MaxBatchChars > 0 && e.MaxBatchChars < utf8.UTFMax) || (e.MaxItemChars > 0 && e.MaxItemChars < utf8.UTFMax) {
+		return fmt.Errorf("configfile: embedding.maxBatchChars and maxItemChars must be at least %d, a whole rune", utf8.UTFMax)
 	}
 	// NaN passes any comparison's negation, and will otherwise keep no chunk.
 	if math.IsNaN(e.SimilarFloor) || e.SimilarFloor < 0 || e.SimilarFloor > 1 {

@@ -25,10 +25,11 @@ type hub struct {
 	// resyncFrame is the frame every stream opens with, and is sent again
 	// when it missed events.
 	resyncFrame []byte
-	// stands, when set, is asked at every heartbeat whether the stream's
-	// session still stands. A stream whose session ended is closed, and the
-	// browser's reconnect is refused.
-	stands func(*http.Request) bool
+	// stands, when set, is asked at every heartbeat, and at least every
+	// recheck, whether the stream's session still stands. A stream whose
+	// session ended is closed, and the browser's reconnect is refused.
+	stands  func(*http.Request) bool
+	recheck time.Duration
 
 	mu      sync.Mutex
 	clients map[*client]struct{}
@@ -46,6 +47,10 @@ type client struct {
 	resync    chan struct{}
 }
 
+// sessionRecheck is the longest that a stream goes on after its session
+// ended, whatever the heartbeat: the default heartbeat's 25 seconds.
+const sessionRecheck = 25 * time.Second
+
 // newHub builds a hub whose resyncs name entry, the dashboard's entry
 // script (see Resync).
 func newHub(current *configfile.Current, logger *slog.Logger, entry string) *hub {
@@ -56,7 +61,7 @@ func newHub(current *configfile.Current, logger *slog.Logger, entry string) *hub
 	}
 	t := tuning.Get().WebAPI
 	return &hub{
-		current: current, logger: logger, heartbeat: t.HeartbeatInterval, buffer: t.ClientBuffer,
+		current: current, logger: logger, heartbeat: t.HeartbeatInterval, buffer: t.ClientBuffer, recheck: sessionRecheck,
 		clients: map[*client]struct{}{}, done: make(chan struct{}),
 		resyncFrame: fmt.Appendf(nil, "event: resync\ndata: %s\n\n", data),
 	}
@@ -151,23 +156,33 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	defer h.unsubscribe(c)
 	ticker := time.NewTicker(h.heartbeat)
 	defer ticker.Stop()
+	// A heartbeat slower than the recheck does not leave a revoked session
+	// streaming until it comes.
+	var recheck <-chan time.Time
+	if h.stands != nil && h.heartbeat > h.recheck {
+		t := time.NewTicker(h.recheck)
+		defer t.Stop()
+		recheck = t.C
+	}
 
 	// Every stream opens with a resync: events published while the browser
 	// was reconnecting, or between its first fetch and this stream opening,
 	// were never delivered to it.
 	frame := h.resyncFrame
 	for {
-		if !extend() {
-			return
-		}
-		if _, err := w.Write(frame); err != nil {
-			return
-		}
-		if err := rc.Flush(); err != nil {
-			return
-		}
-		if !deadline(time.Time{}) {
-			return
+		if frame != nil {
+			if !extend() {
+				return
+			}
+			if _, err := w.Write(frame); err != nil {
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				return
+			}
+			if !deadline(time.Time{}) {
+				return
+			}
 		}
 		select {
 		case <-r.Context().Done():
@@ -183,6 +198,11 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 				h.logger.ErrorContext(r.Context(), "webapi: encode event", "error", err)
 				return
 			}
+		case <-recheck:
+			if !h.stands(r) {
+				return
+			}
+			frame = nil
 		case <-ticker.C:
 			if h.stands != nil && !h.stands(r) {
 				return

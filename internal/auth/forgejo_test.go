@@ -246,3 +246,33 @@ func TestGiteaSignIn(t *testing.T) {
 		t.Fatalf("grant = %+v, %v; want the Gitea account alone", g, err)
 	}
 }
+
+// TestForgejoMappingVarsAtThePageCap: a headerless list that fills the last
+// page a sign-in reads is whole when the page after it is empty, and too
+// long when it is not.
+func TestForgejoMappingVarsAtThePageCap(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Auth.ForgejoMaxPages = 1 })
+	for _, tt := range []struct {
+		name, next string
+		ok         bool
+	}{{"an empty page after it", `[]`, true}, {"more after it", `[{"name":"org-2"}]`, false}} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("page") == "1" {
+					_, _ = fmt.Fprint(w, `[{"name":"org-1"}]`)
+					return
+				}
+				_, _ = fmt.Fprint(w, tt.next)
+			}))
+			defer srv.Close()
+			vars, err := forgejoAPI{}.mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{Login: "alice"})
+			if tt.ok {
+				if orgs, _ := vars["orgs"].([]string); err != nil || strings.Join(orgs, ",") != "org-1" {
+					t.Fatalf("mappingVars = %v, %v; want org-1 alone", vars, err)
+				}
+			} else if !errors.Is(err, ErrForgeAPI) {
+				t.Fatalf("mappingVars = %v, want a refusal", err)
+			}
+		})
+	}
+}

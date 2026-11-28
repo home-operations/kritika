@@ -58,6 +58,7 @@ type JobHeartbeat struct {
 func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner func(context.Context) error) error {
 	// The first beat, with the rescue horizon that River's rescuer waits out
 	// (see riverTimeout), and only while the attempt is still this replica's.
+	started := time.Now()
 	if err := h.Store.StartJob(ctx, job); err != nil {
 		return fmt.Errorf("worker: first heartbeat of job %d: %w", job.ID, err)
 	}
@@ -67,7 +68,7 @@ func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner 
 	defer fence(nil)
 	hctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	done := make(chan struct{})
-	go h.beat(hctx, job.ID, func(cause error) {
+	go h.beat(hctx, job.ID, started, func(cause error) {
 		markFenced(cause)
 		fence(cause)
 	}, done)
@@ -83,24 +84,34 @@ func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner 
 // the job and stops, because a beat written later has the leader take the job
 // for alive after this replica cut it. A beat gets only what is left of that
 // window. A beat stuck waiting for a connection, or on a connection that the
-// network dropped, must not hold the fence back.
-func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.CancelCauseFunc, done chan<- struct{}) {
+// network dropped, must not hold the fence back. A beat counts from when it
+// was sent, not when its answer came: the database dates it no earlier, and
+// the leader counts from that date.
+func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, written time.Time, fence context.CancelCauseFunc, done chan<- struct{}) {
 	defer close(done)
 	jt := tuning.Get().JobTimeout
-	t := time.NewTicker(jt.HeartbeatInterval)
-	defer t.Stop()
-	written := time.Now()
+	next := written
+	cut := func() {
+		h.Logger.Error("job heartbeat not written for too long; the job is cut before the leader hands it back", "job", jobID)
+		fence(errJobFenced)
+	}
 	for {
+		next = next.Add(jt.HeartbeatInterval)
+		fenceAt := written.Add(jt.JobFenceAfter())
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-time.After(time.Until(fenceAt)):
+			cut()
+			return
+		case <-time.After(time.Until(next)):
 		}
-		bctx, cancel := context.WithDeadline(ctx, written.Add(jt.JobFenceAfter()))
+		sent := time.Now()
+		bctx, cancel := context.WithDeadline(ctx, fenceAt)
 		err := h.Store.HeartbeatJob(bctx, jobID)
 		cancel()
 		if err == nil {
-			written = time.Now()
+			written = sent
 			continue
 		}
 		if ctx.Err() != nil {
@@ -111,8 +122,7 @@ func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.Canc
 		unwritten := time.Since(written)
 		h.Logger.Warn("job heartbeat not written", "job", jobID, "error", err, "unwritten_for", unwritten)
 		if unwritten >= jt.JobFenceAfter() {
-			h.Logger.Error("job heartbeat not written for too long; the job is cut before the leader hands it back", "job", jobID)
-			fence(errJobFenced)
+			cut()
 			return
 		}
 	}

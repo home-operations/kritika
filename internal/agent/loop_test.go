@@ -1403,3 +1403,19 @@ func TestLimitsWithDefaults(t *testing.T) {
 		}
 	})
 }
+
+// TestWrapUpReserve: the reserve is the slowest answers' share or the
+// floor, and a reserve of answers longer than the whole Run is the whole
+// Run, however many answers tuning keeps time for.
+func TestWrapUpReserve(t *testing.T) {
+	if got := wrapUpReserve(5*time.Second, 20*time.Minute); got != tuning.Get().Agent.WrapUpFloor {
+		t.Errorf("at the defaults, reserve = %v, want the floor", got)
+	}
+	if got := wrapUpReserve(2*time.Minute, 20*time.Minute); got != 4*time.Minute {
+		t.Errorf("after a slow answer, reserve = %v, want two such answers", got)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Agent.WrapUpAnswers = 2_000_000_000 })
+	if got := wrapUpReserve(5*time.Second, 20*time.Minute); got != 20*time.Minute {
+		t.Errorf("with 2e9 answers kept, reserve = %v, want the whole Run", got)
+	}
+}

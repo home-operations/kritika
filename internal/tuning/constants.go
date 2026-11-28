@@ -123,6 +123,8 @@ const (
 	// GitHubMaxJWTLifetime is the longest an App JWT can live: GitHub
 	// refuses one that expires further ahead.
 	GitHubMaxJWTLifetime = 10 * time.Minute
+	// GitLabMaxPageSize is the largest page that GitLab's listings serve.
+	GitLabMaxPageSize = 100
 
 	// OpenAIBaseURL is OpenAI's API, where an openai or chatgpt provider
 	// without a baseUrl goes, and the resource a ChatGPT plan's tokens are

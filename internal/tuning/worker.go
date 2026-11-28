@@ -188,7 +188,8 @@ type Worker struct {
 	// SuperviseInterval is how often supervision looks at a running run.
 	SuperviseInterval time.Duration `env:"KRITIKA_TUNING_WORKER_SUPERVISE_INTERVAL" envDefault:"10s" yaml:"superviseInterval,omitempty"`
 	// ThreadTimeout bounds a thread job: a few forge requests, each of which
-	// can wait out a rate limit for up to River's default job timeout.
+	// can wait out a rate limit for up to River's default job timeout. At most
+	// JobTimeout.MaxJobTimeout, so that the rescue grace applies to it too.
 	ThreadTimeout time.Duration `env:"KRITIKA_TUNING_WORKER_THREAD_TIMEOUT" envDefault:"5m" yaml:"threadTimeout,omitempty"`
 	// MinRetention is the shortest transcriptRetention and diffRetention
 	// that the configuration takes, so that a review's transcript and diff
@@ -408,6 +409,11 @@ func init() {
 			// The token exchange ends within the HTTP timeout, and what the
 			// refresh timeout has left saves the rotated token.
 			return exceeds("worker.chatGptRefreshTimeout", v.Worker.ChatGPTRefreshTimeout, "worker.chatGptHttpTimeout", v.Worker.ChatGPTHTTPTimeout)
+		},
+		func(v Values) error {
+			// River's rescuer waits out the recorded horizon, the job cap plus its
+			// grace, for a thread job too.
+			return notAbove("worker.threadTimeout", v.Worker.ThreadTimeout, "jobTimeout.maxJobTimeout", v.JobTimeout.MaxJobTimeout)
 		},
 		func(v Values) error {
 			return notAbove("worker.confidenceTimeout", v.Worker.ConfidenceTimeout, "jobTimeout.publishHeadroom", v.JobTimeout.PublishHeadroom)

@@ -33,3 +33,23 @@ func TestChatGPTFirstRefreshWaitsTheLegacyTimeout(t *testing.T) {
 		}
 	}
 }
+
+// TestChatGPTFirstRefreshWaitsTheLegacyPing: a leader with a lock timeout
+// shorter than the one from before it was tuned still waits out a
+// predecessor's ping at that one.
+func TestChatGPTFirstRefreshWaitsTheLegacyPing(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Store.LockTimeout, v.Worker.ChatGPTRefreshTimeout = time.Second, 10*time.Second
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	var waited time.Duration
+	r := &ChatGPTRefresher{LeaderInterval: 15 * time.Second, after: func(d time.Duration) <-chan time.Time {
+		waited = d
+		cancel()
+		return nil
+	}}
+	r.Run(ctx)
+	if want := 15*time.Second + 5*time.Second + time.Minute; waited != want {
+		t.Fatalf("the first refresh waits %s, want %s: the interval, the legacy 5s ping and the legacy minute", waited, want)
+	}
+}

@@ -54,6 +54,23 @@ func TestPartInputIdentity(t *testing.T) {
 	}
 }
 
+// TestPartInputIdentityFollowsTuning: the same spec, prompts and tools under
+// another search budget are another input, so its checkpoints are not
+// reused.
+func TestPartInputIdentityFollowsTuning(t *testing.T) {
+	s := reviewSpec()
+	parts := []reviewPart{{paths: []string{"a.go"}, prompt: loopPrompt(s, false)}}
+	before, err := partInputHash(s, parts, agentTools{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.SearchCalls++ })
+	after, err := partInputHash(s, parts, agentTools{})
+	if err != nil || before == after {
+		t.Fatalf("identity unchanged by runner.searchCalls: %v", err)
+	}
+}
+
 func TestPartsResumeAndCheckpoint(t *testing.T) {
 	ctx := t.Context()
 	checkpointed := make(chan struct{})

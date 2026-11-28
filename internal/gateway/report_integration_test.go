@@ -518,3 +518,37 @@ func TestReportIndexUpload(t *testing.T) {
 		})
 	}
 }
+
+// TestReportPartsPastTheSmallReport: a split review's report of eight long
+// slot pools, over a lowered gateway.maxSmallReport, is taken under
+// gateway.maxPartsReport and answered with the pools' slots.
+func TestReportPartsPastTheSmallReport(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxFailureCause, v.Gateway.MaxSmallReport = 64, 1408 })
+	e := newReportEnv(t)
+	ctx := t.Context()
+	id, token := e.run(store.RunnerKindReview)
+	report := runspec.PartsReport{Sequence: 1, Remaining: map[string]int{}, Active: map[string]int{}}
+	granted := map[string]int{}
+	for i := range 8 {
+		pool := strconv.Itoa(i) + strings.Repeat("m", 100)
+		report.Remaining[pool], report.Active[pool], granted[pool] = 2, 1, 3
+	}
+	if err := e.st.WithAccount(ctx, e.account, func(tx pgx.Tx) error {
+		_, err := store.SetPartSlots(ctx, tx, id, granted)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) <= int(tuning.Get().Gateway.MaxSmallReport) {
+		t.Fatalf("the report is %d bytes, within the small report's bound", len(body))
+	}
+	status, answer := e.send(http.MethodPost, runspec.ReportPartsPath, token, body)
+	var slots runspec.PartSlots
+	if err := json.Unmarshal(answer, &slots); err != nil || status != http.StatusOK || len(slots.Slots) != 8 {
+		t.Fatalf("parts = %d %s, %v", status, answer, err)
+	}
+}

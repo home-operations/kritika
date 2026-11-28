@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net/url"
 	"reflect"
 	"slices"
@@ -84,6 +85,11 @@ func (s Settings) validate(retention bool) error {
 		if s.GatewayCacheMaxEntrySize > tuning.S3MaxPutBytes {
 			extra = append(extra, "gatewayCacheMaxEntrySize: S3 single-request uploads must not exceed "+
 				tuning.ByteSize(tuning.S3MaxPutBytes).String())
+		}
+		// The local spool holds an entry for each fill under way.
+		if n := int64(s.GatewayCacheMaxEntrySize); n > 0 && int64(s.Tuning.Egress.MaxFills) > math.MaxInt64/n {
+			extra = append(extra, "gatewayCacheMaxEntrySize: KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE times "+
+				"tuning.egress.maxFills: KRITIKA_TUNING_EGRESS_MAX_FILLS overflows the S3 cache's local spool")
 		}
 		if err := checkS3Bucket(s.GatewayCacheS3Endpoint, s.GatewayCacheS3Region, s.GatewayCacheS3Bucket); err != nil {
 			extra = append(extra, err.Error())

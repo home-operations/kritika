@@ -95,7 +95,9 @@ type Auth struct {
 	// MaxAPIBody bounds how much of a forge API response a sign-in reads.
 	MaxAPIBody ByteSize `env:"KRITIKA_TUNING_AUTH_MAX_API_BODY" envDefault:"1Mi" yaml:"maxApiBody,omitempty"`
 	// GitHubMaxPages bounds how many pages of organizations or teams, a
-	// hundred each, a GitHub sign-in reads: far beyond any real account.
+	// hundred each, a GitHub sign-in reads: far beyond any real account. A
+	// longer list fails the sign-in rather than being cut: a role mapping
+	// must not decide on part of what the person belongs to.
 	GitHubMaxPages int `env:"KRITIKA_TUNING_AUTH_GIT_HUB_MAX_PAGES" envDefault:"10" yaml:"gitHubMaxPages,omitempty"`
 	// ForgejoPageSize is the page size that a Forgejo sign-in's listing
 	// asks for, which is the instance's default cap.

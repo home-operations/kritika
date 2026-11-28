@@ -99,6 +99,8 @@ func TestParseRejectsEntries(t *testing.T) {
 			`embedding.model takes no floating alias, got "or/~vendor/embed-latest"`},
 		{"an embedder too wide for the index", embeddingDoc("dims: 4096"), "embedding.dims must be between 1 and 4000"},
 		{"an embedder with a negative bound", embeddingDoc("maxBatch: -1"), "must not be negative"},
+		{"an embedder whose batch cannot hold a rune", embeddingDoc("maxBatchChars: 2"), "must be at least 4, a whole rune"},
+		{"an embedder whose item cannot hold a rune", embeddingDoc("maxItemChars: 3"), "must be at least 4, a whole rune"},
 		{"an embedder with a floor above 1", embeddingDoc("similarFloor: 1.5"), "embedding.similarFloor must be between 0 and 1"},
 		{"an embedder with a margin above 1", embeddingDoc("similarMargin: 1.5"), "embedding.similarMargin must be between 0 and 1"},
 		{"an embedder with a negative margin", embeddingDoc("similarMargin: -0.1"), "embedding.similarMargin must be between 0 and 1"},

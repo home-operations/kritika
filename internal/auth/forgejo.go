@@ -110,12 +110,12 @@ func (forgejoAPI) mappingVars(ctx context.Context, c apiClient, id Identity) (ma
 // pages read reach the X-Total-Count that the instance sends. Without an
 // X-Total-Count, it stops only at an empty page: the instance caps the page
 // size asked for, so a short page may be a full one. fn returns how many
-// items its page held. A list longer than tuning's Auth.ForgejoMaxPages,
-// its empty page included, is an error, not a cut list: a role mapping must
-// not decide on part of what the person belongs to.
+// items its page held. A list longer than tuning's Auth.ForgejoMaxPages
+// pages, which one page past them confirms, is an error, not a cut list: a
+// role mapping must not decide on part of what the person belongs to.
 func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.RawMessage) (int, error)) error {
 	read, t := 0, tuning.Get().Auth
-	for page := 1; page <= t.ForgejoMaxPages; page++ {
+	for page := 1; page <= t.ForgejoMaxPages+1; page++ {
 		var raw json.RawMessage
 		p := fmt.Sprintf("%s?limit=%d&page=%d", path, t.ForgejoPageSize, page)
 		status, header, _, err := c.get(ctx, p, &raw)
@@ -124,6 +124,13 @@ func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.Ra
 			return err
 		case status/100 != 2:
 			return fmt.Errorf("%w: GET %s: status %d", ErrForgeAPI, p, status)
+		}
+		if page > t.ForgejoMaxPages {
+			var rest []json.RawMessage
+			if err := json.Unmarshal(raw, &rest); err == nil && len(rest) == 0 {
+				return nil
+			}
+			break
 		}
 		n, err := fn(raw)
 		if err != nil {

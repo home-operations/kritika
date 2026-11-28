@@ -150,6 +150,7 @@ func TestS3CacheSettings(t *testing.T) {
 		{"unknown backend", "gatewayCacheStorage: other", "must be filesystem or s3"},
 		{"zero entry", "gatewayCacheMaxEntrySize: 0", "must be positive"},
 		{"oversize entry", base + "gatewayCacheMaxEntrySize: 6Gi\n", "must not exceed 5Gi"},
+		{"spool past an int64", base + "gatewayCacheMaxEntrySize: 5Gi\ntuning: {egress: {maxFills: 2000000000}}\n", "overflows the S3 cache's local spool"},
 		{"no staging", strings.ReplaceAll(base, "gatewayCacheDir: /cache\n", ""), "private local staging"},
 		{"no bucket", strings.ReplaceAll(base, "gatewayCacheS3Bucket: kritika\n", ""), "S3 bucket"},
 		{"no region", strings.ReplaceAll(base, "gatewayCacheS3Region: garage\n", ""), "S3 region"},
@@ -169,5 +170,9 @@ func TestS3CacheSettings(t *testing.T) {
 				t.Fatalf("got %v, want %q", err, tt.want)
 			}
 		})
+	}
+	// At the most entries that the spool can count, an S3 cache is valid.
+	if _, _, err := LoadSettings([]byte(base + "gatewayCacheMaxEntrySize: 5Gi\ntuning: {egress: {maxFills: 1717986918}}\n")); err != nil {
+		t.Fatalf("a spool within an int64: %v", err)
 	}
 }

@@ -264,7 +264,10 @@ func TestHubServeIdleOverHTTP2(t *testing.T) {
 	srv.EnableHTTP2 = true
 	srv.StartTLS()
 	defer srv.Close()
-	resp, err := srv.Client().Get(srv.URL)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,5 +281,32 @@ func TestHubServeIdleOverHTTP2(t *testing.T) {
 		if l := sseLine(t, br); l != ": heartbeat" {
 			t.Fatalf("line = %q, want a heartbeat after an idle wait past the write timeout", l)
 		}
+	}
+}
+
+// TestHubServeEndsWithItsSessionBetweenHeartbeats: a heartbeat slower than
+// the recheck still closes a stream whose session ended, at the recheck.
+func TestHubServeEndsWithItsSessionBetweenHeartbeats(t *testing.T) {
+	h, _ := testHub(t)
+	h.heartbeat, h.recheck = time.Hour, 20*time.Millisecond
+	var ended atomic.Bool
+	h.stands = func(*http.Request) bool { return !ended.Load() }
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), &auth.Principal{Admin: true})))
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	br := bufio.NewReader(resp.Body)
+	expectResync(t, br)
+	ended.Store(true)
+	if _, err := io.Copy(io.Discard, br); err != nil {
+		t.Fatalf("stream ended with %v, want a clean close well before its hour-long heartbeat", err)
 	}
 }

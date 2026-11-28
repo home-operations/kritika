@@ -307,3 +307,24 @@ func TestPromptTrimFitsTextWithoutHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestEncodeAtTheLeastSpecBound: at the least runSpec.maxBytes and a prompt
+// budget under it that validation takes, a review spec encodes, and a bound
+// a byte lower is refused.
+func TestEncodeAtTheLeastSpecBound(t *testing.T) {
+	v := tuning.Defaults()
+	v.RunSpec.MaxBytes, v.RunSpec.MaxPromptBytes = 64<<10, 32<<10
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(o *tuning.Values) { *o = v })
+	s := reviewSpec()
+	s.Prompt.Trim()
+	if _, err := Encode(s); err != nil {
+		t.Fatal(err)
+	}
+	v.RunSpec.MaxBytes--
+	if err := v.Validate(); err == nil || !strings.Contains(err.Error(), "tuning.runSpec.maxBytes") {
+		t.Fatalf("Validate = %v, want the bound under the least refused", err)
+	}
+}

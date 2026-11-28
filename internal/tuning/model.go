@@ -3,6 +3,7 @@ package tuning
 import (
 	"fmt"
 	"time"
+	"unicode/utf8"
 )
 
 // Model holds the tunable values of package model.
@@ -225,9 +226,10 @@ type Adapter struct {
 	// RetryMax is the longest of the doubling waits between a step's
 	// attempts. At least RetryMin.
 	RetryMax time.Duration `env:"KRITIKA_TUNING_ADAPTER_RETRY_MAX" envDefault:"30s" yaml:"retryMax,omitempty"`
-	// RetryAfterMax is the longest Retry-After of a provider's that a step
-	// honors: a longer one sleeps the step past its caller's deadline with
-	// the remaining retries and the fallback untried.
+	// RetryAfterMax caps the Retry-After that a step waits out for a
+	// provider: the wait before the next attempt is the longer of the capped
+	// Retry-After and the backoff, and the step's own deadline still bounds
+	// it.
 	RetryAfterMax time.Duration `env:"KRITIKA_TUNING_ADAPTER_RETRY_AFTER_MAX" envDefault:"1m" yaml:"retryAfterMax,omitempty"`
 	// PlanTokenTTL bounds how long a replica keeps using a ChatGPT plan's
 	// access token that it read without reading it again. So a new sign-in
@@ -241,6 +243,13 @@ func init() {
 			// A batch of one item is bound by the batch cap too.
 			return notAbove("model.defaultEmbedMaxItemChars", v.Model.DefaultEmbedMaxItemChars,
 				"model.defaultEmbedMaxBatchChars", v.Model.DefaultEmbedMaxBatchChars)
+		},
+		func(v Values) error {
+			// A cut keeps whole runes, and an input cut to nothing is refused.
+			if v.Model.DefaultEmbedMaxItemChars < utf8.UTFMax {
+				return fmt.Errorf("%s must be at least %d, a whole rune", fieldLabel("model.defaultEmbedMaxItemChars"), utf8.UTFMax)
+			}
+			return nil
 		},
 		func(v Values) error {
 			return notAbove("model.catalogRetry", v.Model.CatalogRetry, "model.catalogTtl", v.Model.CatalogTTL)

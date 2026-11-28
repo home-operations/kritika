@@ -215,8 +215,10 @@ Signs that you hit a limit, in the review's summary notes:
   diff with a tool. A larger agent `prompt` puts more of the diff in the
   prompt from the start.
 - `N diff file(s) too large to keep, so findings in them have no line to
-  attach to`. The run also logs `diff too large to keep whole`. The diff
-  was over `runner.maxPackDiffBytes`.
+  attach to`. The run also logs `diff too large to keep whole`. Either the
+  diff was over `runner.maxPackDiffBytes`, or the encoded context report
+  had to fit the gateway's `gateway.maxReportBody`, which during a rollout
+  can be a smaller one on the gateway replica that took the report.
 
 | Value                                             | Default   | What it bounds                                                                                                                                              |
 | ------------------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -245,8 +247,9 @@ own:
 Recheck it when raising any of those three; `kritika config check` names
 the bound that it needs.
 
-A run's spec travels in a Kubernetes Secret, so `runSpec.maxBytes` and
-`runSpec.maxPromptBytes` have little room to grow. See
+A run's spec travels in a Kubernetes Secret: `runSpec.maxBytes` is already
+at its most, and `runSpec.maxPromptBytes` has a little room to grow under
+it. See
 [leave these alone](#limits-set-by-something-else).
 
 The most files that an incremental re-review takes is the repository's
@@ -290,9 +293,10 @@ headrooms. Raise `jobTimeout.maxJobTimeout` only if an agent `timeout` or a
 runner deadline must go past them. A longer job holds a worker slot for
 longer, and River waits `jobTimeout.maxJobTimeout` plus
 `jobTimeout.rescueGrace` (`1h`), never under 4 hours, before it treats a
-running job as abandoned. Under Helm, the chart's schema caps
-`runner.jobTemplate.spec.activeDeadlineSeconds` at 7200 whatever
-`jobTimeout.maxJobTimeout` allows.
+running job as abandoned. Under Helm too,
+`runner.jobTemplate.spec.activeDeadlineSeconds` is held to what
+`jobTimeout.maxJobTimeout` leaves, 7200 seconds at the defaults, by
+kritika's own check rather than the chart's.
 
 For a provider outage longer than its retries, add to or lengthen
 `agent.stepRetryWaits`. The waits spend the agent's own time, so a longer
@@ -301,8 +305,9 @@ list is worth it only with a `timeout` that leaves room for it.
 kritika refuses these combinations:
 
 - `model.defaultStepTimeout` over `configFile.maxProviderTimeout`.
-- `adapter.chargeTimeout` and `adapter.recordTimeout` together over
-  `model.gatewaySettle`, and `adapter.reservationPad` over it.
+- `adapter.leaseReleaseTimeout`, `adapter.chargeTimeout` and
+  `adapter.recordTimeout` together over `model.gatewaySettle`, or
+  `adapter.reservationPad` over it.
 - `worker.confidenceTimeout` (`2m`) or `worker.mergeTimeout` (`100s`)
   over `jobTimeout.publishHeadroom`.
 - `configFile.defaultAgentTimeout` over the agent timeout that
@@ -405,7 +410,7 @@ they are tied to each other:
   `jobTimeout.abandonedBeats` (6) beats, 3 minutes, belongs to a dead
   replica and is handed to another. The replica fences its own job one beat
   sooner, at 2m30s, so that a replica cut off from the database never has
-  its job worked twice. kritika refuses fewer than 2 beats. Shorter beats
+  its job worked twice. kritika refuses fewer than 3 beats. Shorter beats
   hand a dead replica's jobs on sooner, and end live jobs on a slow
   database.
 - **Runner liveness.** A runner beats every `runSpec.heartbeatInterval`
@@ -448,10 +453,17 @@ Then the gateway lets model steps in flight finish for `gateway.drain`
 `process.publicDrain` (`10s`): 125 and 15 seconds at the defaults. The
 longest path, with room for the process to exit, must fit within the
 pod's `terminationGracePeriodSeconds`, 200 in the chart. Raise that when
-you raise any of these. With ChatGPT providers, the leader's token
-refresh is a fourth path: it runs on past the stop for up to
-`worker.chatGptRefreshTimeout` (`1m`) to save the token it rotated, then
-releases its claim within as long again.
+you raise any of these. The leader is a fourth path: once its duties
+return, it unlocks the leader lock within `store.sessionCloseTimeout`
+(`5s`). With ChatGPT providers, its duties include a token refresh, which
+runs on past the stop for up to `worker.chatGptRefreshTimeout` (`1m`) to
+save the token it rotated, then releases its claim within as long again:
+2 × `worker.chatGptRefreshTimeout` + `store.sessionCloseTimeout` in all.
+
+Do not shorten `leaderRetryInterval` in the same rollout as this release:
+a new leader times its wait for a predecessor's refresh by its own
+interval, and a predecessor from before this release takes no refresh
+claim.
 
 On the first rollout of this release, keep every job within 4 hours, the
 rescue horizon from before it was tuned, until every serve replica runs
@@ -522,8 +534,9 @@ kritika refuses these past what the outside limit allows:
 
 - `review.maxRenderBytes` cannot exceed 65,536, the longest comment that
   GitHub takes.
-- `runSpec.maxBytes` must be less than 1 MiB, the most that a Kubernetes
-  Secret holds, with the run's credentials beside it.
+- `runSpec.maxBytes` cannot exceed `900Ki`, its default, the most that a
+  runner of spec version 1 reads. That leaves room under the 1 MiB that a
+  Kubernetes Secret holds for the run's credentials.
   `runSpec.maxPromptBytes` must be less than `runSpec.maxBytes`.
 - `gitHub.appJwtLifetime` cannot exceed GitHub's 10 minutes, and must
   exceed `gitHub.tokenRefreshLead`.
@@ -563,9 +576,10 @@ and GitLab serves at most 100 items a page.
    `contextPack.similarLimit` or a `runner.*` request size, can have an old
    replica refuse a new Job's request, or a new replica an old Job's.
    Where the runner's side has a setting of its own, stage the change in
-   two rollouts that each keep both revisions compatible: raise the
-   gateway's limit, then the runner's; lower the runner's, then the
-   gateway's. A cap that both sides read from one setting has no such
+   two rollouts. To raise a limit, roll out the higher gateway limit to
+   every replica before raising the runner's. To lower one, lower the
+   runner's first, and let the Jobs created under the old limit finish
+   before lowering the gateway's. A cap that both sides read from one setting has no such
    step: the runner checks an index upload against `gateway.maxIndexBody`
    itself, for one. For those, stop new work and let running Jobs finish
    before rolling the change out.

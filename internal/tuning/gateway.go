@@ -55,7 +55,7 @@ type Gateway struct {
 	// the runner cuts a cause further to fit.
 	MaxSmallReport ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_SMALL_REPORT" envDefault:"64Ki" yaml:"maxSmallReport,omitempty"`
 	// MaxPartsReport bounds a split review's remaining-parts report, which
-	// names each of its slot pools twice.
+	// names each of its slot pools twice. It can be raised, not lowered.
 	MaxPartsReport ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_PARTS_REPORT" envDefault:"64Ki" yaml:"maxPartsReport,omitempty"`
 	// MaxIndexBody bounds an index upload: its opening line, and a line for
 	// each of up to indexer.maxChunks chunks of indexer.maxChunkBytes, whose
@@ -243,6 +243,10 @@ const (
 	// smallReportEnvelope is the room of a small report beside a failure
 	// report's cause: a phase report whole, or a failure report's key.
 	smallReportEnvelope = 1 << 10
+	// minPartsReport is the least gateway.maxPartsReport: the limit before it
+	// was tunable, which every slot pool configuration has fit. The report's
+	// pool names are configuration, with no bound of their own.
+	minPartsReport = 64 << 10
 )
 
 // satAdd and satMul are a+b and a*b of sizes that cannot be negative,
@@ -325,6 +329,13 @@ func init() {
 			if need := satAdd(satMul(jsonGrowth, int64(v.Runner.MaxFailureCause)), smallReportEnvelope); int64(v.Gateway.MaxSmallReport) < need {
 				return fmt.Errorf("%s (%s) must hold a phase report and a failure report of %s, escaped, %d bytes",
 					fieldLabel("gateway.maxSmallReport"), v.Gateway.MaxSmallReport, fieldLabel("runner.maxFailureCause"), need)
+			}
+			return nil
+		},
+		func(v Values) error {
+			if v.Gateway.MaxPartsReport < minPartsReport {
+				return fmt.Errorf("%s (%s) must be at least %s, as a split review's report of its slot pools needs",
+					fieldLabel("gateway.maxPartsReport"), v.Gateway.MaxPartsReport, ByteSize(minPartsReport))
 			}
 			return nil
 		},

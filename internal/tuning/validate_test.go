@@ -139,6 +139,22 @@ func TestCrossFieldEdges(t *testing.T) {
 			[]string{"tuning.runSpec.maxBytes: KRITIKA_TUNING_RUN_SPEC_MAX_BYTES", "spec version 1", "Secret"},
 		},
 		{
+			"spec with room for its untrimmed fields",
+			func(v *Values) { v.RunSpec.MaxBytes, v.RunSpec.MaxPromptBytes = 2, 1 },
+			func(v *Values) { v.RunSpec.MaxBytes, v.RunSpec.MaxPromptBytes = 64<<10, 32<<10 },
+			[]string{"tuning.runSpec.maxBytes: KRITIKA_TUNING_RUN_SPEC_MAX_BYTES", "must be at least 64Ki"},
+		},
+		{
+			"parts report within its former limit",
+			func(v *Values) {
+				v.Runner.MaxFailureCause, v.Gateway.MaxSmallReport, v.Gateway.MaxPartsReport = 64, 1408, 1408
+			},
+			func(v *Values) {
+				v.Runner.MaxFailureCause, v.Gateway.MaxSmallReport, v.Gateway.MaxPartsReport = 64, 1408, 64<<10
+			},
+			[]string{"tuning.gateway.maxPartsReport: KRITIKA_TUNING_GATEWAY_MAX_PARTS_REPORT", "must be at least 64Ki"},
+		},
+		{
 			"window overlap less than a window",
 			func(v *Values) { v.Indexer.WindowOverlap = v.Indexer.WindowLines },
 			func(v *Values) { v.Indexer.WindowOverlap = v.Indexer.WindowLines - 1 },
@@ -541,6 +557,27 @@ func TestCrossFieldMessages(t *testing.T) {
 			want:   []string{"tuning.store.ownerPoolMaxConns: KRITIKA_TUNING_STORE_OWNER_POOL_MAX_CONNS must be at least 2"},
 		},
 		{name: "an owner pool of two connections", change: func(v *Values) { v.Store.OwnerPoolMaxConns = 2 }},
+		{
+			name:   "a GitLab page past what GitLab serves",
+			change: func(v *Values) { v.GitLab.PageSize = GitLabMaxPageSize + 1 },
+			want:   []string{"tuning.gitLab.pageSize: KRITIKA_TUNING_GITLAB_PAGE_SIZE must not exceed GitLab's largest page, 100"},
+		},
+		{name: "a GitLab page of what GitLab serves", change: func(v *Values) { v.GitLab.PageSize = GitLabMaxPageSize }},
+		{
+			name:   "a thread timeout past the job cap",
+			change: func(v *Values) { v.Worker.ThreadTimeout = v.JobTimeout.MaxJobTimeout + time.Second },
+			want: []string{
+				"tuning.worker.threadTimeout: KRITIKA_TUNING_WORKER_THREAD_TIMEOUT must not exceed " +
+					"tuning.jobTimeout.maxJobTimeout: KRITIKA_TUNING_JOB_TIMEOUT_MAX_JOB_TIMEOUT",
+			},
+		},
+		{name: "a thread timeout at the job cap", change: func(v *Values) { v.Worker.ThreadTimeout = v.JobTimeout.MaxJobTimeout }},
+		{
+			name:   "an embedding item cap under a rune",
+			change: func(v *Values) { v.Model.DefaultEmbedMaxItemChars = 3 },
+			want:   []string{"tuning.model.defaultEmbedMaxItemChars: KRITIKA_TUNING_MODEL_DEFAULT_EMBED_MAX_ITEM_CHARS must be at least 4"},
+		},
+		{name: "an embedding item cap of a rune", change: func(v *Values) { v.Model.DefaultEmbedMaxItemChars = 4 }},
 		{
 			name: "a step wait under a second",
 			change: func(v *Values) {

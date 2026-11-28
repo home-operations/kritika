@@ -13,7 +13,7 @@ import (
 // at start-up.
 func TestJobColumnsFollowTuning(t *testing.T) {
 	for _, want := range []string{"j.attempted_at < now() - interval '180 seconds'", ">= now() - interval '86400 seconds'"} {
-		if got := jobColumns(); !strings.Contains(got, want) {
+		if got := jobColumns(heartbeatWindow); !strings.Contains(got, want) {
 			t.Errorf("jobColumns at the defaults lacks %q", want)
 		}
 	}
@@ -22,7 +22,7 @@ func TestJobColumnsFollowTuning(t *testing.T) {
 		v.Store.RecentFailureWindow = 90 * time.Minute
 	})
 	for _, want := range []string{"j.attempted_at < now() - interval '60 seconds'", ">= now() - interval '5400 seconds'"} {
-		if got := jobColumns(); !strings.Contains(got, want) {
+		if got := jobColumns(heartbeatWindow); !strings.Contains(got, want) {
 			t.Errorf("jobColumns overridden lacks %q", want)
 		}
 	}

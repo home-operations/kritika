@@ -125,13 +125,17 @@ func (githubAPI) mappingVars(ctx context.Context, c apiClient, id Identity) (map
 }
 
 // githubPages calls fn with each page of the list at path until a page comes
-// back short. The path must end in "?" or carry a query.
+// back short. A list longer than tuning's Auth.GitHubMaxPages pages, which
+// one page past them confirms, is an error, not a cut list: a role mapping
+// must not decide on part of what the person belongs to. The path must end
+// in "?" or carry a query.
 func githubPages(ctx context.Context, c apiClient, path string, fn func(json.RawMessage) error) error {
 	sep := "&"
 	if strings.HasSuffix(path, "?") {
 		sep = ""
 	}
-	for page := 1; page <= tuning.Get().Auth.GitHubMaxPages; page++ {
+	maxPages := tuning.Get().Auth.GitHubMaxPages
+	for page := 1; page <= maxPages+1; page++ {
 		var raw json.RawMessage
 		if err := githubGetOK(ctx, c, fmt.Sprintf("%s%sper_page=%d&page=%d", path, sep, githubPerPage, page), &raw); err != nil {
 			return err
@@ -140,6 +144,12 @@ func githubPages(ctx context.Context, c apiClient, path string, fn func(json.Raw
 		if err := json.Unmarshal(raw, &items); err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrForgeAPI, path, err)
 		}
+		if page > maxPages {
+			if len(items) == 0 {
+				return nil
+			}
+			break
+		}
 		if err := fn(raw); err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrForgeAPI, path, err)
 		}
@@ -147,7 +157,7 @@ func githubPages(ctx context.Context, c apiClient, path string, fn func(json.Raw
 			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf("%w: %s: more than %d pages", ErrForgeAPI, path, maxPages)
 }
 
 // githubGetOK fetches path into v as apiClient.get does, for a call that

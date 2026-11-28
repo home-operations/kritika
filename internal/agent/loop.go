@@ -286,10 +286,15 @@ func (r Run) submitNowText() string {
 // answer so far took slowest. The reserve is tuning's Agent.WrapUpAnswers
 // such answers, for the submission and a retry. It is at least
 // Agent.WrapUpFloor, or total divided by Agent.WrapUpTotalShare when that is
-// less.
+// less. A reserve of answers longer than the whole Run is the whole Run,
+// so that the product cannot overflow.
 func wrapUpReserve(slowest, total time.Duration) time.Duration {
 	t := tuning.Get().Agent
-	return max(time.Duration(t.WrapUpAnswers)*slowest, min(t.WrapUpFloor, total/time.Duration(t.WrapUpTotalShare)))
+	answers := time.Duration(t.WrapUpAnswers)
+	if total > 0 && slowest > total/answers {
+		return total
+	}
+	return max(answers*slowest, min(t.WrapUpFloor, total/time.Duration(t.WrapUpTotalShare)))
 }
 
 // clock is a Run's time: the deadline its ctx has, when timed, when it began,

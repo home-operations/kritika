@@ -642,8 +642,12 @@ func writeAgentRun(ctx context.Context, report *reporter, rec agentRecord, phase
 	}, phase)
 }
 
-// sizeNote is b as a note says it: in KiB when it is a whole number of them.
+// sizeNote is b as a note says it: in MiB or KiB when it is a whole number
+// of them.
 func sizeNote(b tuning.ByteSize) string {
+	if b%(1<<20) == 0 {
+		return fmt.Sprintf("%d MiB", b>>20)
+	}
 	if b%1024 == 0 {
 		return fmt.Sprintf("%d KiB", b>>10)
 	}

@@ -260,3 +260,51 @@ func TestJobHeartbeatAtTheFewestBeats(t *testing.T) {
 		}
 	})
 }
+
+// slowAck stamps its first renewal at once but answers it late, then fails
+// every renewal after it.
+type slowAck struct {
+	renewals int
+	stamped  time.Time
+	late     time.Duration
+}
+
+func (s *slowAck) StartJob(context.Context, *rivertype.JobRow) error { return nil }
+
+func (s *slowAck) HeartbeatJob(ctx context.Context, _ int64) error {
+	if s.renewals++; s.renewals > 1 {
+		return errors.New("db down")
+	}
+	s.stamped = time.Now()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(s.late):
+	}
+	return nil
+}
+
+// TestJobHeartbeatFencesFromTheStampNotTheAnswer: a renewal that the
+// database dates at once but answers late does not push the fence past the
+// leader's count from that date.
+func TestJobHeartbeatFencesFromTheStampNotTheAnswer(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.JobTimeout.HeartbeatInterval, v.JobTimeout.AbandonedBeats = 10*time.Second, 3
+	})
+	synctest.Test(t, func(t *testing.T) {
+		store := &slowAck{late: 16 * time.Second}
+		h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler)}
+		var fenced time.Time
+		err := h.Work(t.Context(), &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
+			<-ctx.Done()
+			fenced = time.Now()
+			return context.Cause(ctx)
+		})
+		if !errors.Is(err, errJobFenced) {
+			t.Fatalf("Work = %v, want the job fenced", err)
+		}
+		if abandoned := store.stamped.Add(tuning.Get().JobTimeout.HeartbeatAbandonedAfter()); !fenced.Before(abandoned) {
+			t.Fatalf("fenced at %v, not before the leader may hand the job back at %v", fenced, abandoned)
+		}
+	})
+}

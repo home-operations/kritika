@@ -150,7 +150,7 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 	}
 	left := t.budget.Left()
 	if left <= 0 {
-		return "", fmt.Errorf("agent: fetch_repo: this review has written its %d MiB of fetched files", tuning.Get().Runner.FetchWriteBytes>>20)
+		return "", fmt.Errorf("agent: fetch_repo: this review has written its %s of fetched files", sizeNote(tuning.Get().Runner.FetchWriteBytes))
 	}
 	t.fetches++
 	f := &upstream.Fetcher{Transport: t.transport, Limits: upstream.Limits{
@@ -199,7 +199,7 @@ func (t *fetchRepoTool) answer(asked, req upstream.Request, res *upstream.Result
 	fmt.Fprintf(&b, "Fetched %s at %s, commit %s. Its files are under %s, from the checkout the run tool's commands run in: "+
 		"%d files, %d KiB.", req.URL, req.Ref, res.Commit[:12], rel, res.Files, (res.Bytes+1023)>>10)
 	if res.Skipped > 0 {
-		fmt.Fprintf(&b, " Left out: %d symlinks, submodules or files over %d MiB.", res.Skipped, tuning.Get().Agent.MaxBlobBytes>>20)
+		fmt.Fprintf(&b, " Left out: %d symlinks, submodules or files over %s.", res.Skipped, sizeNote(tuning.Get().Agent.MaxBlobBytes))
 	}
 	if res.Truncated {
 		b.WriteString(" The writing stopped at this review's limit, so the paths that sort last are missing.")

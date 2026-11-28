@@ -159,16 +159,16 @@ func commandTool(
 			logger.Warn("checkout not marked as a repository", "error", err)
 		}
 		if stats.Truncated {
-			return fmt.Sprintf("[the checkout stopped at %d MiB, so the paths that sort last are missing]",
-				tuning.Get().Agent.MaxCheckoutBytes>>20), nil
+			return fmt.Sprintf("[the checkout stopped at %s, so the paths that sort last are missing]",
+				sizeNote(tuning.Get().Agent.MaxCheckoutBytes)), nil
 		}
 		return "", nil
 	}
 	// Ignored paths are left out for the commands' sake, not the agent's: a
 	// lockfile the change touches is still the head's and the diff's.
 	note := fmt.Sprintf("The checkout leaves out ignored paths, lockfiles and vendored or generated trees among them, symlinks and "+
-		"files over %d MiB; read_file still reads a left-out file at the head, and read_diff its part of the pull request's diff.",
-		tuning.Get().Agent.MaxBlobBytes>>20)
+		"files over %s; read_file still reads a left-out file at the head, and read_diff its part of the pull request's diff.",
+		sizeNote(tuning.Get().Agent.MaxBlobBytes))
 	var resolve func(context.Context, string) (string, []string, error)
 	if tools != nil {
 		resolve = tools.resolveWith(found, append(slices.Clone(env), admin...))

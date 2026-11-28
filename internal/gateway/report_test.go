@@ -56,27 +56,3 @@ func TestDecodeSmallReportsAtTheirBound(t *testing.T) {
 		t.Fatalf("status %d, %s %q", w.Code, runspec.ReportLimitHeader, w.Header().Get(runspec.ReportLimitHeader))
 	}
 }
-
-// TestDecodePartsReportPastTheSmallReport: a remaining-parts report of
-// eight long pool names, over a lowered gateway.maxSmallReport, is held to
-// gateway.maxPartsReport alone.
-func TestDecodePartsReportPastTheSmallReport(t *testing.T) {
-	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxFailureCause, v.Gateway.MaxSmallReport = 64, 6*64+1<<10 })
-	report := runspec.PartsReport{Sequence: 1, Remaining: map[string]int{}, Active: map[string]int{}}
-	for i := range 8 {
-		pool := strconv.Itoa(i) + strings.Repeat("m", 100)
-		report.Remaining[pool], report.Active[pool] = 2, 1
-	}
-	b, err := json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(b) <= int(tuning.Get().Gateway.MaxSmallReport) {
-		t.Fatalf("the report is %d bytes, within the small report's bound", len(b))
-	}
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, runspec.ReportPartsPath, strings.NewReader(string(b)))
-	if _, ok := decodeReport[runspec.PartsReport](w, r, tuning.Get().Gateway.MaxPartsReport); !ok {
-		t.Fatalf("status %d, %s", w.Code, w.Body)
-	}
-}

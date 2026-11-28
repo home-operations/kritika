@@ -267,3 +267,36 @@ func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
 		})
 	}
 }
+
+// TestQueueReadsBeforeTheWindowColumns: the queue and a pull request's live
+// job read a job_heartbeats from before its window columns, as a replica
+// serves them before the leader migrates, with the fixed 180 seconds.
+func TestQueueReadsBeforeTheWindowColumns(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	listRepos(t, s, "alpha", "alpha/one")
+	account := accountID(t, s, "alpha")
+	prev := heartbeatWindowColumns.Load()
+	heartbeatWindowColumns.Store(false)
+	t.Cleanup(func() { heartbeatWindowColumns.Store(prev) })
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		// A temporary table comes first on the search path: the table as it
+		// was before migration 0073.
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE job_heartbeats (job_id bigint PRIMARY KEY, heartbeat_at timestamptz NOT NULL) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		if _, err := ListQueue(ctx, tx); err != nil {
+			return err
+		}
+		_, err := FindLiveReviewJob(ctx, tx, "00000000-0000-0000-0000-000000000000", 1)
+		return err
+	}); err != nil {
+		t.Fatalf("reads on the old job_heartbeats: %v", err)
+	}
+	if heartbeatWindowColumns.Load() {
+		t.Fatal("the old table was taken for one with window columns")
+	}
+}

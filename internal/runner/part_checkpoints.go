@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 type partCheckpoint struct {
@@ -28,6 +29,8 @@ type partCheckpoint struct {
 // context invalidates the whole plan. Run identity, scheduling, and the token
 // budget the month left this attempt do not change the input a part reviews.
 // Neither does the last review's conversation, which no part carries on.
+// The tuning it runs under does: its search budget, for one, changes a
+// part's loop and not its prompts or tools.
 func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string, error) {
 	p.RunID = ""
 	if p.Agent != nil {
@@ -50,7 +53,8 @@ func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string
 		Spec    runspec.Spec
 		Prompts []prompt
 		Tools   []model.ToolDef
-	}{Spec: p}
+		Tuning  []tuning.EnvPair
+	}{Spec: p, Tuning: tuning.Env(*tuning.Get())}
 	for _, part := range parts {
 		input.Prompts = append(input.Prompts, prompt{part.paths, part.reviewer, part.prompt.system, part.prompt.user, part.prompt.submit})
 	}

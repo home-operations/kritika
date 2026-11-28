@@ -149,13 +149,19 @@ func runEnd(jobCause error, res executor.Result) (warning bool, reason, note str
 	return false, "", ""
 }
 
+// legacyHeartbeatStale is the stale cutoff from before it was tuned.
+const legacyHeartbeatStale = 5*time.Minute + 30*time.Second
+
 // runSupervision builds the supervision of one runner run. Heartbeat age is
 // measured by the database's clock, the same clock that stamped it. prID
 // empty skips the supersede and replacement checks of a review's run,
-// reviewID.
+// reviewID. The stale cutoff is at least legacyHeartbeatStale: a runner
+// image pinned to a release from before the heartbeat was tuned beats every
+// 15 seconds whatever this replica hands it, and nothing tells it apart.
 func runSupervision(st *store.Store, accountID, runID, prID, reviewID, head string, every time.Duration, logger *slog.Logger) supervision {
 	s := supervision{
-		every: cmp.Or(every, tuning.Get().Worker.SuperviseInterval), stale: tuning.Get().HeartbeatStale(), logger: logger,
+		every: cmp.Or(every, tuning.Get().Worker.SuperviseInterval), logger: logger,
+		stale: max(tuning.Get().HeartbeatStale(), legacyHeartbeatStale),
 		heartbeat: func(ctx context.Context) (time.Duration, bool, error) {
 			var age time.Duration
 			var seen bool

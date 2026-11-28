@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestGitHubMember(t *testing.T) {
@@ -181,6 +184,39 @@ func TestGitHubIdentity(t *testing.T) {
 			got, err := githubAPI{}.identity(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()})
 			if tt.wantErr != (err != nil) || (err != nil && !errors.Is(err, ErrForgeAPI)) || got != tt.want {
 				t.Fatalf("identity = %+v, %v; want %+v, error %v", got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestGitHubPagesAtTheCap: a list that fills the last page a sign-in reads is
+// whole when the page after it is empty, and refused when it is not, rather
+// than cut.
+func TestGitHubPagesAtTheCap(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Auth.GitHubMaxPages = 1 })
+	full := "[" + strings.TrimSuffix(strings.Repeat(`{"login":"o"},`, githubPerPage), ",") + "]"
+	for _, tt := range []struct {
+		name, next string
+		ok         bool
+	}{{"an empty page after it", `[]`, true}, {"more after it", `[{"login":"p"}]`, false}} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("page") == "1" {
+					_, _ = fmt.Fprint(w, full)
+					return
+				}
+				_, _ = fmt.Fprint(w, tt.next)
+			}))
+			defer srv.Close()
+			pages := 0
+			err := githubPages(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "/user/orgs?",
+				func(json.RawMessage) error { pages++; return nil })
+			if tt.ok {
+				if err != nil || pages != 1 {
+					t.Fatalf("githubPages = %v after %d pages, want the one full page", err, pages)
+				}
+			} else if !errors.Is(err, ErrForgeAPI) {
+				t.Fatalf("githubPages = %v, want a refusal", err)
 			}
 		})
 	}

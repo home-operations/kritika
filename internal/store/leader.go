@@ -15,9 +15,14 @@ const leaderKey = "kritika-leader"
 // LeaderStepDown is the longest a leader whose lock the server dropped goes
 // on leading, its duties running, before RunAsLeader notices: until its next
 // ping of the lock, every interval, fails within tuning's Store.LockTimeout.
+// That timeout is taken as at least legacyLockTimeout, a leader's from before
+// it was tuned.
 func LeaderStepDown(interval time.Duration) time.Duration {
-	return interval + tuning.Get().Store.LockTimeout
+	return interval + max(tuning.Get().Store.LockTimeout, legacyLockTimeout)
 }
+
+// legacyLockTimeout is the lock timeout from before it was tuned.
+const legacyLockTimeout = 5 * time.Second
 
 // RunAsLeader competes for the leader lock and, once held, calls lead with a
 // context that is canceled if the lock is lost or ctx ends. It returns when

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -686,7 +687,7 @@ func TestRescueWaitsOutAStartingAttempt(t *testing.T) {
 		rescued, err := s.RescueJob(ctx, AbandonedJob{ID: id, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost")
 		done <- result{rescued, err}
 	}()
-	time.Sleep(200 * time.Millisecond)
+	waitBlockedBy(t, ctx, s, backendPID(t, ctx, tx), done)
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -720,7 +721,7 @@ func TestStartJobStampsAfterTheLock(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- s.StartJob(ctx, &job) }()
-	time.Sleep(time.Second)
+	waitBlockedBy(t, ctx, s, backendPID(t, ctx, hold), done)
 	var released time.Time
 	if err := s.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&released); err != nil {
 		t.Fatal(err)
@@ -745,8 +746,14 @@ func TestStartJobStampsAfterTheLock(t *testing.T) {
 // configuration error, whichever of the DSN or tuning sets it.
 func TestOpenRefusesAOneConnectionOwnerPool(t *testing.T) {
 	ctx := t.Context()
-	opts := Options{AppURL: testEnv(t, "KRITIKA_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIKA_TEST_OWNER_URL") + "&pool_max_conns=1",
-		Logger: slog.New(slog.DiscardHandler)}
+	owner, err := url.Parse(testEnv(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := owner.Query()
+	q.Set("pool_max_conns", "1")
+	owner.RawQuery = q.Encode()
+	opts := Options{AppURL: testEnv(t, "KRITIKA_TEST_APP_URL"), OwnerURL: owner.String(), Logger: slog.New(slog.DiscardHandler)}
 	if _, err := Open(ctx, opts); !errors.Is(err, ErrOwnerPoolTooSmall) || !IsConfigurationError(err) {
 		t.Fatalf("Open with pool_max_conns=1 = %v, want ErrOwnerPoolTooSmall", err)
 	}
@@ -754,5 +761,42 @@ func TestOpenRefusesAOneConnectionOwnerPool(t *testing.T) {
 	opts.OwnerURL = testEnv(t, "KRITIKA_TEST_OWNER_URL")
 	if _, err := Open(ctx, opts); !errors.Is(err, ErrOwnerPoolTooSmall) {
 		t.Fatalf("Open with ownerPoolMaxConns 1 = %v, want ErrOwnerPoolTooSmall", err)
+	}
+}
+
+// backendPID is the Postgres backend that tx runs on.
+func backendPID(t *testing.T, ctx context.Context, tx pgx.Tx) uint32 {
+	t.Helper()
+	var pid uint32
+	if err := tx.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	return pid
+}
+
+// waitBlockedBy waits until a backend waits on pid's locks, and fails if done
+// reports first that what was to wait ended, or ten seconds pass.
+func waitBlockedBy[T any](t *testing.T, ctx context.Context, s *Store, pid uint32, done <-chan T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var blocked bool
+		if err := s.owner.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`,
+			pid).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		if blocked {
+			return
+		}
+		select {
+		case r := <-done:
+			t.Fatalf("ended without waiting on backend %d: %v", pid, r)
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatalf("nothing waited on backend %d", pid)
+		}
 	}
 }
