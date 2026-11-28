@@ -58,13 +58,28 @@ func TestApproveCeilings(t *testing.T) {
 	if r := f.Settings(&f.Accounts[0]).Review; r.ApproveFindings != review.SeverityP2 || r.ApproveRisk != review.RiskHigh {
 		t.Fatalf("findings %q, risk %q; want the default p2 beside high", r.ApproveFindings, r.ApproveRisk)
 	}
+	for name, doc := range map[string]string{
+		"an alias":    "confidence: { when: &none null }\nreview: { approve: { risk: low, when: *none } }\n",
+		"a merge key": "confidence: { when: [{ expr: pr.bot }] }\nreview: { approve: { <<: { when: null }, risk: low } }\n",
+	} {
+		if _, err := load(t, doc+minimal); err == nil || !strings.Contains(err.Error(), "when must not be empty") {
+			t.Fatalf("a null when through %s: err = %v", name, err)
+		}
+	}
+	src := f.Sources(&f.Accounts[0])
+	if src["review.approve.risk"] != SourceDefaults || src["review.approve.findings"] != SourceDefault || src[keyApprove] != SourceDefaults {
+		t.Fatalf("sources = %v; want the risk and the switch from the file, the findings from kritika", src)
+	}
 	for block, want := range map[string]string{
-		"{ findings: p1 }":        `configfile: review.approve.findings must be p2 or none, got "p1"`,
-		"{ findings: p3 }":        `configfile: review.approve.findings must be p2 or none, got "p3"`,
-		"{ risk: none }":          `configfile: review.approve.risk must be low, medium, high or critical, got "none"`,
-		"{ findings: '' }":        "a block must set when, findings or risk",
-		"{ risk: low, when: [] }": "when must list at least one condition",
-		"{ enabled: false }":      "field enabled not found",
+		"{ findings: p1 }":             `configfile: review.approve.findings must be p2 or none, got "p1"`,
+		"{ findings: p3 }":             `configfile: review.approve.findings must be p2 or none, got "p3"`,
+		"{ risk: none }":               `configfile: review.approve.risk must be low, medium, high or critical, got "none"`,
+		"{ findings: '' }":             "findings must not be empty",
+		"{ findings: none, risk: '' }": "risk must not be empty",
+		"{ risk: low, when: [] }":      "when must not be empty",
+		"{ risk: low, when: null }":    "when must not be empty",
+		"{ findings: none, when: }":    "when must not be empty",
+		"{ enabled: false }":           "field enabled not found",
 	} {
 		if _, err := load(t, "review:\n  approve: "+block+"\n"+minimal); err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("approve %s: err = %v, want it to contain %q", block, err, want)
@@ -85,7 +100,7 @@ func TestApproveRejects(t *testing.T) {
 	authEnv(t)
 	for name, tt := range map[string]struct{ approve, want string }{
 		"an empty block":       {"{}", "a block must set when, findings or risk"},
-		"an empty list":        {"{ when: [] }", "when must list at least one condition"},
+		"an empty list":        {"{ when: [] }", "when must not be empty"},
 		"an unknown key":       {"{ if: [] }", "field if not found"},
 		"a number":             {"3", "cannot"},
 		"no expression":        {"{ when: [{ name: a }] }", "review.approve.when[0]: expr is required"},

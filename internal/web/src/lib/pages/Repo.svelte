@@ -119,15 +119,11 @@
       key: 'review.approve',
       value: (s) => (!s.review.approve ? 'no' : bounded(s.review.approveWhen, s.review.approveWhenInRepo) || 'yes'),
     },
-    {
-      label: 'Approve with findings',
-      key: 'review.approve',
-      value: (s) => (!s.review.approve ? '—' : s.review.approveFindings === 'none' ? 'none open' : 'up to P2'),
-    },
+    { label: 'Approve with findings', key: 'review.approve.findings', value: (s) => (s.review.approveFindings === 'none' ? 'none open' : 'up to P2') },
     {
       label: 'Approve up to risk',
-      key: 'review.approve',
-      value: (s) => (!s.review.approve ? '—' : s.confidence.model ? s.review.approveRisk : 'any: no scorer, so on the findings alone'),
+      key: 'review.approve.risk',
+      value: (s) => (s.confidence.model ? s.review.approveRisk : 'any: no scorer, so on the findings alone'),
     },
     { label: 'Flow diagram', key: 'review.diagram', value: (s) => yes(s.review.diagram) },
     { label: 'Cost in footer', key: 'review.cost', value: (s) => yes(s.review.cost) },

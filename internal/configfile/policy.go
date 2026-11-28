@@ -46,6 +46,8 @@ var Policies = []string{
 	keyEffort,
 	keyFixes,
 	keyApprove,
+	"review.approve.findings",
+	"review.approve.risk",
 	keyIncremental,
 	keyDiagram,
 	keyCost,

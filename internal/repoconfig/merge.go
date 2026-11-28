@@ -95,10 +95,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if f.Comments.Inline != nil {
 		m.Review.InlineComments = *f.Comments.Inline
 	}
-	if a := f.Review.Approve; a != nil {
-		m.Review.Approve, m.Review.ApproveWhenInRepo = a.On, a.When
-		m.approveCeilings(*a, op.Review)
-	}
+	m.approve(f.Review.Approve, op.Review)
 	if f.Review.Diagram != nil {
 		m.Review.Diagram = *f.Review.Diagram
 	}
@@ -147,15 +144,28 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	return m, nil
 }
 
+// approve applies the file's review.approve, where it writes one. A block
+// turns approval on only through a value that it keeps: a stricter ceiling
+// that was mistyped must not approve more.
+func (m *Merged) approve(a *configfile.Approve, admin configfile.Review) {
+	if a == nil {
+		return
+	}
+	if kept := m.approveCeilings(*a, admin); kept || len(a.When) > 0 || a.Findings == "" && a.Risk == "" {
+		m.Review.Approve = a.On
+	}
+	m.Review.ApproveWhenInRepo = a.When
+}
+
 // approveCeilings takes the findings and the risk of the file's approve
 // block where each is no higher than the admin's, so the file cannot approve
 // what the admin's setting withholds approval for. An admin's findings other
-// than none is p2.
-func (m *Merged) approveCeilings(a configfile.Approve, admin configfile.Review) {
+// than none is p2. kept says that it took one of them.
+func (m *Merged) approveCeilings(a configfile.Approve, admin configfile.Review) (kept bool) {
 	switch f := a.Findings; {
 	case f == "":
 	case f == review.SeverityNone || f == review.SeverityP2 && admin.ApproveFindings != review.SeverityNone:
-		m.Review.ApproveFindings = f
+		m.Review.ApproveFindings, kept = f, true
 	case admin.ApproveFindings == review.SeverityNone:
 		m.drop("review.approve.findings", strconv.Quote(string(f)), "none")
 	default:
@@ -164,10 +174,11 @@ func (m *Merged) approveCeilings(a configfile.Approve, admin configfile.Review) 
 	switch risk := a.Risk; {
 	case risk == "":
 	case risk.Within(admin.ApproveRisk):
-		m.Review.ApproveRisk = risk
+		m.Review.ApproveRisk, kept = risk, true
 	default:
 		m.drop("review.approve.risk", strconv.Quote(string(risk)), string(admin.ApproveRisk)+" or lower")
 	}
+	return kept
 }
 
 // withFloors is the admin's risk floors with the file's added: each level

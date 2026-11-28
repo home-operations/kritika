@@ -114,6 +114,7 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{name: "an empty approval block", doc: "review: { approve: {} }\n", wantErr: "a block must set when, findings or risk"},
+		{name: "a null approval condition list", doc: "review: { approve: { findings: none, when: null } }\n", wantErr: "when must not be empty"},
 		{name: "an approval condition on the diff", doc: "review: { approve: { when: [{ expr: 'pr.lines > 1' }] } }\n",
 			wantErr: "review.approve.when[0]: pr.lines"},
 		{
@@ -516,8 +517,8 @@ func TestMergeKeepsAdminApprovalConditions(t *testing.T) {
 
 // TestMergeApproveCeilings: a file's approve block can lower the admin's
 // findings and risk, never raise them, so it cannot approve what the admin's
-// setting withholds approval for. The block turns approval on, and true
-// keeps the admin's ceilings.
+// setting withholds approval for. The block turns approval on through a value
+// that it keeps, and true keeps the admin's ceilings.
 func TestMergeApproveCeilings(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
@@ -525,7 +526,18 @@ func TestMergeApproveCeilings(t *testing.T) {
 		admin                   configfile.Review
 		doc                     string
 		findings, risk, dropped string
+		// off is the admin's approval left off, under a block whose only
+		// values were dropped.
+		off bool
 	}{
+		{name: "a block whose only value is dropped keeps the admin's approval off",
+			admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
+			doc:   "review: { approve: { findings: non } }\n", findings: "p2", risk: "low", off: true,
+			dropped: `.kritika.yaml: review.approve.findings "non" was dropped; allowed: p2 or none`},
+		{name: "a block with conditions turns approval on beside a dropped value",
+			admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
+			doc:   "review: { approve: { findings: non, when: [{ expr: pr.bot }] } }\n", findings: "p2", risk: "low",
+			dropped: `.kritika.yaml: review.approve.findings "non" was dropped; allowed: p2 or none`},
 		{name: "true keeps the admin's", admin: configfile.Review{ApproveFindings: review.SeverityNone, ApproveRisk: review.RiskMedium},
 			doc: "review: { approve: true }\n", findings: "none", risk: "medium"},
 		{name: "none lowers the admin's p2", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
@@ -533,10 +545,10 @@ func TestMergeApproveCeilings(t *testing.T) {
 		{name: "p2 under the admin's p2", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
 			doc: "review: { approve: { findings: p2 } }\n", findings: "p2", risk: "low"},
 		{name: "p2 cannot raise the admin's none", admin: configfile.Review{ApproveFindings: review.SeverityNone, ApproveRisk: review.RiskLow},
-			doc: "review: { approve: { findings: p2 } }\n", findings: "none", risk: "low",
+			doc: "review: { approve: { findings: p2 } }\n", findings: "none", risk: "low", off: true,
 			dropped: `.kritika.yaml: review.approve.findings "p2" was dropped; allowed: none`},
 		{name: "p1 is no findings ceiling", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
-			doc: "review: { approve: { findings: p1 } }\n", findings: "p2", risk: "low",
+			doc: "review: { approve: { findings: p1 } }\n", findings: "p2", risk: "low", off: true,
 			dropped: `.kritika.yaml: review.approve.findings "p1" was dropped; allowed: p2 or none`},
 		{name: "a risk lowers the admin's", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskHigh},
 			doc: "review: { approve: { risk: medium } }\n", findings: "p2", risk: "medium"},
@@ -551,9 +563,10 @@ func TestMergeApproveCeilings(t *testing.T) {
 				t.Fatal(err)
 			}
 			r := m.Review
-			if !r.Approve || string(r.ApproveFindings) != tt.findings || string(r.ApproveRisk) != tt.risk || strings.Join(m.Dropped, "\n") != tt.dropped {
-				t.Fatalf("approve %v, findings %q, risk %q, dropped %q; want on, %q, %q and %q",
-					r.Approve, r.ApproveFindings, r.ApproveRisk, m.Dropped, tt.findings, tt.risk, tt.dropped)
+			if r.Approve == tt.off || string(r.ApproveFindings) != tt.findings || string(r.ApproveRisk) != tt.risk ||
+				strings.Join(m.Dropped, "\n") != tt.dropped {
+				t.Fatalf("approve %v, findings %q, risk %q, dropped %q; want %v, %q, %q and %q",
+					r.Approve, r.ApproveFindings, r.ApproveRisk, m.Dropped, !tt.off, tt.findings, tt.risk, tt.dropped)
 			}
 		})
 	}

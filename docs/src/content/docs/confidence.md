@@ -201,7 +201,7 @@ the rest.
   read `pr.lines`. Only trigger conditions and a `review.agents` entry's
   `when` can.
 - A `gate` block must list at least one condition. An `approve` block must
-  set `when`, `findings` or `risk`. `true` gates or approves every pull
+  set `when`, `findings` or `risk`, and none of them can be empty. `true` gates or approves every pull
   request the review allows, and `false` none.
 - The gate's conditions, like `confidence.when`, are judged as the review
   starts.

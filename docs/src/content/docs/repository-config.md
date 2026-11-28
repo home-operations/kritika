@@ -114,8 +114,10 @@ review:
 - `when` lists conditions, like a [rule's](#rules). One of them must hold
   for a pull request to be approved.
 
-The block sets at least one of these keys. `findings` and `risk` can only
-lower the admin's, and kritika drops a higher value. The conditions hold
+The block sets at least one of these keys, and none of them can be empty.
+`findings` and `risk` can only lower the admin's, and kritika drops a higher
+value. If kritika drops every value in a block that has no conditions,
+approval stays as the admin set it. The conditions hold
 beside the admin's. A pull request must pass both, so the file cannot
 approve what the admin's conditions keep out.
 
