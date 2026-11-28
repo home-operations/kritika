@@ -29,9 +29,10 @@ type partCheckpoint struct {
 // context invalidates the whole plan. Run identity, scheduling, and the token
 // budget the month left this attempt do not change the input a part reviews.
 // Neither does the last review's conversation, which no part carries on.
-// The tuning it runs under does: its search budget, for one, changes a
-// part's loop and not its prompts or tools. Default tuning adds nothing, so
-// the checkpoints of a build before it was tunable are still reused.
+// The tuning of its agent's loop and tools does (partTuning), which can
+// change a part's answer and not its prompts or tools. Default tuning adds
+// nothing, so the checkpoints of a build before it was tunable are still
+// reused.
 func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string, error) {
 	p.RunID = ""
 	if p.Agent != nil {
@@ -55,7 +56,7 @@ func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string
 		Prompts []prompt
 		Tools   []model.ToolDef
 		Tuning  []tuning.EnvPair `json:",omitempty"`
-	}{Spec: p, Tuning: tuning.Env(*tuning.Get())}
+	}{Spec: p, Tuning: partTuning()}
 	for _, part := range parts {
 		input.Prompts = append(input.Prompts, prompt{part.paths, part.reviewer, part.prompt.system, part.prompt.user, part.prompt.submit})
 	}
@@ -143,4 +144,21 @@ func checkpointNames(current, saved []string) []string {
 		}
 	}
 	return current
+}
+
+// partTuning is the tuning, as it differs from the defaults, that a part's
+// agent reads as it works: the agent's own, and the budgets and caps of the
+// search_code, fetch_repo and fetch_oci tools. The rest, such as the
+// server's or the reports', changes no part's answer, so an override of it
+// leaves the parts already paid for reusable.
+func partTuning() []tuning.EnvPair {
+	cur, v := tuning.Get(), tuning.Defaults()
+	v.Agent = cur.Agent
+	r, d := cur.Runner, &v.Runner
+	d.SearchCalls, d.SearchShown = r.SearchCalls, r.SearchShown
+	d.FetchWriteBytes, d.FetchWireBytes, d.FetchDiffBytes = r.FetchWriteBytes, r.FetchWireBytes, r.FetchDiffBytes
+	d.MaxTagListings, d.TagsShown, d.ClosestTagsShown, d.ChangedShown = r.MaxTagListings, r.TagsShown, r.ClosestTagsShown, r.ChangedShown
+	d.MaxDirNameBytes = r.MaxDirNameBytes
+	d.OCIWireBytes, d.OCIMetadataBytes, d.OCIConfigShown, d.OCITagPages = r.OCIWireBytes, r.OCIMetadataBytes, r.OCIConfigShown, r.OCITagPages
+	return tuning.Env(v)
 }

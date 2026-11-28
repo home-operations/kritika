@@ -1,6 +1,7 @@
 package review
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -99,5 +100,40 @@ func TestIncompleteWarningSurvivesTheRenderFloor(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("summary lost %q:\n%s", want, body)
 		}
+	}
+}
+
+// TestUnanchoredFindingsSurviveTheRenderFloor: at the least cap Validate
+// takes, a review whose findings outside the diff overflow the default
+// template still lists them, which no inline comment carries, ahead of the
+// take, and counts those that do not fit, within the cap.
+func TestUnanchoredFindingsSurviveTheRenderFloor(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.MaxRenderBytes = tuning.MinRenderBytes })
+	d := RenderData{Number: 42, HeadSHA: "0123456789abcdef", Result: Result{Summary: Summary{Take: "- Adds the cache."}},
+		PullURL: "https://kritika.example/#/pulls/42"}
+	d.Unanchored = append(d.Unanchored, Finding{Path: "cache.go", Line: 7, Severity: SeverityP1, Title: "Stale entries are served",
+		Explanation: strings.Repeat("why ", 500)})
+	for i := range 30 {
+		d.Unanchored = append(d.Unanchored, Finding{Path: "other.go", Line: i + 1, Severity: SeverityP2, Title: "A smaller point"})
+	}
+	if _, err := render(t.Context(), defaultSummary, d, bodyLimit(Marker(42)+"\n")); err == nil {
+		t.Fatal("the findings no longer overflow the default template")
+	}
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if len(body) > tuning.MinRenderBytes {
+		t.Fatalf("summary of %d bytes, want at most %d", len(body), tuning.MinRenderBytes)
+	}
+	for _, want := range []string{"- **[P1]** `cache.go:7` Stale entries are served\n", "more, on [the dashboard](https://kritika.example/#/pulls/42)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("summary lost %q:\n%s", want, body)
+		}
+	}
+	listed := strings.Count(body, "`other.go:")
+	if want := fmt.Sprintf("- and %d more", 31-1-listed); !strings.Contains(body, want) {
+		t.Errorf("summary lists %d of the 30 smaller findings but does not say %q:\n%s", listed, want, body)
+	}
+	d.Unanchored = d.Unanchored[:1]
+	if body, _ := RenderSummary(t.Context(), Templates{}, d); !strings.Contains(body, "- Adds the cache.") || strings.Contains(body, "more") {
+		t.Errorf("with one finding outside the diff, the take is lost or a count added:\n%s", body)
 	}
 }

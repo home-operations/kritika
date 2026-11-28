@@ -308,9 +308,10 @@ func TestPromptTrimFitsTextWithoutHistory(t *testing.T) {
 	}
 }
 
-// TestEncodeAtTheLeastSpecBound: at the least runSpec.maxBytes and a prompt
-// budget under it that validation takes, a review spec encodes, and a bound
-// a byte lower is refused.
+// TestEncodeAtTheLeastSpecBound: at the least runSpec.maxBytes and the
+// largest prompt budget under it that validation takes, a review spec whose
+// long description fills its prompt's budget encodes, and a bound a byte
+// lower is refused.
 func TestEncodeAtTheLeastSpecBound(t *testing.T) {
 	v := tuning.Defaults()
 	v.RunSpec.MaxBytes, v.RunSpec.MaxPromptBytes = 64<<10, 32<<10
@@ -319,7 +320,15 @@ func TestEncodeAtTheLeastSpecBound(t *testing.T) {
 	}
 	tuning.Override(t, func(o *tuning.Values) { *o = v })
 	s := reviewSpec()
+	s.Prompt.PullRequest.Body = strings.Repeat("a plain description ", 1<<15)
 	s.Prompt.Trim()
+	prompt, err := json.Marshal(s.Prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prompt) < 31<<10 {
+		t.Fatalf("the trimmed prompt is %d bytes, short of its budget", len(prompt))
+	}
 	if _, err := Encode(s); err != nil {
 		t.Fatal(err)
 	}

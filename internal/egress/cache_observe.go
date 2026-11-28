@@ -206,10 +206,12 @@ func (r *countedReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// Count the HTTP body rather than SDK reads, which also include checksum passes.
+// cacheTransport sends a PUT by upload when it is set, every other request by
+// base. Count the HTTP body rather than SDK reads, which also include checksum
+// passes.
 type cacheTransport struct {
-	base  http.RoundTripper
-	cache *Cache
+	base, upload http.RoundTripper
+	cache        *Cache
 }
 
 func (t *cacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -222,7 +224,11 @@ func (t *cacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			io.Closer
 		}{body, r.Body}
 	}
-	resp, err := t.base.RoundTrip(r)
+	base := t.base
+	if r.Method == http.MethodPut && t.upload != nil {
+		base = t.upload
+	}
+	resp, err := base.RoundTrip(r)
 	if err != nil {
 		cancel(context.Canceled)
 		return nil, err

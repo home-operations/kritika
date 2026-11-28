@@ -73,6 +73,23 @@ func TestPartInputIdentityFollowsTuning(t *testing.T) {
 	}
 }
 
+// TestPartInputIdentityIgnoresOtherTuning: an override that no part's agent
+// reads, the server's idle timeout, leaves the identity, and the parts
+// already paid for, as they were.
+func TestPartInputIdentityIgnoresOtherTuning(t *testing.T) {
+	s := reviewSpec()
+	parts := []reviewPart{{paths: []string{"a.go"}, prompt: loopPrompt(s, false)}}
+	before, err := partInputHash(s, parts, agentTools{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning.Override(t, func(v *tuning.Values) { v.Server.IdleTimeout += time.Second })
+	after, err := partInputHash(s, parts, agentTools{})
+	if err != nil || before != after {
+		t.Fatalf("identity changed by server.idleTimeout: %v", err)
+	}
+}
+
 // TestPartInputIdentityAtDefaults: at default tuning the identity is the
 // hash of the spec, prompts and tools alone, as a build before tuning keyed
 // its checkpoints, so those are still reused.

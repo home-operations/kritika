@@ -60,13 +60,17 @@ func (c *Cache) UseS3(o S3Options) error {
 	transport.DialContext = (&net.Dialer{Timeout: t.S3LookupTimeout, KeepAlive: t.S3KeepAlive}).DialContext
 	transport.ResponseHeaderTimeout = t.S3LookupTimeout
 	transport.TLSHandshakeTimeout = t.S3LookupTimeout
+	// An upload's answer can take longer than a lookup's; its context's
+	// deadline (S3UploadDeadline) bounds it instead.
+	upload := transport.Clone()
+	upload.ResponseHeaderTimeout = 0
 	lookup := minio.BucketLookupAuto
 	if o.ForcePathStyle {
 		lookup = minio.BucketLookupPath
 	}
 	client, err := minio.New(u.Host, &minio.Options{
 		Creds: creds, Secure: u.Scheme == upgradedScheme, Region: o.Region, BucketLookup: lookup,
-		Transport: &cacheTransport{base: transport, cache: c}, MaxRetries: 1,
+		Transport: &cacheTransport{base: transport, upload: upload, cache: c}, MaxRetries: 1,
 	})
 	if err != nil {
 		return fmt.Errorf("egress: cache: S3 client: %w", err)

@@ -342,17 +342,53 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 }
 
 // compactSummary is the summary in at most limit bytes when the default
-// template does not fit: the take, or for an incomplete review its warning,
-// whose reason is cut so that the notice on earlier heads' findings stays.
+// template does not fit. A complete review lists its findings outside the
+// diff first, one line each, since no inline comment carries them, then its
+// take. An incomplete review states its warning, whose reason is cut so
+// that the notice on earlier heads' findings stays.
 func compactSummary(d RenderData, limit int) string {
 	const heading = "## Kritika Review\n\n"
 	if d.Incomplete == "" {
-		return textcut.Prefix(heading+d.Result.Summary.Take+"\n", limit)
+		return textcut.Prefix(heading+compactUnanchored(d, limit-len(heading))+d.Result.Summary.Take+"\n", limit)
 	}
 	lead := heading + "**Review incomplete for `" + ShortSHA(d.HeadSHA) + "`:** "
 	const stale = ". Findings posted for earlier heads may no longer apply.\n"
 	reason := textcut.Prefix(d.Incomplete, max(limit-len(lead)-len(stale), 0))
 	return textcut.Prefix(lead+reason+stale, limit)
+}
+
+// compactUnanchored lists d's findings outside the diff in at most room
+// bytes: severity, path and title, whole entries only, and a count of those
+// left out, with the pull request's dashboard page where there is one.
+func compactUnanchored(d RenderData, room int) string {
+	findings := d.Unanchored
+	if len(findings) == 0 {
+		return ""
+	}
+	more := func(n int) string {
+		if d.PullURL != "" {
+			return fmt.Sprintf("- and %d more, on [the dashboard](%s)\n", n, d.PullURL)
+		}
+		return fmt.Sprintf("- and %d more\n", n)
+	}
+	var b strings.Builder
+	b.WriteString("**Outside the diff**\n\n")
+	for i, f := range findings {
+		entry := fmt.Sprintf("- **[%s]** `%s:%d` %s\n", f.Severity.Label(), f.Path, f.Line, oneLine(f.Title))
+		reserve := 0
+		if left := len(findings) - i - 1; left > 0 {
+			reserve = len(more(left))
+		}
+		if b.Len()+len(entry)+reserve > room {
+			if note := more(len(findings) - i); b.Len()+len(note) <= room {
+				b.WriteString(note)
+			}
+			break
+		}
+		b.WriteString(entry)
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 // Label is the severity's badge text, its name in upper case, "" for an

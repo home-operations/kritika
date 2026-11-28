@@ -386,7 +386,7 @@ func startWorker(
 	middleware := []rivertype.Middleware{
 		&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}, &worker.ForgeRateLimit{Logger: logger},
 	}
-	queue, err := river.NewClient(riverpgxv5.New(st.App()), riverConfig(cfg, workers, middleware, logger))
+	queue, err := river.NewClient(worker.NewRiverDriver(st.App()), riverConfig(cfg, workers, middleware, logger))
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
 	}

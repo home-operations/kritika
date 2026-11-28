@@ -21,8 +21,8 @@ type RunSpec struct {
 	// of an earlier build, which spec version 1 still reaches, reads no
 	// larger spec.
 	MaxBytes ByteSize `env:"KRITIKA_TUNING_RUN_SPEC_MAX_BYTES" envDefault:"900Ki" yaml:"maxBytes,omitempty"`
-	// MaxPromptBytes is what an encoded prompt is trimmed to, under
-	// MaxBytes with room for the rest of the spec.
+	// MaxPromptBytes is what an encoded prompt is trimmed to, at least 32Ki
+	// under MaxBytes to leave room for the rest of the spec.
 	MaxPromptBytes ByteSize `env:"KRITIKA_TUNING_RUN_SPEC_MAX_PROMPT_BYTES" envDefault:"768Ki" yaml:"maxPromptBytes,omitempty"`
 	// MaxPriorFindings is how many of the last review's findings a spec
 	// carries, and how many dismissed ones.
@@ -267,6 +267,10 @@ const (
 	// that nothing trims, its run, repository, model and limits, beside
 	// what is left of its prompt.
 	minSpecBytes = 64 << 10
+	// specReserveBytes is the least of runSpec.maxBytes that
+	// runSpec.maxPromptBytes leaves to the rest of a spec: its run, repository,
+	// refs, model and limits, which no trim shrinks.
+	specReserveBytes = 32 << 10
 	// kubeEventInstanceBytes and kubeEventNoteBytes are the longest
 	// reporting instance and note that Kubernetes takes in an Event.
 	kubeEventInstanceBytes = 128
@@ -306,9 +310,9 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			if v.RunSpec.MaxPromptBytes >= v.RunSpec.MaxBytes {
-				return fmt.Errorf("%s (%s) must be less than %s (%s), with room for the rest of the spec",
-					fieldLabel("runSpec.maxPromptBytes"), v.RunSpec.MaxPromptBytes,
+			if v.RunSpec.MaxPromptBytes > v.RunSpec.MaxBytes-specReserveBytes {
+				return fmt.Errorf("%s (%s) must leave %s of %s (%s) to the rest of the spec",
+					fieldLabel("runSpec.maxPromptBytes"), v.RunSpec.MaxPromptBytes, ByteSize(specReserveBytes),
 					fieldLabel("runSpec.maxBytes"), v.RunSpec.MaxBytes)
 			}
 			return nil

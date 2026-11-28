@@ -376,3 +376,31 @@ func TestUseS3SpoolSize(t *testing.T) {
 		}
 	}
 }
+
+// TestS3UploadOutlastsTheLookupTimeout: an upload whose answer comes later
+// than egress.s3LookupTimeout, which bounds a lookup's, is held to its own
+// deadline alone.
+func TestS3UploadOutlastsTheLookupTimeout(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Egress.S3LookupTimeout, v.Egress.S3UploadTimeout = 100*time.Millisecond, 10*time.Second
+	})
+	store := &s3TestStore{objects: make(map[string]s3TestObject)}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			time.Sleep(300 * time.Millisecond)
+		}
+		store.serve(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	c := &Cache{Dir: t.TempDir(), MaxEntryBytes: 1 << 20}
+	if err := c.UseS3(S3Options{Endpoint: srv.URL, Region: "test-region", Bucket: "cache", AccessKey: "a", SecretKey: "s", ForcePathStyle: true}); err != nil {
+		t.Fatal(err)
+	}
+	key := keyOf("abc")
+	if err := c.store(key, entryOf("https://example.com/tool", "abc"), strings.NewReader("abc"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.upload(t.Context(), key); err != nil {
+		t.Fatalf("upload = %v, want it to wait for the answer", err)
+	}
+}

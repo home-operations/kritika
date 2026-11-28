@@ -203,9 +203,9 @@ func TestCrossFieldEdges(t *testing.T) {
 			[]string{"tuning.runner.maxDirNameBytes: KRITIKA_TUNING_RUNNER_MAX_DIR_NAME_BYTES", ".diff"},
 		},
 		{
-			"prompt within the spec",
-			func(v *Values) { v.RunSpec.MaxPromptBytes = v.RunSpec.MaxBytes },
-			func(v *Values) { v.RunSpec.MaxPromptBytes = v.RunSpec.MaxBytes - 1 },
+			"prompt leaves the rest of the spec its room",
+			func(v *Values) { v.RunSpec.MaxPromptBytes = v.RunSpec.MaxBytes - 32<<10 + 1 },
+			func(v *Values) { v.RunSpec.MaxPromptBytes = v.RunSpec.MaxBytes - 32<<10 },
 			[]string{"tuning.runSpec.maxPromptBytes: KRITIKA_TUNING_RUN_SPEC_MAX_PROMPT_BYTES", "tuning.runSpec.maxBytes: KRITIKA_TUNING_RUN_SPEC_MAX_BYTES"},
 		},
 		{
