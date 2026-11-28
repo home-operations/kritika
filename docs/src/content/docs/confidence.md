@@ -14,12 +14,12 @@ approves changes rated at most medium risk:
 
 ```yaml
 review:
-  approve: true
+  approve:
+    risk: medium
 confidence:
   model: openrouter/other-vendor/model
   threshold: 4
   gate: true
-  risk: medium
 ```
 
 Use a model from a provider you configured. This configuration belongs under
@@ -90,17 +90,31 @@ without receiving an automatic approval.
 
 ## Approvals
 
-Set `review.approve: true` to enable approvals.
+Set `review.approve: true` to enable approvals. A block enables them too,
+and sets what an approval allows:
 
-| Configuration        | Approves when…                                                                |
-| -------------------- | ----------------------------------------------------------------------------- |
-| No confidence model  | There are no P0 or P1 findings.                                               |
-| Confidence model set | The score meets `confidence.threshold` and risk is at most `confidence.risk`. |
+```yaml
+review:
+  approve:
+    findings: none
+    risk: medium
+```
 
-P2 findings take nothing off the score, so by default they do not withhold
-approval. With `review.approveBlockedAt: p2`, any open finding withholds it,
-with or without a confidence model
-([approvals](/repository-config/#approvals)).
+| Configuration        | Approves when…                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| No confidence model  | No open finding is more severe than `findings`.                                                                         |
+| Confidence model set | The score meets `confidence.threshold`, the risk is at most `risk`, and no open finding is more severe than `findings`. |
+
+`findings` is the most severe finding that a review can leave open and still
+be approved. With `p2`, the default, P2 findings do not withhold approval.
+With `none`, any open finding withholds it. P2 findings take nothing off the
+score, so `none` applies with or without a confidence model. A finding stays
+open until a later review finds it fixed or someone
+[dismisses it](/reviews/#findings).
+
+`risk` is the highest [risk](#risk) that a change can be rated and still be
+approved, `low` unless set. Only a confidence score rates a risk, so without
+a confidence model `risk` has no effect.
 
 These reviews do not approve:
 
@@ -133,8 +147,8 @@ The summary says **Approved** or **Not approved**. **Not approved** gives a
 reason, and so does **Approved** when no confidence score decided it. A
 [clean review](/reviews/#the-summary-comment) says "Approved" at the end of
 its one line. A
-repository's `.kritika.yaml` can turn approvals on or off, and add
-conditions of its own.
+repository's `.kritika.yaml` can turn approvals on or off, add
+conditions of its own, and lower `findings` and `risk`.
 
 The approval on the forge has no text of its own. A withdrawal gives its
 reason on the forge. After kritika approves a pull request, what a later
@@ -186,9 +200,9 @@ the rest.
   loads. One that fails to evaluate does not hold. These conditions cannot
   read `pr.lines`. Only trigger conditions and a `review.agents` entry's
   `when` can.
-- A `gate` or `approve` block must list at least one condition: `true`
-  gates or approves every pull request the review allows, and `false`
-  none.
+- A `gate` block must list at least one condition. An `approve` block must
+  set `when`, `findings` or `risk`. `true` gates or approves every pull
+  request the review allows, and `false` none.
 - The gate's conditions, like `confidence.when`, are judged as the review
   starts.
 - Approval's conditions are judged as the review is posted, so a label
@@ -202,7 +216,8 @@ the rest.
 - A repository's `confidence.gate` replaces the admin's, conditions and
   all, since a repository can already turn the gate off.
 - A repository's `.kritika.yaml` adds conditions that must hold beside the
-  admin's, and its `approve: true` keeps the admin's conditions. Take a
+  admin's, and its `approve: true` keeps the admin's conditions, `findings`
+  and `risk`. Take a
   pull request that the file's `confidence.when` alone leaves unscored.
   Where a confidence model is set, even a model that the file sets itself,
   kritika does not approve that pull request. The file can narrow scoring,
@@ -328,6 +343,7 @@ depends on more of it. These trigger a fresh rating:
 | `confidence.threshold`    | 5                                  | the score approvals need, and a gated commit status                                                                                                                                                                  | replaces, either way                       |
 | `confidence.gate`         | off                                | `true` fails the commit status under the threshold, so it can be a required check. A `when` block gates only the pull requests one of its conditions holds for ([only some pull requests](#only-some-pull-requests)) | replaces, either way                       |
 | `confidence.when`         | none: every pull request is scored | conditions, one of which a pull request must hold for to be scored ([only some pull requests](#only-some-pull-requests))                                                                                             | adds conditions that must hold as well     |
-| `confidence.risk`         | `low`                              | the highest [risk](#risk) a change can be rated and still be approved                                                                                                                                                | can only lower it. A higher one is dropped |
 | `confidence.instructions` |                                    | the admin's guidance to the scorer on [rating risk](#risk) in your code                                                                                                                                              | the admin's alone                          |
 | `confidence.floors`       | none                               | globs by risk level: a change touching a matching path is rated at least that level, whatever the scorer says ([risk](#risk))                                                                                        | adds floors. The higher level holds        |
+| `review.approve.findings` | `p2`                               | the most severe finding that a review can leave open and still be approved: `p2` or `none` ([approvals](#approvals))                                                                                                 | can only lower it. A higher one is dropped |
+| `review.approve.risk`     | `low`                              | the highest [risk](#risk) that a change can be rated and still be approved ([approvals](#approvals))                                                                                                                 | can only lower it. A higher one is dropped |

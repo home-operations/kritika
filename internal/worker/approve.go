@@ -84,7 +84,7 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts, curren
 	case approvalClosed:
 		return nil
 	}
-	ok, why := approvable(counts, p.settings.Review.ApproveBlockedAt, p.settings.Confidence, p.confidence, p.unscored)
+	ok, why := approvable(counts, p.settings, p.confidence, p.unscored)
 	if ok && p.unfinished > 0 {
 		ok, why = false, "parts of the change went unreviewed"
 	}
@@ -209,36 +209,30 @@ func ownReason(changed []string) string {
 }
 
 // approvable reports whether a review's verdict lets kritika approve the
-// pull request, and what the approval rests on or why it is withheld.
-// Where the repository asks for no confidence score that is the findings:
-// nothing at blockedAt or above. Where it asks for one, the score
-// decides instead, with the risk the change was rated: the score must
-// reach the threshold and the risk stay within the ceiling, and a review
-// left unscored approves nothing. The score already takes P0s and P1s into
-// account but not P2s, so at p2 any finding withholds approval as well.
-func approvable(
-	counts review.Counts, blockedAt review.Severity, want configfile.Confidence, c *review.Confidence, unscored bool,
-) (bool, string) {
-	clean := blockedAt == review.SeverityP2
+// pull request under settings s, and what the approval rests on or why it is
+// withheld. The findings it leaves open must be within review.approve's
+// findings. Where the repository asks for a confidence score, the score must
+// also reach the threshold and the risk stay within review.approve's risk,
+// and a review left unscored approves nothing.
+func approvable(counts review.Counts, s configfile.Settings, c *review.Confidence, unscored bool) (bool, string) {
+	findings, risk := s.Review.ApproveFindings, s.Review.ApproveRisk
 	none, found := "nothing at P0 or P1 found", fmt.Sprintf("%d P0 and %d P1 finding(s)", counts.P0, counts.P1)
-	if clean {
+	if findings == review.SeverityNone {
 		none, found = "nothing found", fmt.Sprintf("%d P0, %d P1 and %d P2 finding(s)", counts.P0, counts.P1, counts.P2)
 	}
 	switch {
-	case want.RepoUnscored:
+	case s.Confidence.RepoUnscored:
 		return false, "this repository's confidence.when leaves it unscored"
 	case unscored:
 		return false, "confidence was not scored"
-	case c == nil && counts.Approvable(blockedAt):
-		return true, none
-	case c == nil:
-		return false, found
-	case !c.Passed():
+	case c != nil && !c.Passed():
 		return false, fmt.Sprintf("confidence %d/%d is below the threshold of %d", c.Score, review.MaxConfidence, c.Threshold)
-	case !c.Risk.Within(want.Risk):
-		return false, fmt.Sprintf("%s risk is above the %s this repository approves", c.Risk, want.Risk)
-	case clean && !counts.Approvable(blockedAt):
+	case c != nil && !c.Risk.Within(risk):
+		return false, fmt.Sprintf("%s risk is above the %s this repository approves", c.Risk, risk)
+	case !counts.Within(findings):
 		return false, found
+	case c == nil:
+		return true, none
 	}
 	return true, fmt.Sprintf("confidence %d/%d with %s risk", c.Score, review.MaxConfidence, c.Risk)
 }

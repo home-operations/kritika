@@ -101,11 +101,6 @@
             ? `yes${s.confidence.gateWhen?.length ? ` ${bounded(s.confidence.gateWhen)}` : ''}: the check fails under the threshold`
             : 'no: the check reports the score',
     },
-    {
-      label: 'Approve up to risk',
-      key: 'confidence.risk',
-      value: (s) => (!s.review.approve ? '—' : s.confidence.model ? s.confidence.risk : 'any: no scorer, so on the findings alone'),
-    },
     { label: 'Risk instructions', key: 'confidence.instructions', value: (s) => s.confidence.instructions || '—' },
     { label: 'Risk floors', key: 'confidence.floors', value: (s) => floors(s.confidence.floors), mono: true },
     { label: 'Include', key: 'trigger.include', value: (s) => conditions(s.filters.include), mono: true },
@@ -125,9 +120,14 @@
       value: (s) => (!s.review.approve ? 'no' : bounded(s.review.approveWhen, s.review.approveWhenInRepo) || 'yes'),
     },
     {
-      label: 'Approval withheld at',
-      key: 'review.approveBlockedAt',
-      value: (s) => (!s.review.approve ? '—' : s.review.approveBlockedAt === 'p2' ? 'P2: any open finding' : 'P1: P2s alone still approve'),
+      label: 'Approve with findings',
+      key: 'review.approve',
+      value: (s) => (!s.review.approve ? '—' : s.review.approveFindings === 'none' ? 'none open' : 'up to P2'),
+    },
+    {
+      label: 'Approve up to risk',
+      key: 'review.approve',
+      value: (s) => (!s.review.approve ? '—' : s.confidence.model ? s.review.approveRisk : 'any: no scorer, so on the findings alone'),
     },
     { label: 'Flow diagram', key: 'review.diagram', value: (s) => yes(s.review.diagram) },
     { label: 'Cost in footer', key: 'review.cost', value: (s) => yes(s.review.cost) },

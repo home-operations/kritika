@@ -102,17 +102,17 @@ func TestSkipVerdict(t *testing.T) {
 func TestCarryApproval(t *testing.T) {
 	settings := func(approve bool, threshold int) configfile.Settings {
 		return configfile.Settings{
-			Review:     configfile.Review{Approve: approve},
-			Confidence: configfile.Confidence{Model: "p/judge", Threshold: threshold, Risk: review.RiskLow},
+			Review:     configfile.Review{Approve: approve, ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
+			Confidence: configfile.Confidence{Model: "p/judge", Threshold: threshold},
 		}
 	}
 	carried := func(threshold int) *review.Confidence {
 		return &review.Confidence{Score: 4, Threshold: threshold, Risk: review.RiskLow}
 	}
 	strict := settings(true, 4)
-	strict.Review.ApproveBlockedAt = review.SeverityP2
-	unscored := func(at review.Severity) configfile.Settings {
-		return configfile.Settings{Review: configfile.Review{Approve: true, ApproveBlockedAt: at}}
+	strict.Review.ApproveFindings = review.SeverityNone
+	unscored := func(findings review.Severity) configfile.Settings {
+		return configfile.Settings{Review: configfile.Review{Approve: true, ApproveFindings: findings}}
 	}
 	tests := []struct {
 		name                string
@@ -123,17 +123,17 @@ func TestCarryApproval(t *testing.T) {
 		approved, dismissed string
 	}{
 		{name: "nothing carried", settings: settings(true, 4)},
-		{name: "a passing score approves beside open P2s at p1", settings: settings(true, 4), carried: carried(4),
+		{name: "a passing score approves beside open P2s under p2", settings: settings(true, 4), carried: carried(4),
 			open: review.Counts{P2: 2}, approved: "o/r#7@abcdef1234"},
-		{name: "a passing score withdraws beside an open P2 at p2", settings: strict, carried: carried(4),
+		{name: "a passing score withdraws beside an open P2 under none", settings: strict, carried: carried(4),
 			open: review.Counts{P2: 1}, dismissed: "o/r#7: kritika: 0 P0, 0 P1 and 1 P2 finding(s) at abcdef1."},
-		{name: "a passing score with nothing open approves at p2", settings: strict, carried: carried(4),
+		{name: "a passing score with nothing open approves under none", settings: strict, carried: carried(4),
 			approved: "o/r#7@abcdef1234"},
-		{name: "nothing carried leaves the approval beside open P2s at p1", settings: unscored(review.SeverityP1),
+		{name: "nothing carried leaves the approval beside open P2s under p2", settings: unscored(review.SeverityP2),
 			open: review.Counts{P2: 1}},
-		{name: "nothing carried withdraws beside an open P2 at p2", settings: unscored(review.SeverityP2),
+		{name: "nothing carried withdraws beside an open P2 under none", settings: unscored(review.SeverityNone),
 			open: review.Counts{P2: 1}, dismissed: "o/r#7: kritika: 0 P0, 0 P1 and 1 P2 finding(s) at abcdef1."},
-		{name: "nothing carried approves nothing at p2", settings: unscored(review.SeverityP2)},
+		{name: "nothing carried approves nothing under none", settings: unscored(review.SeverityNone)},
 		{name: "approvals off", settings: settings(false, 4), carried: carried(4)},
 		{name: "a score that still passes approves the new head", settings: settings(true, 4), carried: carried(4),
 			approved: "o/r#7@abcdef1234"},

@@ -38,28 +38,36 @@ func TestApproveForms(t *testing.T) {
 	}
 }
 
-// TestApproveBlockedAt: review.approveBlockedAt is p1 unless set, takes p1
-// or p2, and is stated on the Configuration page and by its source.
-func TestApproveBlockedAt(t *testing.T) {
+// TestApproveCeilings: review.approve's findings is p2 and its risk low
+// unless set. A block that sets either turns approval on, and the
+// Configuration page states them.
+func TestApproveCeilings(t *testing.T) {
 	authEnv(t)
 	f := mustLoad(t, minimal)
-	if at := f.Settings(&f.Accounts[0]).Review.ApproveBlockedAt; at != review.SeverityP1 {
-		t.Fatalf("default approveBlockedAt = %q, want p1", at)
+	if r := f.Settings(&f.Accounts[0]).Review; r.Approve || r.ApproveFindings != review.SeverityP2 || r.ApproveRisk != review.RiskLow {
+		t.Fatalf("default approve %v, findings %q, risk %q; want off, p2 and low", r.Approve, r.ApproveFindings, r.ApproveRisk)
 	}
-	f = mustLoad(t, "review:\n  approveBlockedAt: p2\n"+minimal)
-	if at := f.Settings(&f.Accounts[0]).Review.ApproveBlockedAt; at != review.SeverityP2 {
-		t.Fatalf("approveBlockedAt = %q, want p2", at)
+	f = mustLoad(t, "review:\n  approve: { findings: none, risk: medium }\n"+minimal)
+	if r := f.Settings(&f.Accounts[0]).Review; !r.Approve || r.ApproveFindings != review.SeverityNone || r.ApproveRisk != review.RiskMedium {
+		t.Fatalf("approve %v, findings %q, risk %q; want on, none and medium", r.Approve, r.ApproveFindings, r.ApproveRisk)
 	}
-	if got := defaultValue(f.FileLayer().Defaults, keyApproveBlockedAt); got != "p2" {
+	if got := defaultValue(f.FileLayer().Defaults, keyApprove); got != "findings none, risk medium" {
 		t.Fatalf("the Configuration page states %q", got)
 	}
-	if src := f.Sources(&f.Accounts[0]); src[keyApproveBlockedAt] != SourceDefaults {
-		t.Fatalf("source = %q", src[keyApproveBlockedAt])
+	f = mustLoad(t, "review:\n  approve: { risk: high }\n"+minimal)
+	if r := f.Settings(&f.Accounts[0]).Review; r.ApproveFindings != review.SeverityP2 || r.ApproveRisk != review.RiskHigh {
+		t.Fatalf("findings %q, risk %q; want the default p2 beside high", r.ApproveFindings, r.ApproveRisk)
 	}
-	for _, at := range []string{"p0", "p3", "none", "''"} {
-		if _, err := load(t, "review:\n  approveBlockedAt: "+at+"\n"+minimal); err == nil ||
-			!strings.Contains(err.Error(), "configfile: review.approveBlockedAt must be p1 or p2") {
-			t.Fatalf("approveBlockedAt %s: err = %v", at, err)
+	for block, want := range map[string]string{
+		"{ findings: p1 }":        `configfile: review.approve.findings must be p2 or none, got "p1"`,
+		"{ findings: p3 }":        `configfile: review.approve.findings must be p2 or none, got "p3"`,
+		"{ risk: none }":          `configfile: review.approve.risk must be low, medium, high or critical, got "none"`,
+		"{ findings: '' }":        "a block must set when, findings or risk",
+		"{ risk: low, when: [] }": "when must list at least one condition",
+		"{ enabled: false }":      "field enabled not found",
+	} {
+		if _, err := load(t, "review:\n  approve: "+block+"\n"+minimal); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("approve %s: err = %v, want it to contain %q", block, err, want)
 		}
 	}
 }
@@ -76,8 +84,8 @@ func defaultValue(defaults []FileDefault, key string) string {
 func TestApproveRejects(t *testing.T) {
 	authEnv(t)
 	for name, tt := range map[string]struct{ approve, want string }{
-		"an empty block":       {"{}", "a block must list when conditions"},
-		"an empty list":        {"{ when: [] }", "a block must list when conditions"},
+		"an empty block":       {"{}", "a block must set when, findings or risk"},
+		"an empty list":        {"{ when: [] }", "when must list at least one condition"},
 		"an unknown key":       {"{ if: [] }", "field if not found"},
 		"a number":             {"3", "cannot"},
 		"no expression":        {"{ when: [{ name: a }] }", "review.approve.when[0]: expr is required"},

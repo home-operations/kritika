@@ -396,14 +396,14 @@ to every repository. A repository changes it for itself in its own
 [`.kritika.yaml`](/repository-config/). Its keys come in five groups,
 with a few keys beside them:
 
-| Group        | Keys                                                                                                              | What they set                              |
-| ------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `approveBlockedAt`, `incremental`, `diagram`, `cost`, `agents` | what a review runs on and what it says     |
-| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`, `floors`, `when`                      | how a review is judged                     |
-| `trigger`    | `include`, `exclude`, `limit`                                                                                     | which pull requests are reviewed, and when |
-| `comments`   | `inline`, `summary`, `finding`, `dashboard`                                                                       | what is posted                             |
-| `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches`                            | the bounds of a review's tool loop         |
-| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone                                 |                                            |
+| Group        | Keys                                                                                          | What they set                              |
+| ------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost`, `agents` | what a review runs on and what it says     |
+| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `instructions`, `floors`, `when`          | how a review is judged                     |
+| `trigger`    | `include`, `exclude`, `limit`                                                                 | which pull requests are reviewed, and when |
+| `comments`   | `inline`, `summary`, `finding`, `dashboard`                                                   | what is posted                             |
+| `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches`        | the bounds of a review's tool loop         |
+| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone             |                                            |
 
 `ignore` lists globs of paths left out of a review's initial diff and
 context, the index, and the agent's searches and checkout. These add to
@@ -530,28 +530,28 @@ A value applies in this order: kritika's default, the file's root, and the
 repository's `.kritika.yaml`. A value the `.kritika.yaml` writes replaces
 the root's, except:
 
-| Key                                  | From a `.kritika.yaml`                                                                                                        |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `ignore`                             | globs add up                                                                                                                  |
-| `rules`                              | added. A rule under an admin's id is dropped                                                                                  |
-| `context`                            | added                                                                                                                         |
-| `trigger.include`, `trigger.exclude` | judged beside the admin's lists. A name that an admin's list has is dropped                                                   |
-| `skills.paths`                       | replaces                                                                                                                      |
-| `skills.scope`                       | adds up by skill name. The file's entry wins                                                                                  |
-| `review.agents`                      | specialists added, and an admin's specialist gains only rules and skill scopes. Agents without categories replace the admin's |
-| `review.fixes`                       | can only turn it on                                                                                                           |
-| `review.approveBlockedAt`            | can only lower it, from `p1` to `p2`                                                                                          |
-| `confidence.risk`                    | can only lower it                                                                                                             |
-| `confidence.floors`                  | globs add up, level by level. The higher level holds for a path                                                               |
-| `review.approve`'s `when`            | judged beside the admin's. `approve: true` keeps the admin's                                                                  |
-| `confidence.when`                    | judged beside the admin's. A pull request that it alone leaves unscored is not approved where a score is asked for            |
-| `enabled`                            | can only turn it off                                                                                                          |
+| Key                                   | From a `.kritika.yaml`                                                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `ignore`                              | globs add up                                                                                                                  |
+| `rules`                               | added. A rule under an admin's id is dropped                                                                                  |
+| `context`                             | added                                                                                                                         |
+| `trigger.include`, `trigger.exclude`  | judged beside the admin's lists. A name that an admin's list has is dropped                                                   |
+| `skills.paths`                        | replaces                                                                                                                      |
+| `skills.scope`                        | adds up by skill name. The file's entry wins                                                                                  |
+| `review.agents`                       | specialists added, and an admin's specialist gains only rules and skill scopes. Agents without categories replace the admin's |
+| `review.fixes`                        | can only turn it on                                                                                                           |
+| `review.approve`'s `findings`, `risk` | can only lower them                                                                                                           |
+| `confidence.floors`                   | globs add up, level by level. The higher level holds for a path                                                               |
+| `review.approve`'s `when`             | judged beside the admin's. `approve: true` keeps the admin's                                                                  |
+| `confidence.when`                     | judged beside the admin's. A pull request that it alone leaves unscored is not approved where a score is asked for            |
+| `enabled`                             | can only turn it off                                                                                                          |
 
 ### Confidence and risk
 
 `confidence` sets a second model's score of each reviewed pull request.
-It also sets whether the commit status is gated on that score, and how
-risky a change can be and still be approved. [Confidence and
+It also sets whether the commit status is gated on that score.
+`review.approve` sets how risky a change can be and still be approved, and
+which findings it can leave open. [Confidence and
 approvals](/confidence/) describes the keys, how a score is reached, the
 risk tables and how approvals follow them.
 

@@ -285,7 +285,7 @@ func (p *publishPhase) verdict(findings int) (forge.StatusState, string) {
 // review keeps. That is the confidence that the pull request's newest
 // completed review other than reviewID got. It is held to the threshold and
 // the risk floors that want sets now. open counts that review's findings
-// that no dismissal names, which review.approveBlockedAt can withhold
+// that no dismissal names, which review.approve's findings can withhold
 // approval for since that review. skippable says the patch can be skipped as
 // unchanged. That is always so for a repository that asks for no score.
 // Otherwise it is so only when that review left a score to carry. So a
@@ -348,8 +348,8 @@ func carryApproval(
 	}
 	// With no score carried the skip has no verdict to apply, unless the
 	// approval it stands on is one kritika must no longer give: the findings
-	// that stand withhold it at the review.approveBlockedAt asked for now.
-	if carried == nil && open.Approvable(settings.Review.ApproveBlockedAt) && scope != approvalOutOfScope &&
+	// that stand are above the review.approve findings asked for now.
+	if carried == nil && open.Within(settings.Review.ApproveFindings) && scope != approvalOutOfScope &&
 		!settings.Confidence.RepoUnscored && len(own) == 0 {
 		return
 	}

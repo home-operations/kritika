@@ -394,24 +394,24 @@ func TestCounts(t *testing.T) {
 	}
 }
 
-func TestCountsApprovable(t *testing.T) {
+func TestCountsWithin(t *testing.T) {
 	for _, tt := range []struct {
-		name      string
-		counts    Counts
-		blockedAt Severity
-		want      bool
+		name    string
+		counts  Counts
+		ceiling Severity
+		want    bool
 	}{
-		{name: "nothing found approves at p1", blockedAt: SeverityP1, want: true},
-		{name: "nothing found approves at p2", blockedAt: SeverityP2, want: true},
-		{name: "P2s approve at p1", counts: Counts{P2: 2}, blockedAt: SeverityP1, want: true},
-		{name: "P2s withhold at p2", counts: Counts{P2: 1}, blockedAt: SeverityP2},
-		{name: "a P1 withholds at p1", counts: Counts{P1: 1}, blockedAt: SeverityP1},
-		{name: "a P0 withholds at p2", counts: Counts{P0: 1}, blockedAt: SeverityP2},
-		{name: "no level is p1", counts: Counts{P2: 1}, want: true},
+		{name: "nothing found is within p2", ceiling: SeverityP2, want: true},
+		{name: "nothing found is within none", ceiling: SeverityNone, want: true},
+		{name: "P2s are within p2", counts: Counts{P2: 2}, ceiling: SeverityP2, want: true},
+		{name: "a P2 is not within none", counts: Counts{P2: 1}, ceiling: SeverityNone},
+		{name: "a P1 is not within p2", counts: Counts{P1: 1}, ceiling: SeverityP2},
+		{name: "a P0 is not within none", counts: Counts{P0: 1}, ceiling: SeverityNone},
+		{name: "no ceiling is p2", counts: Counts{P2: 1}, want: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.counts.Approvable(tt.blockedAt); got != tt.want {
-				t.Fatalf("%+v approvable at %q = %v, want %v", tt.counts, tt.blockedAt, got, tt.want)
+			if got := tt.counts.Within(tt.ceiling); got != tt.want {
+				t.Fatalf("%+v within %q = %v, want %v", tt.counts, tt.ceiling, got, tt.want)
 			}
 		})
 	}

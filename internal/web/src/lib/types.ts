@@ -389,8 +389,11 @@ export interface ReviewBlock {
   // approveWhenInRepo when the repository's .kritika.yaml adds none.
   approveWhen?: Condition[];
   approveWhenInRepo?: Condition[];
-  // approveBlockedAt is the lowest finding severity that withholds approval.
-  approveBlockedAt: Exclude<Severity, 'p0'>;
+  // approveFindings is the most severe finding a review can leave open and
+  // still be approved, and approveRisk the highest risk a scored change can
+  // be rated.
+  approveFindings: 'p2' | 'none';
+  approveRisk: Risk;
   diagram: boolean;
   cost: boolean;
   context: ContextFile[];
@@ -424,7 +427,6 @@ export interface RepoSettings {
     gate: boolean;
     // gateWhen is absent when the gate holds every scored pull request.
     gateWhen?: Condition[];
-    risk: Risk;
     instructions: string;
     // floors is absent when neither the admin nor the repository set any.
     floors?: Partial<Record<Risk, string[]>>;

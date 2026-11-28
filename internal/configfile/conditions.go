@@ -10,13 +10,14 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/prfilter"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // Switch is a setting that a file writes as true or false, or as a block
 // whose when lists the conditions, as a rule's does. A pull request must hold
-// one of those conditions for the setting to be on for it. review.approve
-// and confidence.gate are switches. The block turns the setting on and lists
-// at least one condition. true is how it is on for every pull request.
+// one of those conditions for the setting to be on for it. confidence.gate
+// is a switch. The block turns the setting on and lists at least one
+// condition. true is how it is on for every pull request.
 type Switch struct {
 	On   bool
 	When []When
@@ -47,6 +48,60 @@ func (a Switch) String() string {
 		return strconv.FormatBool(a.On)
 	}
 	return "when " + whenLabel(a.When)
+}
+
+// Approve is review.approve: true or false, or a block that turns approval
+// on and sets what it allows. Findings is the most severe finding that a
+// review can leave open and still be approved, p2 or none. Risk is the
+// highest risk that a change can be rated and still be approved. When lists
+// the conditions, one of which a pull request must hold for to be approved.
+// The block sets at least one of them: true is on with the values that
+// stand.
+type Approve struct {
+	On       bool            `yaml:"-"`
+	When     []When          `yaml:"when"`
+	Findings review.Severity `yaml:"findings"`
+	Risk     review.Risk     `yaml:"risk"`
+}
+
+// UnmarshalYAML takes a boolean, or a mapping with when, findings or risk.
+func (a *Approve) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		return n.Decode(&a.On)
+	}
+	type block Approve
+	var b block
+	// Node.Decode drops the strictness Parse asked for, so Load asks again.
+	if err := n.Load(&b, yaml.WithKnownFields()); err != nil {
+		return err
+	}
+	if b.When != nil && len(b.When) == 0 {
+		return errors.New("when must list at least one condition")
+	}
+	if len(b.When) == 0 && b.Findings == "" && b.Risk == "" {
+		return errors.New("a block must set when, findings or risk; true is on for every pull request")
+	}
+	*a = Approve(b)
+	a.On = true
+	return nil
+}
+
+// String is the value as the Configuration page states it.
+func (a Approve) String() string {
+	var parts []string
+	if a.Findings != "" {
+		parts = append(parts, "findings "+string(a.Findings))
+	}
+	if a.Risk != "" {
+		parts = append(parts, "risk "+string(a.Risk))
+	}
+	if len(a.When) > 0 {
+		parts = append(parts, "when "+whenLabel(a.When))
+	}
+	if len(parts) == 0 {
+		return strconv.FormatBool(a.On)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // whenLabel names conditions, each by its name or else its expression.
@@ -90,12 +145,14 @@ func (r Review) ApprovesFor(vars map[string]any) bool {
 // checkConditions makes sure that the approval, gate, and confidence
 // conditions that one scope writes are valid, the same way as a rule's.
 func checkConditions(r *Overrides) error {
-	for key, s := range map[string]*Switch{keyApprove: r.Review.Approve, keyGate: r.Confidence.Gate} {
-		if s == nil {
-			continue
+	if a := r.Review.Approve; a != nil {
+		if err := CheckWhen(a.When); err != nil {
+			return fmt.Errorf("configfile: %s.%w", keyApprove, err)
 		}
-		if err := CheckWhen(s.When); err != nil {
-			return fmt.Errorf("configfile: %s.%w", key, err)
+	}
+	if g := r.Confidence.Gate; g != nil {
+		if err := CheckWhen(g.When); err != nil {
+			return fmt.Errorf("configfile: %s.%w", keyGate, err)
 		}
 	}
 	if err := CheckWhen(r.Confidence.When); err != nil {

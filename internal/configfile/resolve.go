@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"cmp"
 	"maps"
 	"reflect"
 	"slices"
@@ -63,8 +64,8 @@ func (f *File) Settings(a *Account) Settings {
 		Ignore:      slices.Clone(DefaultIgnore),
 		Agent:       DefaultAgent(),
 		Incremental: IncrementalSettings{MaxDeltaFiles: tuning.Get().ConfigFile.DefaultMaxDeltaFiles},
-		Review:      Review{InlineComments: true, Dashboard: true, ApproveBlockedAt: review.SeverityP1},
-		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow},
+		Review:      Review{InlineComments: true, Dashboard: true, ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
+		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold},
 		Skills:      Skills{Paths: slices.Clone(DefaultSkillPaths)},
 		Providers:   f.providerNames(a),
 	}
@@ -159,9 +160,6 @@ func (s *Settings) apply(o *Overrides) {
 	if g := o.Confidence.Gate; g != nil {
 		s.Confidence.Gate, s.Confidence.GateWhen = g.On, g.When
 	}
-	if o.Confidence.Risk != nil {
-		s.Confidence.Risk = *o.Confidence.Risk
-	}
 	if o.Confidence.Instructions != nil {
 		s.Confidence.Instructions = *o.Confidence.Instructions
 	}
@@ -231,9 +229,8 @@ func (r Review) overlay(o *Overrides) Review {
 	}
 	if a := o.Review.Approve; a != nil {
 		r.Approve, r.ApproveWhen = a.On, a.When
-	}
-	if o.Review.ApproveBlockedAt != nil {
-		r.ApproveBlockedAt = *o.Review.ApproveBlockedAt
+		r.ApproveFindings = cmp.Or(a.Findings, r.ApproveFindings)
+		r.ApproveRisk = cmp.Or(a.Risk, r.ApproveRisk)
 	}
 	if o.Review.Diagram != nil {
 		r.Diagram = *o.Review.Diagram

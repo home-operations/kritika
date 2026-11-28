@@ -29,27 +29,31 @@
           "description": "true requires a suggested fix on every finding. false cannot lift the admin's requirement."
         },
         "approve": {
-          "description": "true approves a pull request whose review finds nothing at P0 or P1, or nothing at all with approveBlockedAt p2. With a confidence score, true approves one whose score reaches the threshold and whose risk is within confidence.risk, and with approveBlockedAt p2 that has no finding open. A later review that no longer allows it dismisses the approval. It replaces the admin's value. A block with when approves only a pull request that one of its conditions holds for, beside the admin's conditions. A pull request that changes .kritika.yaml or another file that configures kritika is never approved.",
+          "description": "true approves a pull request whose review leaves no finding open above findings. With a confidence score, the score must also reach the threshold and the risk stay within risk. A later review that no longer allows it dismisses the approval. true or false replaces the admin's value, and true keeps the admin's findings, risk and conditions. A block turns approval on. A pull request that changes .kritika.yaml or another file that configures kritika is never approved.",
           "anyOf": [
             { "type": "boolean" },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["when"],
+              "minProperties": 1,
               "properties": {
+                "findings": {
+                  "enum": ["p2", "none"],
+                  "description": "The most severe finding that a review can leave open and still be approved. p2, the default, approves a review whose only findings are P2s. none approves only a review that leaves no finding open, with or without a confidence score. It can only lower the admin's value."
+                },
+                "risk": {
+                  "enum": ["low", "medium", "high", "critical"],
+                  "description": "The highest risk that a change can be rated and still be approved, where a confidence score is asked for. It can only lower the admin's value."
+                },
                 "when": {
                   "type": "array",
                   "minItems": 1,
-                  "description": "Conditions, as a rule's. One of them must hold for a pull request to be approved. An approval of a pull request that they stop holding for is dismissed.",
+                  "description": "Conditions, as a rule's. One of them must hold for a pull request to be approved, beside the admin's conditions. An approval of a pull request that they stop holding for is dismissed.",
                   "items": { "$ref": "#/$defs/when" }
                 }
               }
             }
           ]
-        },
-        "approveBlockedAt": {
-          "enum": ["p1", "p2"],
-          "description": "The lowest finding severity that withholds approval. p1, the default, approves a review whose only findings are P2s. p2 approves only a review with no open finding, with or without a confidence score. It can only lower the admin's value."
         },
         "diagram": {
           "type": "boolean",
@@ -214,10 +218,6 @@
               }
             }
           ]
-        },
-        "risk": {
-          "enum": ["low", "medium", "high", "critical"],
-          "description": "The highest risk that a change can be rated and still be approved. It can only lower the admin's value."
         },
         "floors": {
           "type": "object",

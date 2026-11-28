@@ -21,15 +21,15 @@ func adminSettings() configfile.Settings {
 	return configfile.Settings{
 		Enabled: true, Ignore: []string{"vendor/**"},
 		Models:     configfile.Models{Review: "p/big", Effort: model.EffortHigh},
-		Confidence: configfile.Confidence{Effort: model.EffortHigh, Threshold: 5, Risk: review.RiskMedium},
+		Confidence: configfile.Confidence{Effort: model.EffortHigh, Threshold: 5},
 		Filters: configfile.Filters{
 			Include: []configfile.Filter{{Name: "wanted", Expr: `pr.labels.exists(l, l.name == "needs-review")`}},
 			Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
 		},
 		Agent: configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute},
 		Review: configfile.Review{
-			RequireSuggestedFix: true,
-			Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
+			RequireSuggestedFix: true, ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskMedium,
+			Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
 			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}, {ID: "house-style", File: "docs/rules.md"}},
 		},
 		Skills: configfile.Skills{
@@ -113,7 +113,7 @@ func TestMerge(t *testing.T) {
 				s.Review.Approve, s.Review.ApproveWhenInRepo = true, []configfile.When{{Name: "bumps", Expr: "pr.bot"}}
 			},
 		},
-		{name: "an approval block with no conditions", doc: "review: { approve: {} }\n", wantErr: "a block must list when conditions"},
+		{name: "an empty approval block", doc: "review: { approve: {} }\n", wantErr: "a block must set when, findings or risk"},
 		{name: "an approval condition on the diff", doc: "review: { approve: { when: [{ expr: 'pr.lines > 1' }] } }\n",
 			wantErr: "review.approve.when[0]: pr.lines"},
 		{
@@ -179,16 +179,7 @@ func TestMerge(t *testing.T) {
 				`.kritika.yaml: confidence.fallback "q/small" was dropped; allowed: a model of own, p`,
 			},
 		},
-		{
-			name: "confidence.risk may only lower the admin's", doc: "confidence: { risk: low }\n",
-			want: func(s *configfile.Settings) { s.Confidence.Risk = review.RiskLow },
-		},
-		{
-			name: "a confidence.risk above the admin's, or no level, is dropped", doc: "confidence: { risk: critical }\n",
-			dropped: []string{
-				`.kritika.yaml: confidence.risk "critical" was dropped; allowed: medium or lower`,
-			},
-		},
+		{name: "a risk under confidence, which is approval's", doc: "confidence: { risk: low }\n", wantErr: "field risk not found"},
 		{name: "the risk instructions are the admin's alone", doc: "confidence: { instructions: all low }\n", wantErr: "field instructions not found"},
 		{
 			name: "risk floors where the admin sets none", doc: "confidence: { floors: { critical: ['db/migrations/**'] } }\n",
@@ -523,39 +514,46 @@ func TestMergeKeepsAdminApprovalConditions(t *testing.T) {
 	}
 }
 
-// TestMergeApproveBlockedAt: a file can lower the severity that withholds
-// approval from the admin's, never raise it, so it cannot approve findings
-// that the admin's setting withholds approval for.
-func TestMergeApproveBlockedAt(t *testing.T) {
+// TestMergeApproveCeilings: a file's approve block can lower the admin's
+// findings and risk, never raise them, so it cannot approve what the admin's
+// setting withholds approval for. The block turns approval on, and true
+// keeps the admin's ceilings.
+func TestMergeApproveCeilings(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
-		name          string
-		admin, file   review.Severity
-		want, dropped string
+		name                    string
+		admin                   configfile.Review
+		doc                     string
+		findings, risk, dropped string
 	}{
-		{name: "unset keeps the admin's", admin: review.SeverityP1, want: "p1"},
-		{name: "p2 lowers the admin's p1", admin: review.SeverityP1, file: review.SeverityP2, want: "p2"},
-		{name: "p1 under the admin's p1", admin: review.SeverityP1, file: review.SeverityP1, want: "p1"},
-		{name: "p1 cannot raise the admin's p2", admin: review.SeverityP2, file: review.SeverityP1, want: "p2",
-			dropped: `.kritika.yaml: review.approveBlockedAt "p1" was dropped; allowed: p2`},
-		{name: "p0 is no setting", admin: review.SeverityP1, file: review.SeverityP0, want: "p1",
-			dropped: `.kritika.yaml: review.approveBlockedAt "p0" was dropped; allowed: p1 or p2`},
-		{name: "a level that is none is dropped", admin: review.SeverityP2, file: "p3", want: "p2",
-			dropped: `.kritika.yaml: review.approveBlockedAt "p3" was dropped; allowed: p2`},
+		{name: "true keeps the admin's", admin: configfile.Review{ApproveFindings: review.SeverityNone, ApproveRisk: review.RiskMedium},
+			doc: "review: { approve: true }\n", findings: "none", risk: "medium"},
+		{name: "none lowers the admin's p2", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
+			doc: "review: { approve: { findings: none } }\n", findings: "none", risk: "low"},
+		{name: "p2 under the admin's p2", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
+			doc: "review: { approve: { findings: p2 } }\n", findings: "p2", risk: "low"},
+		{name: "p2 cannot raise the admin's none", admin: configfile.Review{ApproveFindings: review.SeverityNone, ApproveRisk: review.RiskLow},
+			doc: "review: { approve: { findings: p2 } }\n", findings: "none", risk: "low",
+			dropped: `.kritika.yaml: review.approve.findings "p2" was dropped; allowed: none`},
+		{name: "p1 is no findings ceiling", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskLow},
+			doc: "review: { approve: { findings: p1 } }\n", findings: "p2", risk: "low",
+			dropped: `.kritika.yaml: review.approve.findings "p1" was dropped; allowed: p2 or none`},
+		{name: "a risk lowers the admin's", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskHigh},
+			doc: "review: { approve: { risk: medium } }\n", findings: "p2", risk: "medium"},
+		{name: "a risk above the admin's, or no level, is dropped", admin: configfile.Review{ApproveFindings: review.SeverityP2, ApproveRisk: review.RiskMedium},
+			doc: "review: { approve: { risk: critical, findings: none } }\n", findings: "none", risk: "medium",
+			dropped: `.kritika.yaml: review.approve.risk "critical" was dropped; allowed: medium or lower`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			op := configfile.Settings{Review: configfile.Review{ApproveBlockedAt: tt.admin}}
-			doc := "review: { approve: true }\n"
-			if tt.file != "" {
-				doc = "review: { approveBlockedAt: " + string(tt.file) + " }\n"
-			}
-			m, err := Merge([]byte(doc), op)
+			m, err := Merge([]byte(tt.doc), configfile.Settings{Review: tt.admin})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(m.Review.ApproveBlockedAt) != tt.want || strings.Join(m.Dropped, "\n") != tt.dropped {
-				t.Fatalf("approveBlockedAt = %q dropped %q, want %q and %q", m.Review.ApproveBlockedAt, m.Dropped, tt.want, tt.dropped)
+			r := m.Review
+			if !r.Approve || string(r.ApproveFindings) != tt.findings || string(r.ApproveRisk) != tt.risk || strings.Join(m.Dropped, "\n") != tt.dropped {
+				t.Fatalf("approve %v, findings %q, risk %q, dropped %q; want on, %q, %q and %q",
+					r.Approve, r.ApproveFindings, r.ApproveRisk, m.Dropped, tt.findings, tt.risk, tt.dropped)
 			}
 		})
 	}

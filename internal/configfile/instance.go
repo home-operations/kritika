@@ -12,9 +12,9 @@ type FileLayer struct {
 	Review    FileValue
 	Fallback  FileValue
 	// Defaults are the other configuration values that it writes: review
-	// effort, approve, approveBlockedAt, fixes, incremental, diagram, the
-	// confidence model, fallback, effort, threshold, gate and risk, and limit,
-	// in that order, by their policy keys.
+	// effort, approve, fixes, incremental, diagram, the confidence model,
+	// fallback, effort, threshold and gate, and limit, in that order, by
+	// their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
@@ -70,7 +70,6 @@ func (f *File) FileLayer() FileLayer {
 	}{
 		{keyEffort, string(deref(d.Review.Effort)), d.Review.Effort != nil},
 		{keyApprove, deref(d.Review.Approve).String(), d.Review.Approve != nil},
-		{keyApproveBlockedAt, string(deref(d.Review.ApproveBlockedAt)), d.Review.ApproveBlockedAt != nil},
 		{keyFixes, strconv.FormatBool(deref(d.Review.Fixes)), d.Review.Fixes != nil},
 		{keyIncremental, strconv.Itoa(deref(d.Review.Incremental)), d.Review.Incremental != nil},
 		{keyDiagram, strconv.FormatBool(deref(d.Review.Diagram)), d.Review.Diagram != nil},
@@ -80,7 +79,6 @@ func (f *File) FileLayer() FileLayer {
 		{keyScorerEffort, string(deref(d.Confidence.Effort)), d.Confidence.Effort != nil},
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyGate, deref(d.Confidence.Gate).String(), d.Confidence.Gate != nil},
-		{keyRisk, string(deref(d.Confidence.Risk)), d.Confidence.Risk != nil},
 		{keyConfidenceWhen, whenLabel(d.Confidence.When), d.Confidence.When != nil},
 		{keyLimit, strconv.Itoa(deref(d.Trigger.Limit)), d.Trigger.Limit != nil},
 		{keySettle, deref(d.Trigger.Settle).String(), d.Trigger.Settle != nil},
