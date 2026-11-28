@@ -74,6 +74,8 @@
       "inlineComments": true,
       "dashboard": true,
       "approve": false,
+      "approveFindings": "p2",
+      "approveRisk": "low",
       "diagram": false,
       "cost": false,
       "context": [
@@ -90,7 +92,6 @@
       "effort": "low",
       "threshold": 5,
       "gate": false,
-      "risk": "low",
       "instructions": "Image bumps are low."
     },
     "skills": {
@@ -169,6 +170,8 @@
         "inlineComments": true,
         "dashboard": true,
         "approve": false,
+        "approveFindings": "p2",
+        "approveRisk": "low",
         "diagram": false,
         "cost": false,
         "context": [
@@ -185,7 +188,6 @@
         "effort": "low",
         "threshold": 5,
         "gate": false,
-        "risk": "low",
         "instructions": "Image bumps are low."
       },
       "skills": {

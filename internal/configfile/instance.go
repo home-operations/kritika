@@ -13,7 +13,7 @@ type FileLayer struct {
 	Fallback  FileValue
 	// Defaults are the other configuration values that it writes: review
 	// effort, approve, fixes, incremental, diagram, the confidence model,
-	// fallback, effort, threshold, gate and risk, and limit, in that order, by
+	// fallback, effort, threshold and gate, and limit, in that order, by
 	// their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
@@ -79,7 +79,6 @@ func (f *File) FileLayer() FileLayer {
 		{keyScorerEffort, string(deref(d.Confidence.Effort)), d.Confidence.Effort != nil},
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyGate, deref(d.Confidence.Gate).String(), d.Confidence.Gate != nil},
-		{keyRisk, string(deref(d.Confidence.Risk)), d.Confidence.Risk != nil},
 		{keyConfidenceWhen, whenLabel(d.Confidence.When), d.Confidence.When != nil},
 		{keyLimit, strconv.Itoa(deref(d.Trigger.Limit)), d.Trigger.Limit != nil},
 		{keySettle, deref(d.Trigger.Settle).String(), d.Trigger.Settle != nil},

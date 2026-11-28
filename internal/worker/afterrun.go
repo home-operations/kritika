@@ -91,7 +91,7 @@ func (w *Review) afterRun(
 					logger.Warn("approval left as it stands", "error", err)
 					return nil
 				}
-				carryApproval(ctx, logger, scope, client, pr, eff.Settings, pack.carried, own)
+				carryApproval(ctx, logger, scope, client, pr, eff.Settings, pack.carried, pack.open, own)
 			}
 			return nil
 		})
@@ -140,6 +140,7 @@ func afterRunEnded(args jobs.ReviewArgs, pr *pullRequest, reviewID string, clien
 type preparationRecord struct {
 	store.ContextPackRecord
 	carried *review.Confidence
+	open    review.Counts
 }
 
 // recordPreparation gathers the facts for one outcome decision and persists
@@ -185,7 +186,7 @@ func (w *Review) recordPreparation(
 			return store.MarkReviewPrepared(ctx, tx, reviewID, pack.PatchID, pack.Scope, pack.ScopeReason, priorID)
 		}
 		if pack.SkipReason == runspec.SkipUnchangedPatch {
-			pack.carried, _, err = carriedConfidence(ctx, tx, prID, reviewID, confidence)
+			pack.carried, pack.open, _, err = carriedConfidence(ctx, tx, prID, reviewID, confidence)
 			if err != nil {
 				return err
 			}

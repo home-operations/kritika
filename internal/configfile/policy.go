@@ -28,7 +28,6 @@ const (
 	keyScorerEffort   = "confidence.effort"
 	keyThreshold      = "confidence.threshold"
 	keyGate           = "confidence.gate"
-	keyRisk           = "confidence.risk"
 	keyFloors         = "confidence.floors"
 	keyConfidenceWhen = "confidence.when"
 	keyLimit          = "trigger.limit"
@@ -47,6 +46,8 @@ var Policies = []string{
 	keyEffort,
 	keyFixes,
 	keyApprove,
+	"review.approve.findings",
+	"review.approve.risk",
 	keyIncremental,
 	keyDiagram,
 	keyCost,
@@ -55,7 +56,6 @@ var Policies = []string{
 	keyScorerEffort,
 	keyThreshold,
 	keyGate,
-	keyRisk,
 	"confidence.instructions",
 	keyFloors,
 	keyConfidenceWhen,

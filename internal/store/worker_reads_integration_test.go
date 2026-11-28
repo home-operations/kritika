@@ -180,6 +180,9 @@ func TestReviewHistorySelection(t *testing.T) {
 			return nil
 		}))
 	})
+	t.Run("a dismissed finding is not open", func(t *testing.T) {
+		checkBaselineOpen(t, s, ctx, account, prID)
+	})
 	t.Run("current head wins over later completion", func(t *testing.T) {
 		checkCurrentHeadHistory(t, s, ctx, account, prID, id)
 	})
@@ -195,6 +198,35 @@ func TestReviewHistorySelection(t *testing.T) {
 			return nil
 		}))
 	})
+}
+
+// checkBaselineOpen: the baseline's open findings are those that no
+// dismissal of the pull request names.
+func checkBaselineOpen(t *testing.T, s *Store, ctx context.Context, account, prID string) {
+	t.Helper()
+	err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		baseline, err := LastReviewBaseline(ctx, tx, prID, "")
+		if err != nil {
+			return err
+		}
+		if baseline.Open != (review.Counts{P1: 1}) {
+			t.Fatalf("open findings = %+v, want the P1", baseline.Open)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO dismissals (account_id, pull_request_id, fingerprint, comment_id) VALUES ($1, $2, 'fp', 7)`,
+			account, prID); err != nil {
+			return err
+		}
+		if baseline, err = LastReviewBaseline(ctx, tx, prID, ""); err != nil {
+			return err
+		}
+		if baseline.Open != (review.Counts{}) {
+			t.Fatalf("open findings after the dismissal = %+v, want none", baseline.Open)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func checkFollowupStoreContracts(t *testing.T, s *Store, ctx context.Context, account, other, prID string) {

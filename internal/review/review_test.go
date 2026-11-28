@@ -394,6 +394,29 @@ func TestCounts(t *testing.T) {
 	}
 }
 
+func TestCountsWithin(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		counts  Counts
+		ceiling Severity
+		want    bool
+	}{
+		{name: "nothing found is within p2", ceiling: SeverityP2, want: true},
+		{name: "nothing found is within none", ceiling: SeverityNone, want: true},
+		{name: "P2s are within p2", counts: Counts{P2: 2}, ceiling: SeverityP2, want: true},
+		{name: "a P2 is not within none", counts: Counts{P2: 1}, ceiling: SeverityNone},
+		{name: "a P1 is not within p2", counts: Counts{P1: 1}, ceiling: SeverityP2},
+		{name: "a P0 is not within none", counts: Counts{P0: 1}, ceiling: SeverityNone},
+		{name: "no ceiling is p2", counts: Counts{P2: 1}, want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.counts.Within(tt.ceiling); got != tt.want {
+				t.Fatalf("%+v within %q = %v, want %v", tt.counts, tt.ceiling, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFingerprint(t *testing.T) {
 	base := Fingerprint(Finding{Path: "main.go", Title: "Nil map write"})
 	tests := []struct {

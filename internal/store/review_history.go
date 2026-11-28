@@ -179,12 +179,16 @@ type ReviewBaseline struct {
 	// both of its names, as its context pack records. It is nil when none
 	// was written.
 	Changed []string
+	// Open counts the baseline's findings that no dismissal of the pull
+	// request names, on and off the diff, as its approval counted them.
+	Open review.Counts
 }
 
-// LastReviewBaseline returns the latest reusable review's patch, score and
-// changed paths. It excludes reviewID when nonempty. No baseline yields a
-// zero value, and SQL NULL or JSON null confidence yields a nil score. The
-// caller chooses the threshold and the risk floors to apply to the score.
+// LastReviewBaseline returns the latest reusable review's patch, score,
+// changed paths and open findings. It excludes reviewID when nonempty. No
+// baseline yields a zero value, and SQL NULL or JSON null confidence yields a
+// nil score. The caller chooses the threshold and the risk floors to apply to
+// the score.
 func LastReviewBaseline(ctx context.Context, tx pgx.Tx, prID, reviewID string) (ReviewBaseline, error) {
 	var baseline ReviewBaseline
 	var id string
@@ -205,6 +209,13 @@ func LastReviewBaseline(ctx context.Context, tx pgx.Tx, prID, reviewID string) (
 		WHERE rr.review_id = $1 ORDER BY c.created_at DESC LIMIT 1`, id).Scan(&baseline.Changed)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return ReviewBaseline{}, fmt.Errorf("store: read last review baseline's paths: %w", err)
+	}
+	err = tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE severity = 'p0'), count(*) FILTER (WHERE severity = 'p1'),
+		count(*) FILTER (WHERE severity = 'p2') FROM findings f WHERE f.review_id = $1
+		AND NOT EXISTS (SELECT 1 FROM dismissals d WHERE d.pull_request_id = $2 AND d.fingerprint = f.fingerprint)`, id, prID).
+		Scan(&baseline.Open.P0, &baseline.Open.P1, &baseline.Open.P2)
+	if err != nil {
+		return ReviewBaseline{}, fmt.Errorf("store: count last review baseline's open findings: %w", err)
 	}
 	return baseline, nil
 }

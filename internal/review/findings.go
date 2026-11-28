@@ -53,6 +53,10 @@ const (
 
 var severities = []Severity{SeverityP0, SeverityP1, SeverityP2}
 
+// SeverityNone is no finding's severity. As the most severe finding that a
+// review can leave open and still be approved, it allows none.
+const SeverityNone Severity = "none"
+
 // Valid reports whether s is one of the severities.
 func (s Severity) Valid() bool { return slices.Contains(severities, s) }
 
@@ -235,10 +239,12 @@ func (r Result) Counts() Counts {
 // Total is the number of findings at any severity.
 func (c Counts) Total() int { return c.P0 + c.P1 + c.P2 }
 
-// Approvable reports whether the result lets kritika approve the pull
-// request: nothing at P0 or P1, so P2s alone do not
-// withhold an approval.
-func (c Counts) Approvable() bool { return c.P0 == 0 && c.P1 == 0 }
+// Within reports whether no finding is more severe than ceiling, the most
+// severe finding that a review can leave open and still be approved. P0s
+// and P1s are within no ceiling, and P2s within any but SeverityNone.
+func (c Counts) Within(ceiling Severity) bool {
+	return c.P0 == 0 && c.P1 == 0 && (ceiling != SeverityNone || c.P2 == 0)
+}
 
 // DropReason says why Parse discarded a finding.
 type DropReason string

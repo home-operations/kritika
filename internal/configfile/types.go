@@ -201,11 +201,11 @@ type Overrides struct {
 
 // ReviewSpec sets how a review is done. It sets the models. A role written
 // here, even empty, replaces kritika's default. It sets how hard they reason,
-// whether a finding must carry a suggested fix, and whether the review
-// approves. It sets how many files can change since the last review before a
-// re-review covers the whole pull request again. It also sets whether the
-// summary draws the change's flow, and whether its footer states the pull
-// request's spend.
+// whether a finding must carry a suggested fix, and whether and what the
+// review approves. It sets how many files can change since the last review
+// before a re-review covers the whole pull request again. It also sets
+// whether the summary draws the change's flow, and whether its footer states
+// the pull request's spend.
 type ReviewSpec struct {
 	Model    *ReviewModel `yaml:"model,omitempty"`
 	Fallback *ModelRef    `yaml:"fallback,omitempty"`
@@ -213,7 +213,7 @@ type ReviewSpec struct {
 	// to the provider.
 	Effort      *model.Effort `yaml:"effort,omitempty"`
 	Fixes       *bool         `yaml:"fixes,omitempty"`
-	Approve     *Switch       `yaml:"approve,omitempty"`
+	Approve     *Approve      `yaml:"approve,omitempty"`
 	Incremental *int          `yaml:"incremental,omitempty"`
 	Diagram     *bool         `yaml:"diagram,omitempty"`
 	Cost        *bool         `yaml:"cost,omitempty"`
@@ -227,8 +227,7 @@ type ReviewSpec struct {
 // the reviewed pull request and the one that takes its call when it fails. A
 // model written here, even empty, replaces kritika's default. It sets how
 // hard they reason, the score that the pull request must reach, and whether
-// the commit status fails under it. It sets the highest risk that a change
-// can carry and still be approved. It also sets the admin's guidance to the
+// the commit status fails under it. It also sets the admin's guidance to the
 // scorer on rating risk and the least risk that a change to some paths is
 // rated.
 type ConfidenceSpec struct {
@@ -237,7 +236,6 @@ type ConfidenceSpec struct {
 	Effort       *model.Effort `yaml:"effort,omitempty"`
 	Threshold    *int          `yaml:"threshold,omitempty"`
 	Gate         *Switch       `yaml:"gate,omitempty"`
-	Risk         *review.Risk  `yaml:"risk,omitempty"`
 	Instructions *string       `yaml:"instructions,omitempty"`
 	Floors       RiskFloors    `yaml:"floors,omitempty"`
 	// When are the conditions one of which a pull request must hold for to
@@ -304,8 +302,6 @@ type Confidence struct {
 	// its score and passes.
 	Gate     bool   `json:"gate"`
 	GateWhen []When `json:"gateWhen,omitempty"`
-	// Risk is the highest risk a change can be rated and still be approved.
-	Risk review.Risk `json:"risk"`
 	// Instructions are the admin's guidance to the scorer on rating risk.
 	// A repository's own file cannot set them: a pull request must not be
 	// able to talk its risk down.
@@ -527,10 +523,11 @@ type Review struct {
 	// no re-run badge, and each severity is its label in text rather than
 	// an image the dashboard serves.
 	Dashboard bool `json:"dashboard"`
-	// Approve is true to approve a pull request whose review found nothing
-	// at P0 or P1. Where a confidence score is asked for, it approves a pull
-	// request whose score and risk allow it. True also dismisses that approval
-	// when a later review's do not allow it. Off unless set.
+	// Approve is true to approve a pull request whose review leaves no
+	// finding open above ApproveFindings. Where a confidence score is asked
+	// for, the score must reach the threshold and the risk stay within
+	// ApproveRisk as well. True also dismisses that approval when a later
+	// review's do not allow it. Off unless set.
 	Approve bool `json:"approve"`
 	// ApproveWhen are review.approve's conditions, one of which a pull
 	// request must hold for to be approved, none for every one. An
@@ -539,6 +536,13 @@ type Review struct {
 	// hold as well, so the file never approves what the admin's keep out.
 	ApproveWhen       []When `json:"approveWhen,omitempty"`
 	ApproveWhenInRepo []When `json:"approveWhenInRepo,omitempty"`
+	// ApproveFindings is the most severe finding that a review can leave
+	// open and still be approved: p2 unless set, or none. P2s take nothing
+	// off a confidence score, so none holds with or without one.
+	ApproveFindings review.Severity `json:"approveFindings"`
+	// ApproveRisk is the highest risk that a change can be rated and still
+	// be approved, low unless set. Only a confidence score rates a risk.
+	ApproveRisk review.Risk `json:"approveRisk"`
 	// Diagram is true to have the summary draw the flow the change adds
 	// or alters as a Mermaid diagram. Off unless set: it costs output
 	// tokens on every review.

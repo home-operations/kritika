@@ -41,11 +41,12 @@ func (f *approvalForge) DismissApprovals(_ context.Context, owner, repo string, 
 
 func TestApprove(t *testing.T) {
 	t.Parallel()
-	scored := configfile.Confidence{Model: "p/judge", Threshold: 4, Risk: review.RiskMedium}
+	scored := configfile.Confidence{Model: "p/judge", Threshold: 4}
 	const approves, withdraws = "o/r#7@abcdef1234", "o/r#7: kritika: "
 	tests := []struct {
 		name                string
 		counts              review.Counts
+		findings            review.Severity
 		want                configfile.Confidence
 		confidence          *review.Confidence
 		unscored, requested bool
@@ -60,6 +61,10 @@ func TestApprove(t *testing.T) {
 			outcome: review.Approval{Approved: true, Reason: "nothing at P0 or P1 found"}},
 		{name: "nits alone approve", counts: review.Counts{P2: 3}, approved: approves,
 			outcome: review.Approval{Approved: true, Reason: "nothing at P0 or P1 found"}},
+		{name: "nothing found approves under none", findings: review.SeverityNone, approved: approves,
+			outcome: review.Approval{Approved: true, Reason: "nothing found"}},
+		{name: "nits withdraw under none", counts: review.Counts{P2: 3}, findings: review.SeverityNone,
+			dismissed: withdraws + "0 P0, 0 P1 and 3 P2 finding(s) at abcdef1.", outcome: review.Approval{Reason: "0 P0, 0 P1 and 3 P2 finding(s)"}},
 		{name: "an important finding withdraws", counts: review.Counts{P1: 1, P2: 1},
 			dismissed: withdraws + "0 P0 and 1 P1 finding(s) at abcdef1.", outcome: review.Approval{Reason: "0 P0 and 1 P1 finding(s)"}},
 		{name: "a blocking finding withdraws", counts: review.Counts{P0: 2},
@@ -70,6 +75,16 @@ func TestApprove(t *testing.T) {
 			confidence: &review.Confidence{Score: 4, Threshold: 4, Risk: review.RiskMedium},
 			// The confidence line states the score and the risk already.
 			approved: approves, outcome: review.Approval{Approved: true}},
+		{name: "a score and a risk within bounds approve nits under p2", counts: review.Counts{P2: 2}, findings: review.SeverityP2, want: scored,
+			confidence: &review.Confidence{Score: 5, Threshold: 4, Risk: review.RiskLow}, approved: approves, outcome: review.Approval{Approved: true}},
+		{name: "a score and a risk within bounds approve nothing found under none", findings: review.SeverityNone, want: scored,
+			confidence: &review.Confidence{Score: 5, Threshold: 4, Risk: review.RiskLow}, approved: approves, outcome: review.Approval{Approved: true}},
+		{name: "an important finding withdraws whatever the score", counts: review.Counts{P1: 1}, findings: review.SeverityP2,
+			want: configfile.Confidence{Model: "p/judge", Threshold: 3}, confidence: &review.Confidence{Score: 3, Threshold: 3, Risk: review.RiskLow},
+			dismissed: withdraws + "0 P0 and 1 P1 finding(s) at abcdef1.", outcome: review.Approval{Reason: "0 P0 and 1 P1 finding(s)"}},
+		{name: "nits withdraw under none whatever the score", counts: review.Counts{P2: 1}, findings: review.SeverityNone, want: scored,
+			confidence: &review.Confidence{Score: 5, Threshold: 4, Risk: review.RiskLow},
+			dismissed:  withdraws + "0 P0, 0 P1 and 1 P2 finding(s) at abcdef1.", outcome: review.Approval{Reason: "0 P0, 0 P1 and 1 P2 finding(s)"}},
 		{name: "a score under the threshold withdraws, whatever was found", want: scored,
 			confidence: &review.Confidence{Score: 3, Threshold: 4, Risk: review.RiskLow},
 			dismissed:  withdraws + "confidence 3/5 is below the threshold of 4 at abcdef1.", outcome: review.Approval{Reason: "confidence 3/5 is below the threshold of 4"}},
@@ -107,7 +122,9 @@ func TestApprove(t *testing.T) {
 			f := &approvalForge{err: tt.err, requested: tt.requested, reviewsErr: tt.reviewsErr}
 			p := &publishPhase{
 				client: f, pr: &pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, logger: slog.New(slog.DiscardHandler),
-				settings: configfile.Settings{Confidence: tt.want}, confidence: tt.confidence, unscored: tt.unscored, unfinished: tt.unfinished,
+				settings:   configfile.Settings{Review: configfile.Review{ApproveFindings: tt.findings, ApproveRisk: review.RiskMedium}, Confidence: tt.want},
+				confidence: tt.confidence,
+				unscored:   tt.unscored, unfinished: tt.unfinished,
 				ownChanged: tt.own,
 			}
 			got := p.approve(t.Context(), tt.counts, !tt.moved, approvalInScope)

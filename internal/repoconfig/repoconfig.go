@@ -62,8 +62,10 @@ type Review struct {
 	Fallback configfile.ModelRef    `yaml:"fallback,omitempty"`
 	Effort   *model.Effort          `yaml:"effort,omitempty"`
 	Fixes    *bool                  `yaml:"fixes,omitempty"`
-	Approve  *configfile.Switch     `yaml:"approve,omitempty"`
-	Diagram  *bool                  `yaml:"diagram,omitempty"`
+	// Approve's findings and risk can only lower the admin's, so a file
+	// cannot approve what the admin's setting withholds approval for.
+	Approve *configfile.Approve `yaml:"approve,omitempty"`
+	Diagram *bool               `yaml:"diagram,omitempty"`
 	// Agents add agents of the repository's own. Its own that replace the
 	// default pass replace the admin's. Under the name of an admin's
 	// specialist, they can only add rules and skill scopes to it.
@@ -82,17 +84,14 @@ func (r Review) ownAgents() []configfile.Reviewer {
 // it fails. Each is a "<provider>/<model>" of a provider that its account can
 // use. It also has how hard they reason, as Review.Effort, the score that it
 // must reach, and whether the commit status fails under that score. All of
-// these replace the admin's. It also has the highest risk that a change can
-// carry and still be approved, which can only lower the admin's, and the
-// least risk that a change to some paths is rated, which adds to the
-// admin's.
+// these replace the admin's. It also has the least risk that a change to
+// some paths is rated, which adds to the admin's.
 type Confidence struct {
 	Model     configfile.ModelRef   `yaml:"model,omitempty"`
 	Fallback  configfile.ModelRef   `yaml:"fallback,omitempty"`
 	Effort    *model.Effort         `yaml:"effort,omitempty"`
 	Threshold *int                  `yaml:"threshold,omitempty"`
 	Gate      *configfile.Switch    `yaml:"gate,omitempty"`
-	Risk      review.Risk           `yaml:"risk,omitempty"`
 	Floors    configfile.RiskFloors `yaml:"floors,omitempty"`
 	When      []configfile.When     `yaml:"when,omitempty"`
 }
@@ -197,11 +196,15 @@ func Parse(data []byte) (File, error) {
 	if err := configfile.CheckRules(f.Rules); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
-	for key, s := range map[string]*configfile.Switch{"review.approve": f.Review.Approve, "confidence.gate": f.Confidence.Gate} {
-		if s == nil {
-			continue
-		}
-		if err := configfile.CheckWhen(s.When); err != nil {
+	var approveWhen, gateWhen []configfile.When
+	if a := f.Review.Approve; a != nil {
+		approveWhen = a.When
+	}
+	if g := f.Confidence.Gate; g != nil {
+		gateWhen = g.When
+	}
+	for key, when := range map[string][]configfile.When{"review.approve": approveWhen, "confidence.gate": gateWhen} {
+		if err := configfile.CheckWhen(when); err != nil {
 			return File{}, fmt.Errorf("repoconfig: %s.%w", key, err)
 		}
 	}

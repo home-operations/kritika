@@ -3,6 +3,8 @@ package configfile
 import (
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // TestApproveForms: review.approve is true, false, or a block of when
@@ -36,6 +38,56 @@ func TestApproveForms(t *testing.T) {
 	}
 }
 
+// TestApproveCeilings: review.approve's findings is p2 and its risk low
+// unless set. A block that sets either turns approval on, and the
+// Configuration page states them.
+func TestApproveCeilings(t *testing.T) {
+	authEnv(t)
+	f := mustLoad(t, minimal)
+	if r := f.Settings(&f.Accounts[0]).Review; r.Approve || r.ApproveFindings != review.SeverityP2 || r.ApproveRisk != review.RiskLow {
+		t.Fatalf("default approve %v, findings %q, risk %q; want off, p2 and low", r.Approve, r.ApproveFindings, r.ApproveRisk)
+	}
+	f = mustLoad(t, "review:\n  approve: { findings: none, risk: medium }\n"+minimal)
+	if r := f.Settings(&f.Accounts[0]).Review; !r.Approve || r.ApproveFindings != review.SeverityNone || r.ApproveRisk != review.RiskMedium {
+		t.Fatalf("approve %v, findings %q, risk %q; want on, none and medium", r.Approve, r.ApproveFindings, r.ApproveRisk)
+	}
+	if got := defaultValue(f.FileLayer().Defaults, keyApprove); got != "findings none, risk medium" {
+		t.Fatalf("the Configuration page states %q", got)
+	}
+	f = mustLoad(t, "review:\n  approve: { risk: high }\n"+minimal)
+	if r := f.Settings(&f.Accounts[0]).Review; r.ApproveFindings != review.SeverityP2 || r.ApproveRisk != review.RiskHigh {
+		t.Fatalf("findings %q, risk %q; want the default p2 beside high", r.ApproveFindings, r.ApproveRisk)
+	}
+	for name, doc := range map[string]string{
+		"an alias":    "confidence: { when: &none null }\nreview: { approve: { risk: low, when: *none } }\n",
+		"a merge key": "confidence: { when: [{ expr: pr.bot }] }\nreview: { approve: { <<: { when: null }, risk: low } }\n",
+	} {
+		if _, err := load(t, doc+minimal); err == nil || !strings.Contains(err.Error(), "when must not be empty") {
+			t.Fatalf("a null when through %s: err = %v", name, err)
+		}
+	}
+	src := f.Sources(&f.Accounts[0])
+	if src["review.approve.risk"] != SourceDefaults || src["review.approve.findings"] != SourceDefault || src[keyApprove] != SourceDefaults {
+		t.Fatalf("sources = %v; want the risk and the switch from the file, the findings from kritika", src)
+	}
+	for block, want := range map[string]string{
+		"{ findings: p1 }":             `configfile: review.approve.findings must be p2 or none, got "p1"`,
+		"{ findings: p3 }":             `configfile: review.approve.findings must be p2 or none, got "p3"`,
+		"{ risk: none }":               `configfile: review.approve.risk must be low, medium, high or critical, got "none"`,
+		"{ findings: '' }":             "findings must not be empty",
+		"{ findings: none, risk: '' }": "risk must not be empty",
+		"{ risk: low, when: [] }":      "when must not be empty",
+		"{ risk: low, when: null }":    "when must not be empty",
+		"{ risk: low, when: [null] }":  "when must not be empty",
+		"{ findings: none, when: }":    "when must not be empty",
+		"{ enabled: false }":           "field enabled not found",
+	} {
+		if _, err := load(t, "review:\n  approve: "+block+"\n"+minimal); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("approve %s: err = %v, want it to contain %q", block, err, want)
+		}
+	}
+}
+
 func defaultValue(defaults []FileDefault, key string) string {
 	for _, d := range defaults {
 		if d.Key == key {
@@ -48,8 +100,8 @@ func defaultValue(defaults []FileDefault, key string) string {
 func TestApproveRejects(t *testing.T) {
 	authEnv(t)
 	for name, tt := range map[string]struct{ approve, want string }{
-		"an empty block":       {"{}", "a block must list when conditions"},
-		"an empty list":        {"{ when: [] }", "a block must list when conditions"},
+		"an empty block":       {"{}", "a block must set when, findings or risk"},
+		"an empty list":        {"{ when: [] }", "when must not be empty"},
 		"an unknown key":       {"{ if: [] }", "field if not found"},
 		"a number":             {"3", "cannot"},
 		"no expression":        {"{ when: [{ name: a }] }", "review.approve.when[0]: expr is required"},

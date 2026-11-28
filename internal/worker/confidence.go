@@ -284,24 +284,29 @@ func (p *publishPhase) verdict(findings int) (forge.StatusState, string) {
 // carriedConfidence is the confidence that a patch unchanged since its last
 // review keeps. That is the confidence that the pull request's newest
 // completed review other than reviewID got. It is held to the threshold and
-// the risk floors that want sets now. skippable says the patch can be skipped
-// as unchanged. That is always so for a repository that asks for no score.
-// Otherwise it is so only when that review left a score to carry. So a rebase
-// neither passes a patch that failed nor leaves an unscored one unscored.
+// the risk floors that want sets now. open counts that review's findings
+// that no dismissal names, which review.approve's findings can withhold
+// approval for since that review. skippable says the patch can be skipped as
+// unchanged. That is always so for a repository that asks for no score.
+// Otherwise it is so only when that review left a score to carry. So a
+// rebase neither passes a patch that failed nor leaves an unscored one
+// unscored.
 func carriedConfidence(
 	ctx context.Context, tx pgx.Tx, prID, reviewID string, want configfile.Confidence,
-) (c *review.Confidence, skippable bool, err error) {
-	if want.Model == "" {
-		return nil, true, nil
-	}
+) (c *review.Confidence, open review.Counts, skippable bool, err error) {
 	baseline, err := store.LastReviewBaseline(ctx, tx, prID, reviewID)
-	c = baseline.Confidence
-	if err != nil || c == nil {
-		return nil, false, err
+	switch {
+	case err != nil:
+		return nil, review.Counts{}, false, err
+	case want.Model == "":
+		return nil, baseline.Open, true, nil
+	case baseline.Confidence == nil:
+		return nil, review.Counts{}, false, nil
 	}
+	c = baseline.Confidence
 	c.Threshold = want.Threshold
 	c.Hold(want.Floors.Floor(baseline.Changed))
-	return c, true, nil
+	return c, baseline.Open, true, nil
 }
 
 // skipVerdict is the commit status of a review skipped for reason: a
@@ -327,23 +332,27 @@ func skipVerdict(carried *review.Confidence, gate bool, reason string) (forge.St
 
 // carryApproval applies the verdict that an unchanged patch carries to
 // kritika's approval, where the repository has it approve. The skip reviewed
-// nothing. But the threshold, the risk ceiling, or the approval's conditions
-// can move after the score is given, and an approval must not outlive them.
+// nothing. But the threshold, the risk ceiling, the severity that withholds
+// approval, or the approval's conditions can move after the last review, and
+// an approval must not outlive them.
 // The head is the one that the skip was just decided for. scope is
-// judgeApproval's word on the pull request as it stands, and own the paths
-// of the patch that changedOwn gives.
+// judgeApproval's word on the pull request as it stands, open the findings
+// that the carried review left standing, and own the paths of the patch that
+// changedOwn gives.
 func carryApproval(
 	ctx context.Context, logger *slog.Logger, scope approvalScope, client forge.Client, pr *pullRequest,
-	settings configfile.Settings, carried *review.Confidence, own []string,
+	settings configfile.Settings, carried *review.Confidence, open review.Counts, own []string,
 ) {
 	if !settings.Review.Approve {
 		return
 	}
 	// With no score carried the skip has no verdict to apply, unless the
-	// approval it stands on is one kritika must no longer give.
-	if carried == nil && scope != approvalOutOfScope && !settings.Confidence.RepoUnscored && len(own) == 0 {
+	// approval it stands on is one kritika must no longer give: the findings
+	// that stand are above the review.approve findings asked for now.
+	if carried == nil && open.Within(settings.Review.ApproveFindings) && scope != approvalOutOfScope &&
+		!settings.Confidence.RepoUnscored && len(own) == 0 {
 		return
 	}
 	p := &publishPhase{client: client, pr: pr, settings: settings, confidence: carried, ownChanged: own, logger: logger}
-	p.approve(ctx, review.Counts{}, true, scope)
+	p.approve(ctx, open, true, scope)
 }

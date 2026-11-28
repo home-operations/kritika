@@ -471,8 +471,11 @@ func (f *File) validateOverrides(r *Overrides) error {
 	if th := r.Confidence.Threshold; th != nil && !ValidConfidence(*th) {
 		return fmt.Errorf("configfile: %s must be between 0 and %d, got %d", keyThreshold, MaxConfidence, *th)
 	}
-	if risk := r.Confidence.Risk; risk != nil && !risk.Valid() {
-		return fmt.Errorf("configfile: %s must be %s, got %q", keyRisk, review.RiskLevels, *risk)
+	if a := r.Review.Approve; a != nil && a.Risk != "" && !a.Risk.Valid() {
+		return fmt.Errorf("configfile: %s.risk must be %s, got %q", keyApprove, review.RiskLevels, a.Risk)
+	}
+	if a := r.Review.Approve; a != nil && a.Findings != "" && a.Findings != review.SeverityP2 && a.Findings != review.SeverityNone {
+		return fmt.Errorf("configfile: %s.findings must be p2 or none, got %q", keyApprove, a.Findings)
 	}
 	if err := r.Confidence.Floors.Check(); err != nil {
 		return fmt.Errorf("configfile: %w", err)

@@ -226,8 +226,8 @@ func TestConfidenceSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if c := f.Settings(&f.Accounts[0]).Confidence; !reflect.DeepEqual(c, Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow}) {
-		t.Fatalf("confidence = %+v; want no model, the provider's effort, the default threshold and the lowest risk", c)
+	if c := f.Settings(&f.Accounts[0]).Confidence; !reflect.DeepEqual(c, Confidence{Threshold: DefaultConfidenceThreshold}) {
+		t.Fatalf("confidence = %+v; want no model, the provider's effort and the default threshold", c)
 	}
 	for _, tt := range []struct{ name, doc, want string }{
 		{name: "a threshold off the scale", doc: "confidence: { threshold: 6 }\n", want: "configfile: confidence.threshold must be between 0 and 5, got 6"},
@@ -236,8 +236,7 @@ func TestConfidenceSettings(t *testing.T) {
 			want: `configfile: confidence.model references provider "nowhere"`},
 		{name: "a fallback of no declared provider", doc: "confidence: { model: openrouter/judge, fallback: nowhere/judge }\n",
 			want: `configfile: confidence.fallback references provider "nowhere"`},
-		{name: "a risk that is no level", doc: "confidence: { risk: none }\n",
-			want: `configfile: confidence.risk must be low, medium, high or critical, got "none"`},
+		{name: "a risk, which is approval's", doc: "confidence: { risk: medium }\n", want: "field risk not found"},
 		{name: "an effort that is no level", doc: "confidence: { effort: turbo }\n",
 			want: `configfile: confidence.effort must be none, minimal, low, medium, high, xhigh or max, got "turbo"`},
 		{name: "a floor at no level", doc: "confidence: { floors: { none: ['**'] } }\n",
@@ -251,12 +250,12 @@ func TestConfidenceSettings(t *testing.T) {
 			}
 		})
 	}
-	doc := fileWithDefaults + `confidence: { model: openrouter/judge, fallback: openrouter/judge-small, threshold: 4, gate: true, effort: low, risk: medium, instructions: "Image bumps are low.", floors: { critical: ["db/migrations/**"] } }
+	doc := fileWithDefaults + `confidence: { model: openrouter/judge, fallback: openrouter/judge-small, threshold: 4, gate: true, effort: low, instructions: "Image bumps are low.", floors: { critical: ["db/migrations/**"] } }
 `
 	if f, err = Parse([]byte(doc)); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	want := Confidence{Model: "openrouter/judge", Fallback: "openrouter/judge-small", Effort: model.EffortLow, Threshold: 4, Gate: true, Risk: review.RiskMedium,
+	want := Confidence{Model: "openrouter/judge", Fallback: "openrouter/judge-small", Effort: model.EffortLow, Threshold: 4, Gate: true,
 		Instructions: "Image bumps are low.", Floors: RiskFloors{review.RiskCritical: {"db/migrations/**"}}}
 	if got := f.Settings(&f.Accounts[0]).Confidence; !reflect.DeepEqual(got, want) {
 		t.Errorf("confidence = %+v, want %+v", got, want)
@@ -271,7 +270,7 @@ func TestConfidenceSettings(t *testing.T) {
 		layer = append(layer, d.Key+"="+d.Value+" ("+string(d.Source)+")")
 	}
 	if want := []string{"confidence.model=openrouter/judge (file)", "confidence.fallback=openrouter/judge-small (file)", "confidence.effort=low (file)",
-		"confidence.threshold=4 (file)", "confidence.gate=true (file)", "confidence.risk=medium (file)"}; !slices.Equal(layer, want) {
+		"confidence.threshold=4 (file)", "confidence.gate=true (file)"}; !slices.Equal(layer, want) {
 		t.Fatalf("file layer = %v, want %v", layer, want)
 	}
 }

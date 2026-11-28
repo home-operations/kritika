@@ -36,25 +36,25 @@ For custom tools, see [repository tools](#repository-tools).
 Use only the configuration keys that you need. This table shows how each
 key interacts with the admin's policy. Detailed examples follow the table.
 
-| Key                                                          | What it sets                                                                           | Against the admin's value                                                                                    |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `enabled`                                                    | `false` stops reviews, follow-ups (answers to questions in comments) and indexing      | can only turn the repository off                                                                             |
-| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                                            | replaces                                                                                                     |
-| [`review.effort`](#models)                                   | how hard they reason                                                                   | replaces                                                                                                     |
-| `review.fixes`                                               | `true` requires a suggested fix on every finding                                       | can only turn it on                                                                                          |
-| [`review.approve`](#approvals)                               | `true` approves a pull request the review allows, `when` only some                     | replaces, and its `when` holds beside the admin's                                                            |
-| [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                                          | replaces, either way                                                                                         |
-| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it                            | replaces, `risk` can only be lowered, `floors` adds, and `when` holds beside the admin's                     |
-| [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                                       | judged beside the admin's lists                                                                              |
-| `comments.inline`                                            | `false` posts the summary alone, without inline comments                               | replaces                                                                                                     |
-| [`comments.summary`, `comments.finding`](#comment-templates) | templates for the summary and inline comments                                          | replaces                                                                                                     |
-| [`ignore`](#ignored-paths)                                   | paths the review and the index leave out                                               | added                                                                                                        |
-| [`rules`](#rules)                                            | checks the review makes                                                                | added after, and one under an admin's id is dropped                                                          |
-| [`context`](#context)                                        | files that explain the code                                                            | added after                                                                                                  |
-| [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered                     | `paths` replaces, and `scope` adds up                                                                        |
-| [`tools`](#repository-tools)                                 | the tools the reviews can run, beside the image's commands                             | added, and one providing an image command replaces it                                                        |
-| [`linear.teams`](#linear-issues)                             | the Linear teams whose linked issues the review reads                                  | no admin value: the account's Linear key limits what Linear gives                                            |
-| [`review.agents`](#agents)                                   | agents that review beside the default pass (kritika's own instructions), or replace it | specialists added, and one under an admin's name takes only rules and skills. The others replace the admin's |
+| Key                                                          | What it sets                                                                                 | Against the admin's value                                                                                    |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `enabled`                                                    | `false` stops reviews, follow-ups (answers to questions in comments) and indexing            | can only turn the repository off                                                                             |
+| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                                                  | replaces                                                                                                     |
+| [`review.effort`](#models)                                   | how hard they reason                                                                         | replaces                                                                                                     |
+| `review.fixes`                                               | `true` requires a suggested fix on every finding                                             | can only turn it on                                                                                          |
+| [`review.approve`](#approvals)                               | `true` approves a pull request the review allows. A block sets `findings`, `risk` and `when` | replaces, `findings` and `risk` can only be lowered, and `when` holds beside the admin's                     |
+| [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                                                | replaces, either way                                                                                         |
+| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it                                  | replaces, `floors` adds, and `when` holds beside the admin's                                                 |
+| [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                                             | judged beside the admin's lists                                                                              |
+| `comments.inline`                                            | `false` posts the summary alone, without inline comments                                     | replaces                                                                                                     |
+| [`comments.summary`, `comments.finding`](#comment-templates) | templates for the summary and inline comments                                                | replaces                                                                                                     |
+| [`ignore`](#ignored-paths)                                   | paths the review and the index leave out                                                     | added                                                                                                        |
+| [`rules`](#rules)                                            | checks the review makes                                                                      | added after, and one under an admin's id is dropped                                                          |
+| [`context`](#context)                                        | files that explain the code                                                                  | added after                                                                                                  |
+| [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered                           | `paths` replaces, and `scope` adds up                                                                        |
+| [`tools`](#repository-tools)                                 | the tools the reviews can run, beside the image's commands                                   | added, and one providing an image command replaces it                                                        |
+| [`linear.teams`](#linear-issues)                             | the Linear teams whose linked issues the review reads                                        | no admin value: the account's Linear key limits what Linear gives                                            |
+| [`review.agents`](#agents)                                   | agents that review beside the default pass (kritika's own instructions), or replace it       | specialists added, and one under an admin's name takes only rules and skills. The others replace the admin's |
 
 kritika drops a value that the file cannot take, such as a model of an
 undeclared provider. The admin's value applies for that field. A note in
@@ -89,25 +89,37 @@ that is not a level is dropped.
 ### Approvals
 
 `review.approve: true` has kritika approve a pull request that its review
-allows. That is one with no findings at P0 or P1, or, with a confidence
-score, one whose score and risk allow it. The setting replaces the admin's
-in either direction, so a repository can turn it on where the instance
-leaves it off ([approvals](/confidence/#approvals)).
+allows. The setting replaces the admin's in either direction, so a
+repository can turn it on where the instance leaves it off. `true` keeps the
+admin's `findings`, `risk` and conditions
+([approvals](/confidence/#approvals)).
 
-A block with `when` conditions, like a [rule's](#rules), approves only a
-pull request that one of them holds for:
+A block turns approval on and sets what it allows:
 
 ```yaml
 review:
   approve:
+    findings: none
+    risk: low
     when:
       - name: small bumps
         expr: pr.bot && pr.labels.exists(l, l.name in ["type/patch", "type/minor", "type/digest"])
 ```
 
-The block turns approval on, and its conditions hold beside the admin's. A
-pull request must pass both, so the file cannot approve what the admin's
-conditions keep out. `approve: true` also keeps the admin's conditions.
+- `findings` is the most severe finding that a review can leave open and
+  still be approved: `p2` or `none`. With `none`, any open finding
+  withholds approval.
+- `risk` is the highest [risk](/confidence/#risk) that a change can be
+  rated and still be approved, where a confidence score is asked for.
+- `when` lists conditions, like a [rule's](#rules). One of them must hold
+  for a pull request to be approved.
+
+The block sets at least one of these keys, and none of them can be empty.
+`findings` and `risk` can only lower the admin's, and kritika drops a higher
+value. If kritika drops every value in a block that has no conditions,
+approval stays as the admin set it. The conditions hold
+beside the admin's. A pull request must pass both, so the file cannot
+approve what the admin's conditions keep out.
 
 kritika never approves a pull request that changes `.kritika.yaml` or
 another [file that configures kritika](/confidence/#approvals). No
@@ -136,8 +148,7 @@ admin's in either direction.
 `confidence.threshold` and `confidence.gate` replace the admin's. The
 threshold and the gate do so in either direction. The models are held
 to the same providers as `review.model` ([models](#models)). The fallback
-takes the scorer's call when the confidence model fails. `confidence.risk`
-can only lower the admin's, and a higher one is dropped.
+takes the scorer's call when the confidence model fails.
 
 `confidence.gate` can be a block of `when` conditions, as `review.approve`
 can. It then gates only a pull request that one of them holds for. It
