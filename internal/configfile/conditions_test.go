@@ -78,6 +78,7 @@ func TestApproveCeilings(t *testing.T) {
 		"{ findings: none, risk: '' }": "risk must not be empty",
 		"{ risk: low, when: [] }":      "when must not be empty",
 		"{ risk: low, when: null }":    "when must not be empty",
+		"{ risk: low, when: [null] }":  "when must not be empty",
 		"{ findings: none, when: }":    "when must not be empty",
 		"{ enabled: false }":           "field enabled not found",
 	} {

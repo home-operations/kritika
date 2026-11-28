@@ -78,8 +78,7 @@ func (a *Approve) UnmarshalYAML(n *yaml.Node) error {
 		return err
 	}
 	for _, key := range []string{"when", "findings", "risk"} {
-		v, ok := written[key]
-		if list, isList := v.([]any); ok && (v == nil || v == "" || isList && len(list) == 0) {
+		if v, ok := written[key]; ok && (v == nil || v == "") {
 			return fmt.Errorf("%s must not be empty", key)
 		}
 	}
@@ -88,6 +87,11 @@ func (a *Approve) UnmarshalYAML(n *yaml.Node) error {
 	// Node.Decode drops the strictness Parse asked for, so Load asks again.
 	if err := n.Load(&b, yaml.WithKnownFields()); err != nil {
 		return err
+	}
+	// A list's null items decode to no condition, so a when written as
+	// [null] is as empty as [].
+	if _, ok := written["when"]; ok && len(b.When) == 0 {
+		return errors.New("when must not be empty")
 	}
 	if len(b.When) == 0 && b.Findings == "" && b.Risk == "" {
 		return errors.New("a block must set when, findings or risk; true is on for every pull request")
