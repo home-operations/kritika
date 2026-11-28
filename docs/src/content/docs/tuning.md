@@ -471,6 +471,13 @@ it: a River leader from before this release judges a running job by its
 own 3-hour timeout and rescues it at 4 hours. Let any longer job finish
 before rolling back to an earlier release.
 
+The same goes for `jobTimeout.heartbeatInterval` and
+`jobTimeout.abandonedBeats`: a leader from before this release rescues
+every job by the old 180 seconds, whatever window its replica wrote. Roll
+this release out to every serve replica at the default heartbeat settings
+first, and change them in a later rollout. Before rolling back, restore
+the defaults and let the jobs started under the changed ones finish.
+
 A shorter `process.queueDrain` cuts more running reviews, which are
 retried. A shorter `gateway.drain` cuts more model steps. A cut step is
 paid for but not recorded, and the runner's retry is paid for again.

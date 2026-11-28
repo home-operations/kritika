@@ -125,9 +125,11 @@ func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.Ra
 		case status/100 != 2:
 			return fmt.Errorf("%w: GET %s: status %d", ErrForgeAPI, p, status)
 		}
+		total, err := strconv.Atoi(header.Get("X-Total-Count"))
+		counted := err == nil
 		if page > t.ForgejoMaxPages {
 			var rest []json.RawMessage
-			if err := json.Unmarshal(raw, &rest); err == nil && len(rest) == 0 {
+			if err := json.Unmarshal(raw, &rest); err == nil && len(rest) == 0 && (!counted || read >= total) {
 				return nil
 			}
 			break
@@ -137,8 +139,13 @@ func forgejoPages(ctx context.Context, c apiClient, path string, fn func(json.Ra
 			return fmt.Errorf("%w: %s: %w", ErrForgeAPI, path, err)
 		}
 		read += n
-		if total, err := strconv.Atoi(header.Get("X-Total-Count")); n == 0 || err == nil && read >= total {
+		if n == 0 || counted && read >= total {
 			return nil
+		}
+		// An unmet total means more remain, whatever a page past the cap
+		// holds.
+		if counted && page == t.ForgejoMaxPages {
+			break
 		}
 	}
 	return fmt.Errorf("%w: %s: more than %d pages", ErrForgeAPI, path, t.ForgejoMaxPages)

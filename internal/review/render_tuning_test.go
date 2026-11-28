@@ -76,3 +76,28 @@ func TestFallbackNoteNamesTheCap(t *testing.T) {
 		}
 	}
 }
+
+// TestIncompleteWarningSurvivesTheRenderFloor: at the least cap Validate
+// takes, an incomplete review whose notes overflow the default template
+// still warns that it is incomplete, with its reason cut and the notice on
+// earlier heads' findings kept, within the cap.
+func TestIncompleteWarningSurvivesTheRenderFloor(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Review.MaxRenderBytes = tuning.MinRenderBytes })
+	d := RenderData{Number: 42, HeadSHA: "0123456789abcdef", Incomplete: "the run timed out " + strings.Repeat("waiting ", 200)}
+	for range 40 {
+		d.Notes = append(d.Notes, "a command setup failed with a long diagnostic")
+	}
+	if _, err := render(t.Context(), defaultSummary, d, bodyLimit(Marker(42)+"\n")); err == nil {
+		t.Fatal("the notes no longer overflow the default template")
+	}
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if len(body) > tuning.MinRenderBytes {
+		t.Fatalf("summary of %d bytes, want at most %d", len(body), tuning.MinRenderBytes)
+	}
+	for _, want := range []string{Marker(42) + "\n", "**Review incomplete for `0123456`:** the run timed out",
+		"Findings posted for earlier heads may no longer apply."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("summary lost %q:\n%s", want, body)
+		}
+	}
+}

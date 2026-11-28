@@ -22,6 +22,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/runspec"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 // The suite needs a VectorChord-enabled Postgres with three roles, as
@@ -1681,5 +1682,33 @@ func TestRecordRepoConfigOffKeepsTheNewestRead(t *testing.T) {
 				t.Fatalf("off %v, clock running %v; want %v and %v", off, stopped, tt.wantOff, wantStopped)
 			}
 		})
+	}
+}
+
+// TestLeaderLockGoesWithAFailedUnlock: an unlock that cannot be sent, its
+// timeout already past, closes the session rather than handing it back to
+// the pool still holding the lock, so another session takes the lock.
+func TestLeaderLockGoesWithAFailedUnlock(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	tuning.Override(t, func(v *tuning.Values) { v.Store.SessionCloseTimeout = time.Nanosecond })
+	led, err := s.tryLead(ctx, time.Minute, func(context.Context) error { return nil })
+	if err != nil || !led {
+		t.Fatalf("tryLead = %v, %v; want a tenure", led, err)
+	}
+	conn, err := openStore(t).owner.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Release()
+	var got bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, leaderKey).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !got {
+		t.Fatal("the leader lock is still held after a tenure whose unlock failed")
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_unlock_all()`); err != nil {
+		t.Fatal(err)
 	}
 }

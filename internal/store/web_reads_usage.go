@@ -208,11 +208,16 @@ type JobRow struct {
 // comes from the transaction's own setting rather than a parameter that a
 // caller can get wrong. A running job's heartbeat is overdue as
 // AbandonedJobs judges it: claimed longer than tuning's
-// JobTimeout.HeartbeatAbandonedAfter ago, and its last beat older than
-// window, the window that it carries. A discarded job is a recent failure within
-// Store.RecentFailureWindow. Both are the process's values when it is
-// called.
-func jobColumns(window string) string {
+// JobTimeout.HeartbeatAbandonedAfter ago, and its last beat older than the
+// window that it carries. With legacy, job_heartbeats has no window columns
+// yet, and both are the 180 seconds that a leader of that time judges by. A
+// discarded job is a recent failure within Store.RecentFailureWindow. Both
+// are the process's values when it is called.
+func jobColumns(legacy bool) string {
+	claim, window := intervalSQL(tuning.Get().JobTimeout.HeartbeatAbandonedAfter()), heartbeatWindow
+	if legacy {
+		claim, window = intervalSQL(legacyAbandonedAfter), intervalSQL(legacyAbandonedAfter)
+	}
 	return `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.created_at, j.scheduled_at, j.attempted_at, j.finalized_at,
 	coalesce(j.args->>'repository_id', ''), coalesce(r.name, ''), coalesce((j.args->>'number')::int, 0),
 	coalesce(j.args->>'head_sha', j.args->>'commit_sha', ''), coalesce(j.args->>'trigger', ''),
@@ -224,7 +229,7 @@ func jobColumns(window string) string {
 		AND v.status IN ('running', 'prepared') AND v.cancel_requested_at IS NULL ORDER BY v.created_at DESC LIMIT 1), ''),
 	h.heartbeat_at,
 	coalesce(j.state = 'running' AND j.attempted_at IS NOT NULL
-		AND j.attempted_at < now() - ` + intervalSQL(tuning.Get().JobTimeout.HeartbeatAbandonedAfter()) + `
+		AND j.attempted_at < now() - ` + claim + `
 		AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - ` + window + `), false),
 	coalesce(j.state = 'discarded' AND j.finalized_at >= now() - ` + intervalSQL(tuning.Get().Store.RecentFailureWindow) + ` AND NOT EXISTS (
 		SELECT 1 FROM river_job newer WHERE newer.args->>'account_id' = current_setting('app.account_id', true)
@@ -243,22 +248,21 @@ func jobColumns(window string) string {
 // columns: a replica serves the dashboard before the leader migrates them.
 var heartbeatWindowColumns atomic.Bool
 
-// jobHeartbeatWindow is heartbeatWindow, or the fixed 180 seconds of every
-// beat while job_heartbeats has no window columns.
-func jobHeartbeatWindow(ctx context.Context, tx pgx.Tx) (string, error) {
+// legacyHeartbeats reports whether job_heartbeats has no window columns yet.
+func legacyHeartbeats(ctx context.Context, tx pgx.Tx) (bool, error) {
 	if heartbeatWindowColumns.Load() {
-		return heartbeatWindow, nil
+		return false, nil
 	}
 	var migrated bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_attribute
 		WHERE attrelid = 'job_heartbeats'::regclass AND attname = 'abandon_after_at' AND NOT attisdropped)`).Scan(&migrated); err != nil {
-		return "", fmt.Errorf("store: job heartbeat columns: %w", err)
+		return false, fmt.Errorf("store: job heartbeat columns: %w", err)
 	}
 	if !migrated {
-		return "interval '180 seconds'", nil
+		return true, nil
 	}
 	heartbeatWindowColumns.Store(true)
-	return heartbeatWindow, nil
+	return false, nil
 }
 
 // intervalSQL is d as an SQL interval literal, in seconds. The literal is
@@ -281,21 +285,21 @@ func scanJob(row pgx.CollectableRow) (JobRow, error) {
 // did not finish, oldest first. It then returns finished ones, and recent
 // failures take priority over the remaining history.
 func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
-	window, err := jobHeartbeatWindow(ctx, tx)
+	legacy, err := legacyHeartbeats(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
 	// Rank bounded history and failure candidates together so prioritizing
 	// attention does not sort the account's entire completed-job history.
-	rows, err := tx.Query(ctx, `(SELECT `+jobColumns(window)+` AND j.state IN (`+jobs.LiveStatesSQL()+`)
+	rows, err := tx.Query(ctx, `(SELECT `+jobColumns(legacy)+` AND j.state IN (`+jobs.LiveStatesSQL()+`)
 			ORDER BY j.scheduled_at, j.id LIMIT $1)
 		UNION ALL
 		(SELECT * FROM (
-			(SELECT * FROM (SELECT `+jobColumns(window)+` AND j.state = 'discarded'
+			(SELECT * FROM (SELECT `+jobColumns(legacy)+` AND j.state = 'discarded'
 				AND j.finalized_at >= now() - `+intervalSQL(tuning.Get().Store.RecentFailureWindow)+`) failures
 				WHERE recent_failure ORDER BY finalized_at DESC, id DESC LIMIT $2)
 			UNION
-			(SELECT `+jobColumns(window)+` AND j.state IN ('completed', 'cancelled', 'discarded')
+			(SELECT `+jobColumns(legacy)+` AND j.state IN ('completed', 'cancelled', 'discarded')
 				ORDER BY j.finalized_at DESC NULLS LAST, j.id DESC LIMIT $2)
 		) finished ORDER BY recent_failure DESC, finalized_at DESC NULLS LAST, id DESC LIMIT $2)`,
 		tuning.Get().Store.QueueActive, tuning.Get().Store.QueueFinished)
@@ -356,11 +360,11 @@ func ReadHeldSlots(ctx context.Context, tx pgx.Tx) (map[SlotPool]HeldSlots, erro
 // FindLiveReviewJob returns the review job of a pull request that has not
 // finished, the newest when there are several, or nil when there is none.
 func FindLiveReviewJob(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (*JobRow, error) {
-	window, err := jobHeartbeatWindow(ctx, tx)
+	legacy, err := legacyHeartbeats(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT `+jobColumns(window)+` AND j.kind IN ('review', 'review_prepare', 'review_publish')
+	rows, err := tx.Query(ctx, `SELECT `+jobColumns(legacy)+` AND j.kind IN ('review', 'review_prepare', 'review_publish')
 		AND j.state IN (`+jobs.LiveStatesSQL()+`)
 			AND j.args->>'repository_id' = $1 AND (j.args->>'number')::int = $2
 		ORDER BY j.id DESC LIMIT 1`, repositoryID, number)

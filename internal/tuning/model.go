@@ -27,13 +27,16 @@ type Model struct {
 	// the common OpenAI-compatible servers, which differ widely in what they
 	// accept.
 	DefaultEmbedMaxBatch int `env:"KRITIKA_TUNING_MODEL_DEFAULT_EMBED_MAX_BATCH" envDefault:"64" yaml:"defaultEmbedMaxBatch,omitempty"`
-	// DefaultEmbedMaxBatchChars is the most characters one embeddings
+	// DefaultEmbedMaxBatchChars is the most UTF-8 bytes one embeddings
 	// request sends in all: the default when the configuration file does
-	// not set embedding.maxBatchChars.
+	// not set embedding.maxBatchChars. That key, like maxItemChars, must be
+	// 0 or at least 4, a whole rune: raise or unset one of 1 to 3 before
+	// upgrading.
 	DefaultEmbedMaxBatchChars int `env:"KRITIKA_TUNING_MODEL_DEFAULT_EMBED_MAX_BATCH_CHARS" envDefault:"200000" yaml:"defaultEmbedMaxBatchChars,omitempty"` //nolint:lll // a struct tag does not wrap
-	// DefaultEmbedMaxItemChars is the most characters of one text an
-	// embeddings request sends, the rest cut: the default when the
-	// configuration file does not set embedding.maxItemChars.
+	// DefaultEmbedMaxItemChars is the most UTF-8 bytes of one text an
+	// embeddings request sends, the rest cut at a rune: the default when the
+	// configuration file does not set embedding.maxItemChars. At least 4, a
+	// whole rune.
 	DefaultEmbedMaxItemChars int `env:"KRITIKA_TUNING_MODEL_DEFAULT_EMBED_MAX_ITEM_CHARS" envDefault:"16000" yaml:"defaultEmbedMaxItemChars,omitempty"` //nolint:lll // a struct tag does not wrap
 	// EmbedTimeout bounds one embeddings request, a batch of at most
 	// DefaultEmbedMaxBatch (or embedding.maxBatch) short texts.

@@ -203,8 +203,8 @@ type Jobs struct {
 	// without building an index waits to be offered again: the feeder's
 	// pace, and the dashboard's, which shows where a repository waits for
 	// it. The poller waits as long to look again at the default branch of a
-	// repository whose index job ended without moving its index. River
-	// keeps finished jobs longer than that.
+	// repository whose index job ended without moving its index, which it
+	// reads from the finished job, so at most RiverFinishedJobRetention.
 	OnboardRetryAfter time.Duration `env:"KRITIKA_TUNING_JOBS_ONBOARD_RETRY_AFTER" envDefault:"1h" yaml:"onboardRetryAfter,omitempty"`
 	// IndexAttempts bounds an index job's tries: transient failures (a
 	// fetch timeout, a runner killed at its deadline) get River's backoff,
@@ -420,6 +420,24 @@ func init() {
 		},
 		func(v Values) error {
 			return notAbove("worker.mergeTimeout", v.Worker.MergeTimeout, "jobTimeout.publishHeadroom", v.JobTimeout.PublishHeadroom)
+		},
+		func(v Values) error {
+			// A split review's Prepare job merges, then scores, then
+			// checkpoints the answer, all within its lease and publish headroom.
+			w, j := v.Worker, v.JobTimeout
+			if satAdd(int64(w.MergeTimeout), int64(w.ConfidenceTimeout)) >= satAdd(int64(j.LeaseWaitHeadroom), int64(j.PublishHeadroom)) {
+				return fmt.Errorf("%s and %s together must be less than %s and %s together", fieldLabel("worker.mergeTimeout"),
+					fieldLabel("worker.confidenceTimeout"), fieldLabel("jobTimeout.leaseWaitHeadroom"), fieldLabel("jobTimeout.publishHeadroom"))
+			}
+			return nil
+		},
+		func(v Values) error {
+			// The poller reads an index job's outcome from its finished row.
+			if v.Jobs.OnboardRetryAfter > RiverFinishedJobRetention {
+				return fmt.Errorf("%s %w %s, how long River keeps a finished job", fieldLabel("jobs.onboardRetryAfter"), errMustNotExceed,
+					RiverFinishedJobRetention)
+			}
+			return nil
 		},
 		func(v Values) error {
 			return notAbove("worker.snoozeMin", v.Worker.SnoozeMin, "worker.snoozeMax", v.Worker.SnoozeMax)

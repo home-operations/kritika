@@ -556,7 +556,12 @@ func (w *Review) splitParts(ctx context.Context, client forge.Client, pr *pullRe
 // rounds rounds, each part within timeout. It is at most as much as a job can
 // run.
 func partsTimeout(rounds int, timeout time.Duration) time.Duration {
-	return min(time.Duration(rounds)*timeout, tuning.Get().JobTimeout.MaxAgentTimeout())
+	most := tuning.Get().JobTimeout.MaxAgentTimeout()
+	// rounds*timeout can overflow, and is most anyway once past it.
+	if timeout > 0 && int64(rounds) > int64(most/timeout) {
+		return most
+	}
+	return min(time.Duration(rounds)*timeout, most)
 }
 
 // sizing is what a review is sized for: the parts that its runner can split

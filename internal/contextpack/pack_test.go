@@ -2,6 +2,7 @@ package contextpack
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"reflect"
 	"slices"
@@ -793,5 +794,23 @@ func TestOverlayShowsEveryChangePastTheCut(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestWindowWithAHugeRadius: a radius of far more lines than the file has
+// gives the same window as the least radius that holds the same lines.
+func TestWindowWithAHugeRadius(t *testing.T) {
+	line := "key: " + strings.Repeat("v", 495) + "\n"
+	f := (&chunk.Parser{}).Parse("f.yaml", []byte(strings.Repeat(line, 30)+"key: CHANGED\n"+strings.Repeat(line, 30)))
+	defer f.Close()
+	window := func(radius int) (int, string) {
+		opts := DefaultOptions()
+		opts.WindowRadius = radius
+		start, text := (&builder{opts: opts}).window(f, [2]int{31, 31})
+		return start, string(text)
+	}
+	start, text := window(math.MaxInt32)
+	if wantStart, want := window(20); start != wantStart || text != want || start != 26 {
+		t.Fatalf("window from line %d, %d bytes; want line %d, %d bytes", start, len(text), wantStart, len(want))
 	}
 }

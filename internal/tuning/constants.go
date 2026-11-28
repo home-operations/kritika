@@ -125,6 +125,12 @@ const (
 	GitHubMaxJWTLifetime = 10 * time.Minute
 	// GitLabMaxPageSize is the largest page that GitLab's listings serve.
 	GitLabMaxPageSize = 100
+	// RiverFinishedJobRetention is how long River keeps a completed or
+	// cancelled job before its cleaner deletes it.
+	RiverFinishedJobRetention = 24 * time.Hour
+	// DashboardUsageWindow is the span that the dashboard's longest usage
+	// period asks for: 90 days back from a UTC midnight, and today.
+	DashboardUsageWindow = 91 * 24 * time.Hour
 
 	// OpenAIBaseURL is OpenAI's API, where an openai or chatgpt provider
 	// without a baseUrl goes, and the resource a ChatGPT plan's tokens are

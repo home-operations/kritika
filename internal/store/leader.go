@@ -130,10 +130,17 @@ loop:
 		}
 	}
 
-	// Best effort: the session ends with the connection anyway.
 	unlockCtx, unlockCancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Store.SessionCloseTimeout)
 	defer unlockCancel()
-	_, _ = conn.Exec(unlockCtx, `SELECT pg_advisory_unlock(hashtext($1))`, leaderKey)
+	if _, err := conn.Exec(unlockCtx, `SELECT pg_advisory_unlock(hashtext($1))`, leaderKey); err != nil {
+		// A session that may still hold the lock must not go back to the
+		// pool: closing it ends the session, and the lock with it.
+		s.logger.Warn("leader lock not released; closing its session", "error", err)
+		closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), tuning.Get().Store.SessionCloseTimeout)
+		defer closeCancel()
+		_ = conn.Hijack().Close(closeCtx) // Close drops the connection even when it fails.
+		return true, leadErr
+	}
 	s.logger.Info("leader lock released")
 	return true, leadErr
 }

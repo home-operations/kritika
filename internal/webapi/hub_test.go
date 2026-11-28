@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -308,5 +309,48 @@ func TestHubServeEndsWithItsSessionBetweenHeartbeats(t *testing.T) {
 	ended.Store(true)
 	if _, err := io.Copy(io.Discard, br); err != nil {
 		t.Fatalf("stream ended with %v, want a clean close well before its hour-long heartbeat", err)
+	}
+}
+
+// stalledWriter is a stream whose writes block until its write deadline.
+type stalledWriter struct {
+	header   http.Header
+	deadline chan time.Time
+}
+
+func (s *stalledWriter) Header() http.Header { return s.header }
+func (s *stalledWriter) WriteHeader(int)     {}
+func (s *stalledWriter) Flush()              {}
+
+func (s *stalledWriter) SetWriteDeadline(t time.Time) error {
+	if !t.IsZero() {
+		s.deadline <- t
+	}
+	return nil
+}
+
+func (s *stalledWriter) Write([]byte) (int, error) {
+	time.Sleep(time.Until(<-s.deadline))
+	return 0, errors.New("write deadline passed")
+}
+
+// TestHubServeBoundsAStalledWriteByTheRecheck: a write timeout longer than
+// the session recheck does not hold a stalled stream open past the recheck.
+func TestHubServeBoundsAStalledWriteByTheRecheck(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.WebAPI.WriteTimeout = time.Hour })
+	h, _ := testHub(t)
+	h.heartbeat, h.recheck = time.Hour, 50*time.Millisecond
+	h.stands = func(*http.Request) bool { return true }
+	w := &stalledWriter{header: http.Header{}, deadline: make(chan time.Time, 1)}
+	r := httptest.NewRequestWithContext(auth.WithPrincipal(t.Context(), &auth.Principal{Admin: true}), http.MethodGet, "/", nil)
+	done := make(chan struct{})
+	go func() {
+		h.serve(w, r)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a stalled write held the stream past its session recheck")
 	}
 }

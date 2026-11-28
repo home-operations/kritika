@@ -279,6 +279,18 @@ func TestQueueReadsBeforeTheWindowColumns(t *testing.T) {
 	}
 	listRepos(t, s, "alpha", "alpha/one")
 	account := accountID(t, s, "alpha")
+	var repo string
+	if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 LIMIT 1`, account).Scan(&repo); err != nil {
+		t.Fatal(err)
+	}
+	// Claimed a minute ago, its first beat still to come: within the legacy
+	// leader's 180 seconds, though past this replica's 12.
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.HeartbeatInterval, v.JobTimeout.AbandonedBeats = 4*time.Second, 3 })
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 5, time.Minute, `{}`)
+	if _, err := s.owner.Exec(ctx, `UPDATE river_job SET args = jsonb_build_object('account_id', $2::text, 'repository_id', $3::text, 'number', 7)
+		WHERE id = $1`, id, account, repo); err != nil {
+		t.Fatal(err)
+	}
 	prev := heartbeatWindowColumns.Load()
 	heartbeatWindowColumns.Store(false)
 	t.Cleanup(func() { heartbeatWindowColumns.Store(prev) })
@@ -288,10 +300,19 @@ func TestQueueReadsBeforeTheWindowColumns(t *testing.T) {
 		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE job_heartbeats (job_id bigint PRIMARY KEY, heartbeat_at timestamptz NOT NULL) ON COMMIT DROP`); err != nil {
 			return err
 		}
-		if _, err := ListQueue(ctx, tx); err != nil {
+		rows, err := ListQueue(ctx, tx)
+		if err != nil {
 			return err
 		}
-		_, err := FindLiveReviewJob(ctx, tx, "00000000-0000-0000-0000-000000000000", 1)
+		for _, r := range rows {
+			if r.ID == id && r.HeartbeatOverdue {
+				t.Error("the queue shows a job awaiting its first beat overdue by this replica's window")
+			}
+		}
+		live, err := FindLiveReviewJob(ctx, tx, repo, 7)
+		if err == nil && (live == nil || live.HeartbeatOverdue) {
+			t.Errorf("live job = %+v, want it found and not overdue", live)
+		}
 		return err
 	}); err != nil {
 		t.Fatalf("reads on the old job_heartbeats: %v", err)

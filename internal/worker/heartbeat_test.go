@@ -54,8 +54,8 @@ func (f *fakeHeartbeater) HeartbeatJob(ctx context.Context, jobID int64) error {
 	return nil
 }
 
-func (f *fakeHeartbeater) StartJob(ctx context.Context, job *rivertype.JobRow) error {
-	return f.HeartbeatJob(ctx, job.ID)
+func (f *fakeHeartbeater) StartJob(ctx context.Context, job *rivertype.JobRow) (time.Time, error) {
+	return time.Now(), f.HeartbeatJob(ctx, job.ID)
 }
 
 func (f *fakeHeartbeater) count() int {
@@ -269,7 +269,9 @@ type slowAck struct {
 	late     time.Duration
 }
 
-func (s *slowAck) StartJob(context.Context, *rivertype.JobRow) error { return nil }
+func (s *slowAck) StartJob(context.Context, *rivertype.JobRow) (time.Time, error) {
+	return time.Now(), nil
+}
 
 func (s *slowAck) HeartbeatJob(ctx context.Context, _ int64) error {
 	if s.renewals++; s.renewals > 1 {
@@ -305,6 +307,36 @@ func TestJobHeartbeatFencesFromTheStampNotTheAnswer(t *testing.T) {
 		}
 		if abandoned := store.stamped.Add(tuning.Get().JobTimeout.HeartbeatAbandonedAfter()); !fenced.Before(abandoned) {
 			t.Fatalf("fenced at %v, not before the leader may hand the job back at %v", fenced, abandoned)
+		}
+	})
+}
+
+// slowStart waits before it stamps the first beat, as a wait for a pool
+// connection or River's row does, then beats at once.
+type slowStart struct{ wait time.Duration }
+
+func (s slowStart) StartJob(context.Context, *rivertype.JobRow) (time.Time, error) {
+	time.Sleep(s.wait)
+	return time.Now(), nil
+}
+
+func (slowStart) HeartbeatJob(context.Context, int64) error { return nil }
+
+// TestJobHeartbeatFencesFromTheFirstBeatSent: a start that waits longer than
+// the fence window before its first beat is not fenced for it: the fence
+// counts from when that beat was sent.
+func TestJobHeartbeatFencesFromTheFirstBeatSent(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.JobTimeout.HeartbeatInterval, v.JobTimeout.AbandonedBeats = 10*time.Second, 3
+	})
+	synctest.Test(t, func(t *testing.T) {
+		h := &JobHeartbeat{Store: slowStart{wait: 25 * time.Second}, Logger: slog.New(slog.DiscardHandler)}
+		err := h.Work(t.Context(), &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
+			time.Sleep(15 * time.Second)
+			return context.Cause(ctx)
+		})
+		if err != nil {
+			t.Fatalf("Work = %v, want the job left to finish", err)
 		}
 	})
 }

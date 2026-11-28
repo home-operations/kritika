@@ -231,6 +231,13 @@ func TestRetryAfter(t *testing.T) {
 			Response: &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{"Retry-After": {"120"}}}}, 2 * time.Minute, true},
 		{"secondary with a Retry-After that names no wait", &gh.AbuseRateLimitError{RetryAfter: new(time.Duration),
 			Response: &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{"Retry-After": {"-5"}}}}, tuning.Get().GitHub.RateLimitMaxWait, true},
+		{"secondary with a Retry-After of 0", &gh.AbuseRateLimitError{RetryAfter: new(time.Duration),
+			Response: &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{"Retry-After": {"0"}}}}, tuning.Get().GitHub.RateLimitMaxWait, true},
+		{"secondary with a Retry-After date gone by", &gh.AbuseRateLimitError{RetryAfter: new(time.Duration),
+			Response: &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{"Retry-After": {now.Add(-time.Minute).UTC().Format(http.TimeFormat)}}}},
+			tuning.Get().GitHub.RateLimitMaxWait, true},
+		{"refusal with a Retry-After of 0", &gh.ErrorResponse{Response: &http.Response{
+			StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": {"0"}}}}, time.Second, true},
 		{"secondary that go-github refused itself", &gh.AbuseRateLimitError{RetryAfter: &twoMinutes,
 			Response: &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{}}}, 2 * time.Minute, true},
 		{"refusal with a Retry-After", fmt.Errorf("github: branch: %w", &gh.ErrorResponse{Response: &http.Response{

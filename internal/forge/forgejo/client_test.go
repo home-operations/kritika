@@ -869,3 +869,28 @@ func TestListPagesThatShareTheirFirstItem(t *testing.T) {
 		t.Fatalf("ListOpenPullRequests = %v, %v; want every page read", numbers, err)
 	}
 }
+
+// TestListStopsAtALinkWithNoNext: a page whose Link names a previous page
+// and no next one is the last, and no page past it is asked for.
+func TestListStopsAtALinkWithNoNext(t *testing.T) {
+	f := newFake(t)
+	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
+		var page []map[string]any
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("Link", `<`+f.srv.URL+`/next>; rel="next"`)
+			page = []map[string]any{{"number": 2, "updated_at": "2026-10-20T12:00:00Z", "user": map[string]any{"login": "x"}}}
+		case "2":
+			w.Header().Set("Link", `<`+f.srv.URL+`/prev>; rel="prev"`)
+			page = []map[string]any{{"number": 1, "updated_at": "2026-10-20T11:00:00Z", "user": map[string]any{"login": "x"}}}
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(page)
+	})
+	all, err := f.client(t).ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{})
+	if err != nil || len(all) != 2 || f.called("GET "+repoAPI+"/pulls") != 2 {
+		t.Fatalf("ListOpenPullRequests = %d, %v after %d calls; want both, in two", len(all), err, f.called("GET "+repoAPI+"/pulls"))
+	}
+}

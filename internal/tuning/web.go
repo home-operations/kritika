@@ -50,7 +50,8 @@ type WebAPI struct {
 	// MaxUsageWindow is the most that ?from= and ?to= can span. The series
 	// are read from every row in the span, and the analytics page reads
 	// the span before it too. So a span of years scans the account's
-	// history twice on one request.
+	// history twice on one request. At least DashboardUsageWindow, which the
+	// dashboard's longest period asks for.
 	MaxUsageWindow time.Duration `env:"KRITIKA_TUNING_WEB_API_MAX_USAGE_WINDOW" envDefault:"8784h" yaml:"maxUsageWindow,omitempty"`
 	// TokenNameMax is the longest name that a personal access token can
 	// have, in characters. The dashboard's token form checks the default,
@@ -168,6 +169,13 @@ func init() {
 		},
 		func(v Values) error {
 			return notAbove("webApi.defaultUsageWindow", v.WebAPI.DefaultUsageWindow, "webApi.maxUsageWindow", v.WebAPI.MaxUsageWindow)
+		},
+		func(v Values) error {
+			if v.WebAPI.MaxUsageWindow < DashboardUsageWindow {
+				return fmt.Errorf("%s must be at least %s, which the dashboard's 90-day period asks for from a midnight",
+					fieldLabel("webApi.maxUsageWindow"), DashboardUsageWindow)
+			}
+			return nil
 		},
 		func(v Values) error {
 			for i, d := range v.WebAPI.TokenLifetimes {

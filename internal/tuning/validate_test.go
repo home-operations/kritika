@@ -579,6 +579,36 @@ func TestCrossFieldMessages(t *testing.T) {
 		},
 		{name: "an embedding item cap of a rune", change: func(v *Values) { v.Model.DefaultEmbedMaxItemChars = 4 }},
 		{
+			name: "merging and scoring past the Prepare job",
+			change: func(v *Values) {
+				v.JobTimeout.LeaseWaitHeadroom, v.JobTimeout.PublishHeadroom = time.Second, 2*time.Minute
+			},
+			want: []string{
+				"tuning.worker.mergeTimeout: KRITIKA_TUNING_WORKER_MERGE_TIMEOUT and " +
+					"tuning.worker.confidenceTimeout: KRITIKA_TUNING_WORKER_CONFIDENCE_TIMEOUT together must be less than",
+				"tuning.jobTimeout.leaseWaitHeadroom: KRITIKA_TUNING_JOB_TIMEOUT_LEASE_WAIT_HEADROOM",
+			},
+		},
+		{
+			name: "merging and scoring just within the Prepare job",
+			change: func(v *Values) {
+				v.JobTimeout.PublishHeadroom = 2 * time.Minute
+				v.JobTimeout.LeaseWaitHeadroom = v.Worker.MergeTimeout + v.Worker.ConfidenceTimeout - v.JobTimeout.PublishHeadroom + time.Nanosecond
+			},
+		},
+		{
+			name:   "an onboarding retry past River's retention",
+			change: func(v *Values) { v.Jobs.OnboardRetryAfter = RiverFinishedJobRetention + time.Second },
+			want:   []string{"tuning.jobs.onboardRetryAfter: KRITIKA_TUNING_JOBS_ONBOARD_RETRY_AFTER must not exceed 24h0m0s"},
+		},
+		{name: "an onboarding retry at River's retention", change: func(v *Values) { v.Jobs.OnboardRetryAfter = RiverFinishedJobRetention }},
+		{
+			name:   "a usage window under the dashboard's",
+			change: func(v *Values) { v.WebAPI.MaxUsageWindow, v.WebAPI.DefaultUsageWindow = 336*time.Hour, 168*time.Hour },
+			want:   []string{"tuning.webApi.maxUsageWindow: KRITIKA_TUNING_WEB_API_MAX_USAGE_WINDOW must be at least 2184h0m0s"},
+		},
+		{name: "a usage window of the dashboard's", change: func(v *Values) { v.WebAPI.MaxUsageWindow = DashboardUsageWindow }},
+		{
 			name: "a step wait under a second",
 			change: func(v *Values) {
 				v.Model.StepBudgetWaits, v.Model.GatewaySettle = 400*time.Millisecond, 500*time.Millisecond

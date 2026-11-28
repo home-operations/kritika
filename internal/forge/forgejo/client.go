@@ -318,8 +318,9 @@ func (c *Client) list[T any](ctx context.Context, path string, query url.Values,
 // also counts what a listing leaves out of a page, so a page emptied that way
 // does not end the walk. morePages measures the pages by the largest page
 // seen. That is at most the size that the instance caps a page at, whatever
-// was asked. A page is never taken for more than it held. Without either
-// header, only an empty page ends the walk.
+// was asked. A page is never taken for more than it held. A Link that
+// names no next page ends the walk. With neither header, only an empty page
+// does.
 func morePages(header http.Header, page, got, largest int) bool {
 	for _, link := range header.Values("Link") {
 		if strings.Contains(link, `rel="next"`) {
@@ -329,7 +330,7 @@ func morePages(header http.Header, page, got, largest int) bool {
 	if total, err := strconv.Atoi(header.Get("X-Total-Count")); err == nil {
 		return page*max(largest, 1) < total
 	}
-	return got > 0
+	return got > 0 && len(header.Values("Link")) == 0
 }
 
 func repoPath(owner, repo string) string {

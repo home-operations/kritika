@@ -276,3 +276,21 @@ func TestForgejoMappingVarsAtThePageCap(t *testing.T) {
 		})
 	}
 }
+
+// TestForgejoMappingVarsUnmetTotalAtTheCap: a last allowed page whose total
+// is still unmet fails the sign-in, whatever a page past the cap says.
+func TestForgejoMappingVarsUnmetTotalAtTheCap(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Auth.ForgejoMaxPages = 1 })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "1" {
+			w.Header().Set("X-Total-Count", "3")
+			_, _ = fmt.Fprint(w, `[{"name":"org-1"}]`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+	if _, err := (forgejoAPI{}).mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{Login: "alice"}); !errors.Is(err, ErrForgeAPI) {
+		t.Fatalf("mappingVars = %v, want a refusal", err)
+	}
+}

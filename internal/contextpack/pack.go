@@ -11,6 +11,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -438,10 +439,12 @@ func (b *builder) declText(f *chunk.File, decl *chunk.Decl, line int) (start int
 // the whole run when the run alone fits. It returns the line the text
 // starts on. The text is a slice of f's source.
 func (b *builder) window(f *chunk.File, run [2]int) (start int, text []byte) {
-	radius := b.opts.WindowRadius
-	for radius > 0 && len(f.Bytes(run[0]-radius, run[1]+radius)) > b.opts.MaxChunkBytes {
-		radius--
-	}
+	// Binary search for the largest radius that fits: a tuned radius can be
+	// far more lines than the file has.
+	over := sort.Search(b.opts.WindowRadius+1, func(r int) bool {
+		return len(f.Bytes(run[0]-r, run[1]+r)) > b.opts.MaxChunkBytes
+	})
+	radius := max(over-1, 0)
 	start = max(run[0]-radius, 1)
 	return start, f.Bytes(start, run[1]+radius)
 }

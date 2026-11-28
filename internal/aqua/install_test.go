@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -567,5 +568,19 @@ func TestGetLimit(t *testing.T) {
 	}
 	if _, err := get(t.Context(), srv.Client(), srv.URL, nil, 3); err == nil || !strings.Contains(err.Error(), "over 3 bytes") {
 		t.Fatalf("get over the limit = %v, want it refused", err)
+	}
+}
+
+// TestBoundedAtTheLimit: a reader whose end comes on a read of its own is
+// read whole at exactly the limit, and refused a byte over it.
+func TestBoundedAtTheLimit(t *testing.T) {
+	for _, tt := range []struct {
+		limit int64
+		fails bool
+	}{{4, false}, {3, true}} {
+		got, err := io.ReadAll(&bounded{r: strings.NewReader("abcd"), limit: tt.limit, left: tt.limit})
+		if (err != nil) != tt.fails || !tt.fails && string(got) != "abcd" {
+			t.Fatalf("limit %d: read %q, %v; want a failure: %v", tt.limit, got, err, tt.fails)
+		}
 	}
 }

@@ -334,10 +334,25 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	out, err := render(context.WithoutCancel(ctx), defaultSummary, d, limit)
 	if err != nil {
 		// The default renders data that kritika bounds itself. Failing here
-		// is a bug, but the comment must still carry the marker and the take.
-		out = textcut.Prefix(fmt.Sprintf("## Kritika Review\n\n%s\n", d.Result.Summary.Take), limit)
+		// is a bug, but the comment must still carry the marker and the take,
+		// or an incomplete review's warning.
+		out = compactSummary(d, limit)
 	}
 	return marker + out, notes
+}
+
+// compactSummary is the summary in at most limit bytes when the default
+// template does not fit: the take, or for an incomplete review its warning,
+// whose reason is cut so that the notice on earlier heads' findings stays.
+func compactSummary(d RenderData, limit int) string {
+	const heading = "## Kritika Review\n\n"
+	if d.Incomplete == "" {
+		return textcut.Prefix(heading+d.Result.Summary.Take+"\n", limit)
+	}
+	lead := heading + "**Review incomplete for `" + ShortSHA(d.HeadSHA) + "`:** "
+	const stale = ". Findings posted for earlier heads may no longer apply.\n"
+	reason := textcut.Prefix(d.Incomplete, max(limit-len(lead)-len(stale), 0))
+	return textcut.Prefix(lead+reason+stale, limit)
 }
 
 // Label is the severity's badge text, its name in upper case, "" for an

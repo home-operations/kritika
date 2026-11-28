@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
@@ -27,22 +28,25 @@ func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 		return max(e.Rate.Reset.Sub(now)+time.Second, retryafter.Floor), true
 	}
 	if e, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
-		// go-github reads only seconds, and an HTTP date as 0, so GitHub's
-		// own header goes first. One that names no wait gets the fallback,
-		// not go-github's reading of it. A refusal that go-github makes
-		// itself, before a request, carries no header.
+		// go-github reads only seconds, and an HTTP date as 0, so a wait that
+		// GitHub's own header names goes first, and a header that does not
+		// parse gets the fallback. A refusal that go-github makes itself,
+		// before a request, carries no header.
 		maxWait := tuning.Get().GitHub.RateLimitMaxWait
 		var v string
 		if e.Response != nil {
 			v = e.Response.Header.Get(retryafter.Header)
 		}
-		if v == "" {
-			return max(cmp.Or(e.GetRetryAfter(), maxWait), retryafter.Floor), true
-		}
-		if wait, ok := retryafter.Parse(v, now); ok {
+		wait, ok := retryafter.Parse(v, now)
+		switch {
+		case ok && namesWait(v, now):
 			return wait, true
+		case v != "" && !ok:
+			return max(maxWait, retryafter.Floor), true
 		}
-		return max(maxWait, retryafter.Floor), true
+		// No header, or one of 0 or a date gone by: go-github's wait, which
+		// a GraphQL limit already floors, else the fallback.
+		return max(cmp.Or(e.GetRetryAfter(), maxWait), retryafter.Floor), true
 	}
 	if e, ok := errors.AsType[*gh.ErrorResponse](err); ok && e.Response != nil && e.Response.Header.Get(retryafter.Header) != "" {
 		return rateLimitWait(e.Response, now)
@@ -145,4 +149,15 @@ func Status(err error) int {
 		return e.Response.StatusCode
 	}
 	return 0
+}
+
+// namesWait reports whether a Retry-After of v names a wait still to come:
+// a positive number of seconds, or a date after now. go-github reads 0 as
+// none, and the secondary limit's fallback applies.
+func namesWait(v string, now time.Time) bool {
+	if s, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return s > 0
+	}
+	t, err := http.ParseTime(v)
+	return err == nil && t.After(now)
 }

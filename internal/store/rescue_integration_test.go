@@ -588,7 +588,7 @@ func TestStartJob(t *testing.T) {
 	}
 	// The working replica's maxJobTimeout 6h, with its 1h grace.
 	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.MaxJobTimeout = 6 * time.Hour })
-	if err := s.StartJob(ctx, claimed); err != nil {
+	if _, err := s.StartJob(ctx, claimed); err != nil {
 		t.Fatal(err)
 	}
 	// The rescuer's own settings are the defaults, a 4h horizon.
@@ -623,7 +623,7 @@ func TestStartJobOfARescuedAttempt(t *testing.T) {
 	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: id, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost"); err != nil || !rescued {
 		t.Fatalf("RescueJob = %v, %v", rescued, err)
 	}
-	if err := s.StartJob(ctx, &claimed); !errors.Is(err, ErrJobNotRunning) {
+	if _, err := s.StartJob(ctx, &claimed); !errors.Is(err, ErrJobNotRunning) {
 		t.Fatalf("StartJob of a rescued attempt = %v, want ErrJobNotRunning", err)
 	}
 	var beats int
@@ -720,7 +720,10 @@ func TestStartJobStampsAfterTheLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- s.StartJob(ctx, &job) }()
+	go func() {
+		_, err := s.StartJob(ctx, &job)
+		done <- err
+	}()
 	waitBlockedBy(t, ctx, s, backendPID(t, ctx, hold), done)
 	var released time.Time
 	if err := s.owner.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&released); err != nil {

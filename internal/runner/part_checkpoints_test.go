@@ -2,6 +2,8 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -68,6 +70,36 @@ func TestPartInputIdentityFollowsTuning(t *testing.T) {
 	after, err := partInputHash(s, parts, agentTools{})
 	if err != nil || before == after {
 		t.Fatalf("identity unchanged by runner.searchCalls: %v", err)
+	}
+}
+
+// TestPartInputIdentityAtDefaults: at default tuning the identity is the
+// hash of the spec, prompts and tools alone, as a build before tuning keyed
+// its checkpoints, so those are still reused.
+func TestPartInputIdentityAtDefaults(t *testing.T) {
+	s := reviewSpec()
+	s.RunID, s.Agent.Slots, s.Agent.MaxTokens, s.Prompt.Continue = "", nil, 0, nil
+	parts := []reviewPart{{paths: []string{"a.go"}, reviewer: "default", prompt: loopPrompt(s, false)}}
+	got, err := partInputHash(s, parts, agentTools{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type prompt struct {
+		Paths        []string
+		Reviewer     string
+		System, User string
+		Submit       model.ToolDef
+	}
+	b, err := json.Marshal(struct {
+		Spec    runspec.Spec
+		Prompts []prompt
+		Tools   []model.ToolDef
+	}{Spec: s, Prompts: []prompt{{parts[0].paths, parts[0].reviewer, parts[0].prompt.system, parts[0].prompt.user, parts[0].prompt.submit}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum := sha256.Sum256(b); got != hex.EncodeToString(sum[:]) {
+		t.Fatalf("identity %s at default tuning, want the hash of the spec, prompts and tools alone", got)
 	}
 }
 

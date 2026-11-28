@@ -75,7 +75,8 @@ type ConfigFile struct {
 	DefaultAgentTimeout time.Duration `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_AGENT_TIMEOUT" envDefault:"20m" yaml:"defaultAgentTimeout,omitempty"` //nolint:lll // a struct tag does not wrap
 	// DefaultParts is the most parts a review is split into: the default
 	// when the configuration file does not set agent.parts. A 512 KiB diff
-	// at review.partBytes a part.
+	// at review.partBytes a part. A review's job timeout allows for each
+	// part in turn, up to jobTimeout.maxJobTimeout.
 	DefaultParts int `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_PARTS" envDefault:"8" yaml:"defaultParts,omitempty"`
 	// DefaultFetches is the most repositories fetch_repo fetches for a
 	// review: the default when the configuration file does not set

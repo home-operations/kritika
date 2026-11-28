@@ -145,7 +145,21 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 		err := rc.SetWriteDeadline(t)
 		return err == nil || errors.Is(err, http.ErrNotSupported)
 	}
-	extend := func() bool { return deadline(time.Now().Add(tuning.Get().WebAPI.WriteTimeout)) }
+	// A frame is sent only within a recheck of the last session check, and
+	// its write gets no longer than a recheck either, so that a stalled write
+	// does not carry an event long past a session that ended meanwhile.
+	checked := time.Now()
+	extend := func() bool {
+		d := tuning.Get().WebAPI.WriteTimeout
+		if h.stands != nil {
+			d = min(d, h.recheck)
+		}
+		return deadline(time.Now().Add(d))
+	}
+	stands := func() bool {
+		checked = time.Now()
+		return h.stands == nil || h.stands(r)
+	}
 	hdr := w.Header()
 	hdr.Set("Content-Type", "text/event-stream")
 	hdr.Set("Cache-Control", "no-store")
@@ -171,6 +185,9 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	frame := h.resyncFrame
 	for {
 		if frame != nil {
+			if h.stands != nil && time.Since(checked) >= h.recheck && !stands() {
+				return
+			}
 			if !extend() {
 				return
 			}
@@ -199,12 +216,12 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-recheck:
-			if !h.stands(r) {
+			if !stands() {
 				return
 			}
 			frame = nil
 		case <-ticker.C:
-			if h.stands != nil && !h.stands(r) {
+			if !stands() {
 				return
 			}
 			frame = []byte(": heartbeat\n\n")

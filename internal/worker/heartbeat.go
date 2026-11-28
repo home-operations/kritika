@@ -34,7 +34,7 @@ func jobFence(ctx context.Context) context.Context {
 // jobHeartbeater stamps a job's heartbeat, and records its rescue horizon.
 type jobHeartbeater interface {
 	HeartbeatJob(ctx context.Context, jobID int64) error
-	StartJob(ctx context.Context, job *rivertype.JobRow) error
+	StartJob(ctx context.Context, job *rivertype.JobRow) (time.Time, error)
 }
 
 // JobHeartbeat is River middleware that stamps a heartbeat on every job this
@@ -58,8 +58,8 @@ type JobHeartbeat struct {
 func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner func(context.Context) error) error {
 	// The first beat, with the rescue horizon that River's rescuer waits out
 	// (see riverTimeout), and only while the attempt is still this replica's.
-	started := time.Now()
-	if err := h.Store.StartJob(ctx, job); err != nil {
+	started, err := h.Store.StartJob(ctx, job)
+	if err != nil {
 		return fmt.Errorf("worker: first heartbeat of job %d: %w", job.ID, err)
 	}
 	fenced, markFenced := context.WithCancelCause(context.WithoutCancel(ctx))

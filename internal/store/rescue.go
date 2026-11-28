@@ -42,6 +42,9 @@ func heartbeatJob(ctx context.Context, db interface {
 // window was written, which stamps heartbeat_at alone.
 const heartbeatWindow = `CASE WHEN h.abandon_after_at = h.heartbeat_at THEN h.abandon_after ELSE interval '180 seconds' END`
 
+// legacyAbandonedAfter is the abandonment window from before it was tuned.
+const legacyAbandonedAfter = 180 * time.Second
+
 // jobRescue is what StartJob merges into River's job metadata: the
 // attempt, by its claim time in microseconds, and how long River's rescuer
 // must leave it.
@@ -65,18 +68,21 @@ var ErrJobNotRunning = errors.New("store: the job's attempt is not running")
 // computes a running job's timeout from its own settings, which during a
 // rollout can be shorter; JobRescueAfter hands it this one instead. A later
 // attempt, a snoozed job's included, is claimed anew and does not match what
-// an earlier one wrote.
-func (s *Store) StartJob(ctx context.Context, job *rivertype.JobRow) error {
+// an earlier one wrote. It returns when the first beat was sent, after any
+// wait for River's row, which this replica's fence counts from.
+func (s *Store) StartJob(ctx context.Context, job *rivertype.JobRow) (time.Time, error) {
 	if job.AttemptedAt == nil {
-		return s.HeartbeatJob(ctx, job.ID)
+		sent := time.Now()
+		return sent, s.HeartbeatJob(ctx, job.ID)
 	}
 	data, err := json.Marshal(jobRescue{&rescueHorizon{
 		AttemptedAtMicros: job.AttemptedAt.UnixMicro(), AfterSeconds: tuning.Get().JobTimeout.RescueStuckJobsAfter().Seconds(),
 	}})
 	if err != nil {
-		return fmt.Errorf("store: encode the rescue of job %d: %w", job.ID, err)
+		return time.Time{}, fmt.Errorf("store: encode the rescue of job %d: %w", job.ID, err)
 	}
-	return pgx.BeginFunc(ctx, s.app, func(tx pgx.Tx) error {
+	var sent time.Time
+	err = pgx.BeginFunc(ctx, s.app, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE river_job SET metadata = metadata || $2::jsonb
 			WHERE id = $1 AND state = 'running' AND attempted_at = $3`, job.ID, string(data), *job.AttemptedAt)
 		if err != nil {
@@ -85,8 +91,10 @@ func (s *Store) StartJob(ctx context.Context, job *rivertype.JobRow) error {
 		if tag.RowsAffected() != 1 {
 			return fmt.Errorf("store: start job %d: %w", job.ID, ErrJobNotRunning)
 		}
+		sent = time.Now()
 		return heartbeatJob(ctx, tx, job.ID)
 	})
+	return sent, err
 }
 
 // JobRescueAfter is how long River's rescuer must leave job's attempt, as

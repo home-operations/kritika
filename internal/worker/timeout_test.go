@@ -199,3 +199,24 @@ func TestRiverTimeoutTakesTheOwnersRescue(t *testing.T) {
 		t.Fatalf("Timeout without a record = %s, want the computed %s", got, threadTimeout)
 	}
 }
+
+// TestReviewTimeoutAtAVastPartCount: a part count whose rounds of the agent
+// timeout pass a Duration still gives the review the job cap, not a product
+// wrapped negative that leaves it the runner deadline alone.
+func TestReviewTimeoutAtAVastPartCount(t *testing.T) {
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	tuning.Override(t, func(v *tuning.Values) { v.ConfigFile.DefaultParts = 1000000 })
+	if err := tuning.Get().Validate(); err != nil {
+		t.Fatalf("a million parts is invalid: %v", err)
+	}
+	if got, want := partsTimeout(9000000, 20*time.Minute), tuning.Get().JobTimeout.MaxAgentTimeout(); got != want {
+		t.Fatalf("partsTimeout = %s, want the agent cap %s", got, want)
+	}
+	file := configfiletest.Load(t, timeoutConfigYAML)
+	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
+	review := &Review{Current: configfile.NewCurrent(file)}
+	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID()}}), tuning.Get().JobTimeout.MaxJobTimeout; got != want {
+		t.Fatalf("review timeout = %s, want the job cap %s", got, want)
+	}
+}

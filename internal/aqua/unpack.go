@@ -118,7 +118,9 @@ func decompress(r io.Reader, compression string) (_ io.Reader, closer func(), _ 
 	return nil, nil, fmt.Errorf("%s is not a compression the runner reads", compression)
 }
 
-// bounded reads r until left bytes of limit are read, then fails.
+// bounded reads r until left bytes of limit are read, and fails if r has
+// more: a reader that reports its end on a read of its own is at the limit,
+// not over it.
 type bounded struct {
 	r           io.Reader
 	limit, left int64
@@ -126,6 +128,12 @@ type bounded struct {
 
 func (b *bounded) Read(p []byte) (int, error) {
 	if b.left <= 0 {
+		if len(p) == 0 {
+			return 0, nil
+		}
+		if n, err := b.r.Read(make([]byte, 1)); n == 0 {
+			return 0, err
+		}
 		return 0, fmt.Errorf("over %d bytes unpacked", b.limit)
 	}
 	n, err := b.r.Read(p[:min(int64(len(p)), b.left)])

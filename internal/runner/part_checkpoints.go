@@ -30,7 +30,8 @@ type partCheckpoint struct {
 // budget the month left this attempt do not change the input a part reviews.
 // Neither does the last review's conversation, which no part carries on.
 // The tuning it runs under does: its search budget, for one, changes a
-// part's loop and not its prompts or tools.
+// part's loop and not its prompts or tools. Default tuning adds nothing, so
+// the checkpoints of a build before it was tunable are still reused.
 func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string, error) {
 	p.RunID = ""
 	if p.Agent != nil {
@@ -53,7 +54,7 @@ func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string
 		Spec    runspec.Spec
 		Prompts []prompt
 		Tools   []model.ToolDef
-		Tuning  []tuning.EnvPair
+		Tuning  []tuning.EnvPair `json:",omitempty"`
 	}{Spec: p, Tuning: tuning.Env(*tuning.Get())}
 	for _, part := range parts {
 		input.Prompts = append(input.Prompts, prompt{part.paths, part.reviewer, part.prompt.system, part.prompt.user, part.prompt.submit})
