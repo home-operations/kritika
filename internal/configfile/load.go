@@ -474,6 +474,9 @@ func (f *File) validateOverrides(r *Overrides) error {
 	if risk := r.Confidence.Risk; risk != nil && !risk.Valid() {
 		return fmt.Errorf("configfile: %s must be %s, got %q", keyRisk, review.RiskLevels, *risk)
 	}
+	if at := r.Review.ApproveBlockedAt; at != nil && *at != review.SeverityP1 && *at != review.SeverityP2 {
+		return fmt.Errorf("configfile: %s must be p1 or p2, got %q", keyApproveBlockedAt, *at)
+	}
 	if err := r.Confidence.Floors.Check(); err != nil {
 		return fmt.Errorf("configfile: %w", err)
 	}

@@ -124,6 +124,11 @@
       key: 'review.approve',
       value: (s) => (!s.review.approve ? 'no' : bounded(s.review.approveWhen, s.review.approveWhenInRepo) || 'yes'),
     },
+    {
+      label: 'Approval withheld at',
+      key: 'review.approveBlockedAt',
+      value: (s) => (!s.review.approve ? '—' : s.review.approveBlockedAt === 'p2' ? 'P2: any open finding' : 'P1: P2s alone still approve'),
+    },
     { label: 'Flow diagram', key: 'review.diagram', value: (s) => yes(s.review.diagram) },
     { label: 'Cost in footer', key: 'review.cost', value: (s) => yes(s.review.cost) },
     { label: 'Reviews / day', key: 'limits', value: (s) => unlimited(s.limits.reviewsPerDay) },

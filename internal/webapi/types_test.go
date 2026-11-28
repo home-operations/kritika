@@ -76,7 +76,8 @@ var goldenRepoSettings = RepoSettings{
 	Review: configfile.Review{
 		RequireSuggestedFix: true,
 		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true, Dashboard: true,
-		Context: []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
+		ApproveBlockedAt: review.SeverityP1,
+		Context:          []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
 	},
 	Agent: configfile.AgentSettings{
 		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, MaxPromptTokens: 24000, MaxParts: 8, Timeout: 20 * time.Minute,

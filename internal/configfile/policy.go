@@ -15,24 +15,25 @@ const (
 
 // Instance default keys reported by FileLayer.
 const (
-	keyModel          = "review.model"
-	keyFallback       = "review.fallback"
-	keyEffort         = "review.effort"
-	keyApprove        = "review.approve"
-	keyFixes          = "review.fixes"
-	keyIncremental    = "review.incremental"
-	keyDiagram        = "review.diagram"
-	keyCost           = "review.cost"
-	keyScorer         = "confidence.model"
-	keyScorerFallback = "confidence.fallback"
-	keyScorerEffort   = "confidence.effort"
-	keyThreshold      = "confidence.threshold"
-	keyGate           = "confidence.gate"
-	keyRisk           = "confidence.risk"
-	keyFloors         = "confidence.floors"
-	keyConfidenceWhen = "confidence.when"
-	keyLimit          = "trigger.limit"
-	keySettle         = "trigger.settle"
+	keyModel            = "review.model"
+	keyFallback         = "review.fallback"
+	keyEffort           = "review.effort"
+	keyApprove          = "review.approve"
+	keyApproveBlockedAt = "review.approveBlockedAt"
+	keyFixes            = "review.fixes"
+	keyIncremental      = "review.incremental"
+	keyDiagram          = "review.diagram"
+	keyCost             = "review.cost"
+	keyScorer           = "confidence.model"
+	keyScorerFallback   = "confidence.fallback"
+	keyScorerEffort     = "confidence.effort"
+	keyThreshold        = "confidence.threshold"
+	keyGate             = "confidence.gate"
+	keyRisk             = "confidence.risk"
+	keyFloors           = "confidence.floors"
+	keyConfidenceWhen   = "confidence.when"
+	keyLimit            = "trigger.limit"
+	keySettle           = "trigger.settle"
 )
 
 // Policies are the repository configuration keys that an admin writes at the
@@ -47,6 +48,7 @@ var Policies = []string{
 	keyEffort,
 	keyFixes,
 	keyApprove,
+	keyApproveBlockedAt,
 	keyIncremental,
 	keyDiagram,
 	keyCost,

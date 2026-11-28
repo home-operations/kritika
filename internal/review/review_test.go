@@ -394,6 +394,29 @@ func TestCounts(t *testing.T) {
 	}
 }
 
+func TestCountsApprovable(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		counts    Counts
+		blockedAt Severity
+		want      bool
+	}{
+		{name: "nothing found approves at p1", blockedAt: SeverityP1, want: true},
+		{name: "nothing found approves at p2", blockedAt: SeverityP2, want: true},
+		{name: "P2s approve at p1", counts: Counts{P2: 2}, blockedAt: SeverityP1, want: true},
+		{name: "P2s withhold at p2", counts: Counts{P2: 1}, blockedAt: SeverityP2},
+		{name: "a P1 withholds at p1", counts: Counts{P1: 1}, blockedAt: SeverityP1},
+		{name: "a P0 withholds at p2", counts: Counts{P0: 1}, blockedAt: SeverityP2},
+		{name: "no level is p1", counts: Counts{P2: 1}, want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.counts.Approvable(tt.blockedAt); got != tt.want {
+				t.Fatalf("%+v approvable at %q = %v, want %v", tt.counts, tt.blockedAt, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFingerprint(t *testing.T) {
 	base := Fingerprint(Finding{Path: "main.go", Title: "Nil map write"})
 	tests := []struct {

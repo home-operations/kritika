@@ -523,6 +523,44 @@ func TestMergeKeepsAdminApprovalConditions(t *testing.T) {
 	}
 }
 
+// TestMergeApproveBlockedAt: a file can lower the severity that withholds
+// approval from the admin's, never raise it, so it cannot approve findings
+// that the admin's setting withholds approval for.
+func TestMergeApproveBlockedAt(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name          string
+		admin, file   review.Severity
+		want, dropped string
+	}{
+		{name: "unset keeps the admin's", admin: review.SeverityP1, want: "p1"},
+		{name: "p2 lowers the admin's p1", admin: review.SeverityP1, file: review.SeverityP2, want: "p2"},
+		{name: "p1 under the admin's p1", admin: review.SeverityP1, file: review.SeverityP1, want: "p1"},
+		{name: "p1 cannot raise the admin's p2", admin: review.SeverityP2, file: review.SeverityP1, want: "p2",
+			dropped: `.kritika.yaml: review.approveBlockedAt "p1" was dropped; allowed: p2`},
+		{name: "p0 is no setting", admin: review.SeverityP1, file: review.SeverityP0, want: "p1",
+			dropped: `.kritika.yaml: review.approveBlockedAt "p0" was dropped; allowed: p1 or p2`},
+		{name: "a level that is none is dropped", admin: review.SeverityP2, file: "p3", want: "p2",
+			dropped: `.kritika.yaml: review.approveBlockedAt "p3" was dropped; allowed: p2`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			op := configfile.Settings{Review: configfile.Review{ApproveBlockedAt: tt.admin}}
+			doc := "review: { approve: true }\n"
+			if tt.file != "" {
+				doc = "review: { approveBlockedAt: " + string(tt.file) + " }\n"
+			}
+			m, err := Merge([]byte(doc), op)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(m.Review.ApproveBlockedAt) != tt.want || strings.Join(m.Dropped, "\n") != tt.dropped {
+				t.Fatalf("approveBlockedAt = %q dropped %q, want %q and %q", m.Review.ApproveBlockedAt, m.Dropped, tt.want, tt.dropped)
+			}
+		})
+	}
+}
+
 // TestMergeReplacesAdminGate: a file's gate replaces the admin's,
 // conditions and all, where its approval conditions hold beside them.
 func TestMergeReplacesAdminGate(t *testing.T) {

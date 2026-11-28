@@ -74,6 +74,7 @@
       "inlineComments": true,
       "dashboard": true,
       "approve": false,
+      "approveBlockedAt": "p1",
       "diagram": false,
       "cost": false,
       "context": [
@@ -169,6 +170,7 @@
         "inlineComments": true,
         "dashboard": true,
         "approve": false,
+        "approveBlockedAt": "p1",
         "diagram": false,
         "cost": false,
         "context": [

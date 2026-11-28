@@ -43,6 +43,7 @@ key interacts with the admin's policy. Detailed examples follow the table.
 | [`review.effort`](#models)                                   | how hard they reason                                                                   | replaces                                                                                                     |
 | `review.fixes`                                               | `true` requires a suggested fix on every finding                                       | can only turn it on                                                                                          |
 | [`review.approve`](#approvals)                               | `true` approves a pull request the review allows, `when` only some                     | replaces, and its `when` holds beside the admin's                                                            |
+| [`review.approveBlockedAt`](#approvals)                      | the lowest finding severity that withholds approval, `p1` or `p2`                      | can only lower it                                                                                            |
 | [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                                          | replaces, either way                                                                                         |
 | [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it                            | replaces, `risk` can only be lowered, `floors` adds, and `when` holds beside the admin's                     |
 | [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                                       | judged beside the admin's lists                                                                              |
@@ -108,6 +109,21 @@ review:
 The block turns approval on, and its conditions hold beside the admin's. A
 pull request must pass both, so the file cannot approve what the admin's
 conditions keep out. `approve: true` also keeps the admin's conditions.
+
+`review.approveBlockedAt` is the lowest finding severity that withholds
+approval. With `p1`, the default, a review whose only findings are P2s
+approves. With `p2`, any finding that the review leaves open withholds
+approval, with or without a confidence score:
+
+```yaml
+review:
+  approve: true
+  approveBlockedAt: p2
+```
+
+A finding stays open until a later review finds it fixed or someone
+[dismisses it](/reviews/#findings). The file can set `p2` where the admin sets
+`p1`, but not the reverse. kritika drops a value that it cannot take.
 
 kritika never approves a pull request that changes `.kritika.yaml` or
 another [file that configures kritika](/confidence/#approvals). No

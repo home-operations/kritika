@@ -236,9 +236,12 @@ func (r Result) Counts() Counts {
 func (c Counts) Total() int { return c.P0 + c.P1 + c.P2 }
 
 // Approvable reports whether the result lets kritika approve the pull
-// request: nothing at P0 or P1, so P2s alone do not
-// withhold an approval.
-func (c Counts) Approvable() bool { return c.P0 == 0 && c.P1 == 0 }
+// request where a finding at blockedAt or above withholds approval: nothing
+// at P0 or P1, and with blockedAt p2 nothing at all. Any other blockedAt is
+// p1, so P2s alone do not withhold an approval.
+func (c Counts) Approvable(blockedAt Severity) bool {
+	return c.P0 == 0 && c.P1 == 0 && (blockedAt != SeverityP2 || c.P2 == 0)
+}
 
 // DropReason says why Parse discarded a finding.
 type DropReason string

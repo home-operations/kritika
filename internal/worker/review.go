@@ -304,9 +304,11 @@ type earlyEnd struct {
 	// for one without a name or a review no inclusion let in.
 	filter string
 	// carried is the confidence that an unchanged patch keeps from its last
-	// review, nil when the repository asks for no score. gate is whether the
-	// repository has it fail the status.
+	// review, nil when the repository asks for no score, and open that
+	// review's findings that stand. gate is whether the repository has it
+	// fail the status.
 	carried *review.Confidence
+	open    review.Counts
 	gate    bool
 	started time.Time
 	jobID   int64
@@ -398,7 +400,7 @@ func (w *Review) skipUnchangedBot(
 		if owed, err = store.ReviewOwed(ctx, tx, e.pr.id); err != nil || owed {
 			return err
 		}
-		e.carried, skippable, err = carriedConfidence(ctx, tx, e.pr.id, "", settings.Confidence)
+		e.carried, e.open, skippable, err = carriedConfidence(ctx, tx, e.pr.id, "", settings.Confidence)
 		return err
 	}); err != nil {
 		return "", true, err
@@ -419,7 +421,7 @@ func (w *Review) skipUnchangedBot(
 		scope := judgeApproval(ctx, w.Store, e.args.AccountID, e.pr.id, e.args.Trigger, settings.Review, e.logger)
 		// botPatch found the patch unchanged, so it read the diff.
 		diff, _ := forgeDiff()
-		carryApproval(ctx, e.logger, scope, e.client, e.pr, settings, e.carried, changedOwn(settings, diffPaths(diff)))
+		carryApproval(ctx, e.logger, scope, e.client, e.pr, settings, e.carried, e.open, changedOwn(settings, diffPaths(diff)))
 	}
 	return patch, true, nil
 }

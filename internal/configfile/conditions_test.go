@@ -3,6 +3,8 @@ package configfile
 import (
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // TestApproveForms: review.approve is true, false, or a block of when
@@ -33,6 +35,32 @@ func TestApproveForms(t *testing.T) {
 	bot := with(SamplePR(), "bot", true)
 	if r := root.Settings(&root.Accounts[0]).Review; !r.ApprovesFor(bot) || r.ApprovesFor(SamplePR()) {
 		t.Fatal("approval conditions must hold for a bot's pull request alone")
+	}
+}
+
+// TestApproveBlockedAt: review.approveBlockedAt is p1 unless set, takes p1
+// or p2, and is stated on the Configuration page and by its source.
+func TestApproveBlockedAt(t *testing.T) {
+	authEnv(t)
+	f := mustLoad(t, minimal)
+	if at := f.Settings(&f.Accounts[0]).Review.ApproveBlockedAt; at != review.SeverityP1 {
+		t.Fatalf("default approveBlockedAt = %q, want p1", at)
+	}
+	f = mustLoad(t, "review:\n  approveBlockedAt: p2\n"+minimal)
+	if at := f.Settings(&f.Accounts[0]).Review.ApproveBlockedAt; at != review.SeverityP2 {
+		t.Fatalf("approveBlockedAt = %q, want p2", at)
+	}
+	if got := defaultValue(f.FileLayer().Defaults, keyApproveBlockedAt); got != "p2" {
+		t.Fatalf("the Configuration page states %q", got)
+	}
+	if src := f.Sources(&f.Accounts[0]); src[keyApproveBlockedAt] != SourceDefaults {
+		t.Fatalf("source = %q", src[keyApproveBlockedAt])
+	}
+	for _, at := range []string{"p0", "p3", "none", "''"} {
+		if _, err := load(t, "review:\n  approveBlockedAt: "+at+"\n"+minimal); err == nil ||
+			!strings.Contains(err.Error(), "configfile: review.approveBlockedAt must be p1 or p2") {
+			t.Fatalf("approveBlockedAt %s: err = %v", at, err)
+		}
 	}
 }
 

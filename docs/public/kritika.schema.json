@@ -29,7 +29,7 @@
           "description": "true requires a suggested fix on every finding. false cannot lift the admin's requirement."
         },
         "approve": {
-          "description": "true approves a pull request whose review finds nothing at P0 or P1. With a confidence score, true approves one whose score reaches the threshold and whose risk is within confidence.risk. A later review that no longer allows it dismisses the approval. It replaces the admin's value. A block with when approves only a pull request that one of its conditions holds for, beside the admin's conditions. A pull request that changes .kritika.yaml or another file that configures kritika is never approved.",
+          "description": "true approves a pull request whose review finds nothing at P0 or P1, or nothing at all with approveBlockedAt p2. With a confidence score, true approves one whose score reaches the threshold and whose risk is within confidence.risk, and with approveBlockedAt p2 that has no finding open. A later review that no longer allows it dismisses the approval. It replaces the admin's value. A block with when approves only a pull request that one of its conditions holds for, beside the admin's conditions. A pull request that changes .kritika.yaml or another file that configures kritika is never approved.",
           "anyOf": [
             { "type": "boolean" },
             {
@@ -46,6 +46,10 @@
               }
             }
           ]
+        },
+        "approveBlockedAt": {
+          "enum": ["p1", "p2"],
+          "description": "The lowest finding severity that withholds approval. p1, the default, approves a review whose only findings are P2s. p2 approves only a review with no open finding, with or without a confidence score. It can only lower the admin's value."
         },
         "diagram": {
           "type": "boolean",

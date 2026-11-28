@@ -109,14 +109,31 @@ func TestCarryApproval(t *testing.T) {
 	carried := func(threshold int) *review.Confidence {
 		return &review.Confidence{Score: 4, Threshold: threshold, Risk: review.RiskLow}
 	}
+	strict := settings(true, 4)
+	strict.Review.ApproveBlockedAt = review.SeverityP2
+	unscored := func(at review.Severity) configfile.Settings {
+		return configfile.Settings{Review: configfile.Review{Approve: true, ApproveBlockedAt: at}}
+	}
 	tests := []struct {
 		name                string
 		settings            configfile.Settings
 		carried             *review.Confidence
+		open                review.Counts
 		own                 []string
 		approved, dismissed string
 	}{
 		{name: "nothing carried", settings: settings(true, 4)},
+		{name: "a passing score approves beside open P2s at p1", settings: settings(true, 4), carried: carried(4),
+			open: review.Counts{P2: 2}, approved: "o/r#7@abcdef1234"},
+		{name: "a passing score withdraws beside an open P2 at p2", settings: strict, carried: carried(4),
+			open: review.Counts{P2: 1}, dismissed: "o/r#7: kritika: 0 P0, 0 P1 and 1 P2 finding(s) at abcdef1."},
+		{name: "a passing score with nothing open approves at p2", settings: strict, carried: carried(4),
+			approved: "o/r#7@abcdef1234"},
+		{name: "nothing carried leaves the approval beside open P2s at p1", settings: unscored(review.SeverityP1),
+			open: review.Counts{P2: 1}},
+		{name: "nothing carried withdraws beside an open P2 at p2", settings: unscored(review.SeverityP2),
+			open: review.Counts{P2: 1}, dismissed: "o/r#7: kritika: 0 P0, 0 P1 and 1 P2 finding(s) at abcdef1."},
+		{name: "nothing carried approves nothing at p2", settings: unscored(review.SeverityP2)},
 		{name: "approvals off", settings: settings(false, 4), carried: carried(4)},
 		{name: "a score that still passes approves the new head", settings: settings(true, 4), carried: carried(4),
 			approved: "o/r#7@abcdef1234"},
@@ -135,7 +152,7 @@ func TestCarryApproval(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &approvalForge{}
 			carryApproval(t.Context(), slog.New(slog.DiscardHandler), approvalInScope, f,
-				&pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, tt.settings, tt.carried, tt.own)
+				&pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, tt.settings, tt.carried, tt.open, tt.own)
 			if f.approved != tt.approved || f.dismissed != tt.dismissed {
 				t.Fatalf("approved %q dismissed %q, want %q and %q", f.approved, f.dismissed, tt.approved, tt.dismissed)
 			}

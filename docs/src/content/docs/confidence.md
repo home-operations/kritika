@@ -97,6 +97,11 @@ Set `review.approve: true` to enable approvals.
 | No confidence model  | There are no P0 or P1 findings.                                               |
 | Confidence model set | The score meets `confidence.threshold` and risk is at most `confidence.risk`. |
 
+P2 findings take nothing off the score, so by default they do not withhold
+approval. With `review.approveBlockedAt: p2`, any open finding withholds it,
+with or without a confidence model
+([approvals](/repository-config/#approvals)).
+
 These reviews do not approve:
 
 - an unscored review, when a confidence model is configured

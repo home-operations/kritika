@@ -98,6 +98,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if a := f.Review.Approve; a != nil {
 		m.Review.Approve, m.Review.ApproveWhenInRepo = a.On, a.When
 	}
+	m.approveBlockedAt(f.Review.ApproveBlockedAt, op.Review.ApproveBlockedAt)
 	if f.Review.Diagram != nil {
 		m.Review.Diagram = *f.Review.Diagram
 	}
@@ -151,6 +152,22 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		}
 	}
 	return m, nil
+}
+
+// approveBlockedAt takes the file's review.approveBlockedAt where it is no
+// higher than the admin's, so the file cannot approve findings that the
+// admin's setting withholds approval for. An admin's setting other than p2
+// is p1.
+func (m *Merged) approveBlockedAt(at, admin review.Severity) {
+	switch {
+	case at == "":
+	case at == review.SeverityP2 || at == review.SeverityP1 && admin != review.SeverityP2:
+		m.Review.ApproveBlockedAt = at
+	case admin == review.SeverityP2:
+		m.drop("review.approveBlockedAt", strconv.Quote(string(at)), "p2")
+	default:
+		m.drop("review.approveBlockedAt", strconv.Quote(string(at)), "p1 or p2")
+	}
 }
 
 // withFloors is the admin's risk floors with the file's added: each level

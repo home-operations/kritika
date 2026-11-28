@@ -4,6 +4,7 @@ package worker
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -70,8 +71,16 @@ func TestCarriedConfidence(t *testing.T) {
 		wantHeld      string
 		wantStep      string
 		wantSkippable bool
+		// p2 is how many P2 findings the last review has, and wantOpen
+		// the findings that carriedConfidence says stand.
+		p2       int
+		wantOpen review.Counts
 	}{
 		{name: "no score asked for", rows: []row{{"completed", ""}}, wantScore: -1, wantSkippable: true},
+		{name: "no score asked for still counts the findings that stand", rows: []row{{"completed", ""}}, p2: 2,
+			wantScore: -1, wantSkippable: true, wantOpen: review.Counts{P2: 2}},
+		{name: "a carried score comes with the findings that stand", want: scored, rows: []row{{"completed", `{"score":5,"threshold":5}`}},
+			p2: 1, wantScore: 5, wantSkippable: true, wantOpen: review.Counts{P2: 1}},
 		{name: "a prepared score cannot be carried", want: scored, wantScore: -1, rows: []row{{"prepared", `{"score":5}`}}},
 		{name: "a prepared review cannot hide the last completed score", want: scored, wantScore: 4, wantSkippable: true,
 			rows: []row{{"completed", `{"score":4}`}, {"prepared", `{"score":5}`}}},
@@ -111,6 +120,7 @@ func TestCarriedConfidence(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got *review.Confidence
+			var open review.Counts
 			var skippable bool
 			err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 				var last string
@@ -118,6 +128,12 @@ func TestCarriedConfidence(t *testing.T) {
 					if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, confidence, created_at)
 						VALUES ($1, $2, 'abc4243', $3, nullif($4, '')::jsonb, now() + make_interval(secs => $5)) RETURNING id::text`,
 						account.ID(), pr.id, r.status, r.confidence, i).Scan(&last); err != nil {
+						return err
+					}
+				}
+				for i := range tt.p2 {
+					if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation, fingerprint)
+						VALUES ($1, $2, 'a.go', 1, 'p2', 'nit', 'why', $3)`, account.ID(), last, fmt.Sprintf("fp%d", i)); err != nil {
 						return err
 					}
 				}
@@ -136,7 +152,7 @@ func TestCarriedConfidence(t *testing.T) {
 					last = ""
 				}
 				var err error
-				if got, skippable, err = carriedConfidence(ctx, tx, pr.id, last, tt.want); err != nil {
+				if got, open, skippable, err = carriedConfidence(ctx, tx, pr.id, last, tt.want); err != nil {
 					return err
 				}
 				return errRollback
@@ -155,8 +171,9 @@ func TestCarriedConfidence(t *testing.T) {
 						got.Risk, got.Held, got.Step, got.Stepped, tt.wantRisk, tt.wantHeld, tt.wantStep)
 				}
 			}
-			if score != tt.wantScore || skippable != tt.wantSkippable {
-				t.Fatalf("carriedConfidence = score %d, skippable %v; want %d, %v", score, skippable, tt.wantScore, tt.wantSkippable)
+			if score != tt.wantScore || skippable != tt.wantSkippable || open != tt.wantOpen {
+				t.Fatalf("carriedConfidence = score %d, skippable %v, open %+v; want %d, %v, %+v",
+					score, skippable, open, tt.wantScore, tt.wantSkippable, tt.wantOpen)
 			}
 		})
 	}

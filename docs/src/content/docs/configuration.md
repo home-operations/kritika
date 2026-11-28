@@ -396,14 +396,14 @@ to every repository. A repository changes it for itself in its own
 [`.kritika.yaml`](/repository-config/). Its keys come in five groups,
 with a few keys beside them:
 
-| Group        | Keys                                                                                          | What they set                              |
-| ------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost`, `agents` | what a review runs on and what it says     |
-| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`, `floors`, `when`  | how a review is judged                     |
-| `trigger`    | `include`, `exclude`, `limit`                                                                 | which pull requests are reviewed, and when |
-| `comments`   | `inline`, `summary`, `finding`, `dashboard`                                                   | what is posted                             |
-| `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches`        | the bounds of a review's tool loop         |
-| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone             |                                            |
+| Group        | Keys                                                                                                              | What they set                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `approveBlockedAt`, `incremental`, `diagram`, `cost`, `agents` | what a review runs on and what it says     |
+| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`, `floors`, `when`                      | how a review is judged                     |
+| `trigger`    | `include`, `exclude`, `limit`                                                                                     | which pull requests are reviewed, and when |
+| `comments`   | `inline`, `summary`, `finding`, `dashboard`                                                                       | what is posted                             |
+| `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches`                            | the bounds of a review's tool loop         |
+| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone                                 |                                            |
 
 `ignore` lists globs of paths left out of a review's initial diff and
 context, the index, and the agent's searches and checkout. These add to
@@ -540,6 +540,7 @@ the root's, except:
 | `skills.scope`                       | adds up by skill name. The file's entry wins                                                                                  |
 | `review.agents`                      | specialists added, and an admin's specialist gains only rules and skill scopes. Agents without categories replace the admin's |
 | `review.fixes`                       | can only turn it on                                                                                                           |
+| `review.approveBlockedAt`            | can only lower it, from `p1` to `p2`                                                                                          |
 | `confidence.risk`                    | can only lower it                                                                                                             |
 | `confidence.floors`                  | globs add up, level by level. The higher level holds for a path                                                               |
 | `review.approve`'s `when`            | judged beside the admin's. `approve: true` keeps the admin's                                                                  |

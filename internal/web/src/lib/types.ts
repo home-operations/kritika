@@ -389,6 +389,8 @@ export interface ReviewBlock {
   // approveWhenInRepo when the repository's .kritika.yaml adds none.
   approveWhen?: Condition[];
   approveWhenInRepo?: Condition[];
+  // approveBlockedAt is the lowest finding severity that withholds approval.
+  approveBlockedAt: Exclude<Severity, 'p0'>;
   diagram: boolean;
   cost: boolean;
   context: ContextFile[];

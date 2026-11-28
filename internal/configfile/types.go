@@ -201,22 +201,23 @@ type Overrides struct {
 
 // ReviewSpec sets how a review is done. It sets the models. A role written
 // here, even empty, replaces kritika's default. It sets how hard they reason,
-// whether a finding must carry a suggested fix, and whether the review
-// approves. It sets how many files can change since the last review before a
-// re-review covers the whole pull request again. It also sets whether the
-// summary draws the change's flow, and whether its footer states the pull
-// request's spend.
+// whether a finding must carry a suggested fix, whether the review approves,
+// and the lowest finding severity that withholds approval. It sets how many
+// files can change since the last review before a re-review covers the whole
+// pull request again. It also sets whether the summary draws the change's
+// flow, and whether its footer states the pull request's spend.
 type ReviewSpec struct {
 	Model    *ReviewModel `yaml:"model,omitempty"`
 	Fallback *ModelRef    `yaml:"fallback,omitempty"`
 	// Effort is one of model.Efforts. Written empty, it leaves the effort
 	// to the provider.
-	Effort      *model.Effort `yaml:"effort,omitempty"`
-	Fixes       *bool         `yaml:"fixes,omitempty"`
-	Approve     *Switch       `yaml:"approve,omitempty"`
-	Incremental *int          `yaml:"incremental,omitempty"`
-	Diagram     *bool         `yaml:"diagram,omitempty"`
-	Cost        *bool         `yaml:"cost,omitempty"`
+	Effort           *model.Effort    `yaml:"effort,omitempty"`
+	Fixes            *bool            `yaml:"fixes,omitempty"`
+	Approve          *Switch          `yaml:"approve,omitempty"`
+	ApproveBlockedAt *review.Severity `yaml:"approveBlockedAt,omitempty"`
+	Incremental      *int             `yaml:"incremental,omitempty"`
+	Diagram          *bool            `yaml:"diagram,omitempty"`
+	Cost             *bool            `yaml:"cost,omitempty"`
 	// Agents are the agents that a review runs. Those with categories run
 	// beside the default pass. The others replace it when their conditions
 	// hold, and the first that holds does so.
@@ -528,9 +529,10 @@ type Review struct {
 	// an image the dashboard serves.
 	Dashboard bool `json:"dashboard"`
 	// Approve is true to approve a pull request whose review found nothing
-	// at P0 or P1. Where a confidence score is asked for, it approves a pull
-	// request whose score and risk allow it. True also dismisses that approval
-	// when a later review's do not allow it. Off unless set.
+	// at ApproveBlockedAt or above. Where a confidence score is asked for, it
+	// approves a pull request whose score and risk allow it. True also
+	// dismisses that approval when a later review's do not allow it. Off
+	// unless set.
 	Approve bool `json:"approve"`
 	// ApproveWhen are review.approve's conditions, one of which a pull
 	// request must hold for to be approved, none for every one. An
@@ -539,6 +541,11 @@ type Review struct {
 	// hold as well, so the file never approves what the admin's keep out.
 	ApproveWhen       []When `json:"approveWhen,omitempty"`
 	ApproveWhenInRepo []When `json:"approveWhenInRepo,omitempty"`
+	// ApproveBlockedAt is the lowest finding severity that withholds
+	// approval, p1 unless set: P2s alone approve. At p2 a pull request is
+	// approved only when its review leaves no finding open, with or without
+	// a confidence score, which P2s take nothing off.
+	ApproveBlockedAt review.Severity `json:"approveBlockedAt"`
 	// Diagram is true to have the summary draw the flow the change adds
 	// or alters as a Mermaid diagram. Off unless set: it costs output
 	// tokens on every review.

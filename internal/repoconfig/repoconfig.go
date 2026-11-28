@@ -63,7 +63,11 @@ type Review struct {
 	Effort   *model.Effort          `yaml:"effort,omitempty"`
 	Fixes    *bool                  `yaml:"fixes,omitempty"`
 	Approve  *configfile.Switch     `yaml:"approve,omitempty"`
-	Diagram  *bool                  `yaml:"diagram,omitempty"`
+	// ApproveBlockedAt can only lower the severity that withholds approval
+	// from the admin's, so a file cannot approve findings that the admin's
+	// setting withholds approval for.
+	ApproveBlockedAt review.Severity `yaml:"approveBlockedAt,omitempty"`
+	Diagram          *bool           `yaml:"diagram,omitempty"`
 	// Agents add agents of the repository's own. Its own that replace the
 	// default pass replace the admin's. Under the name of an admin's
 	// specialist, they can only add rules and skill scopes to it.
