@@ -70,8 +70,8 @@ type ConfigFile struct {
 	MaxPushSettle time.Duration `env:"KRITIKA_TUNING_CONFIG_FILE_MAX_PUSH_SETTLE" envDefault:"1h" yaml:"maxPushSettle,omitempty"`
 	// DefaultAgentTimeout bounds a review's agent: the default when the
 	// configuration file does not set agent.timeout. At most the agent
-	// timeout that jobTimeout leaves, and whole seconds, as a run's spec
-	// carries it.
+	// timeout that jobTimeout leaves, and a whole number of seconds, at
+	// least 1s, as a run's spec carries it.
 	DefaultAgentTimeout time.Duration `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_AGENT_TIMEOUT" envDefault:"20m" yaml:"defaultAgentTimeout,omitempty"` //nolint:lll // a struct tag does not wrap
 	// DefaultParts is the most parts a review is split into: the default
 	// when the configuration file does not set agent.parts. A 512 KiB diff
@@ -84,8 +84,8 @@ type ConfigFile struct {
 	// of several a few more.
 	DefaultFetches int `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_FETCHES" envDefault:"8" yaml:"defaultFetches,omitempty"`
 	// DefaultCommandTimeout bounds one command of the run tool: the default
-	// when the configuration file does not set agent.commandTimeout. Whole
-	// seconds, as a run's spec carries it.
+	// when the configuration file does not set agent.commandTimeout. A whole
+	// number of seconds, at least 1s, as a run's spec carries it.
 	DefaultCommandTimeout time.Duration `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_COMMAND_TIMEOUT" envDefault:"30s" yaml:"defaultCommandTimeout,omitempty"` //nolint:lll // a struct tag does not wrap
 	// MinPromptTokens is the least agent.prompt takes: the system prompt,
 	// with its rules and skills, and the pull request's description are

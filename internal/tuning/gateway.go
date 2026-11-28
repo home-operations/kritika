@@ -17,7 +17,7 @@ type Gateway struct {
 	// that one file's neighbouring declarations do not take every place.
 	SimilarPerFile int `env:"KRITIKA_TUNING_GATEWAY_SIMILAR_PER_FILE" envDefault:"2" yaml:"similarPerFile,omitempty"`
 	// SimilarMax is how many chunks an answer keeps when its request asks
-	// for no other number.
+	// for no other number. At most contextPack.similarLimit.
 	SimilarMax int `env:"KRITIKA_TUNING_GATEWAY_SIMILAR_MAX" envDefault:"10" yaml:"similarMax,omitempty"`
 
 	// Drain is how long a stopping gateway lets model steps in flight
@@ -55,7 +55,8 @@ type Gateway struct {
 	// the runner cuts a cause further to fit.
 	MaxSmallReport ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_SMALL_REPORT" envDefault:"64Ki" yaml:"maxSmallReport,omitempty"`
 	// MaxPartsReport bounds a split review's remaining-parts report, which
-	// names each of its slot pools twice. It can be raised, not lowered.
+	// names each of its slot pools twice. At least 64Ki, its default: it
+	// can be raised, not lowered.
 	MaxPartsReport ByteSize `env:"KRITIKA_TUNING_GATEWAY_MAX_PARTS_REPORT" envDefault:"64Ki" yaml:"maxPartsReport,omitempty"`
 	// MaxIndexBody bounds an index upload: its opening line, and a line for
 	// each of up to indexer.maxChunks chunks of indexer.maxChunkBytes, whose
@@ -158,15 +159,16 @@ type Egress struct {
 	MaxFills int `env:"KRITIKA_TUNING_EGRESS_MAX_FILLS" envDefault:"8" yaml:"maxFills,omitempty"`
 
 	// S3LookupTimeout bounds each of the S3 cache's lookups: dialling, the
-	// TLS handshake, a response's headers, a credential's discovery, and an
-	// entry's stat.
+	// TLS handshake, a response's headers but an upload's, a credential's
+	// discovery, and an entry's stat.
 	S3LookupTimeout time.Duration `env:"KRITIKA_TUNING_EGRESS_S3_LOOKUP_TIMEOUT" envDefault:"2s" yaml:"s3LookupTimeout,omitempty"`
 	// S3KeepAlive is the keep-alive period of the S3 cache's connections.
 	S3KeepAlive time.Duration `env:"KRITIKA_TUNING_EGRESS_S3_KEEP_ALIVE" envDefault:"30s" yaml:"s3KeepAlive,omitempty"`
 	// S3ReadTimeout bounds reading an entry from the S3 cache.
 	S3ReadTimeout time.Duration `env:"KRITIKA_TUNING_EGRESS_S3_READ_TIMEOUT" envDefault:"10s" yaml:"s3ReadTimeout,omitempty"`
 	// S3UploadTimeout is the fixed part of an upload's deadline, which
-	// S3UploadRate extends by the entry's size.
+	// S3UploadRate extends by the entry's size. That deadline alone bounds
+	// an upload, the wait for its answer included.
 	S3UploadTimeout time.Duration `env:"KRITIKA_TUNING_EGRESS_S3_UPLOAD_TIMEOUT" envDefault:"30s" yaml:"s3UploadTimeout,omitempty"`
 	// S3UploadRate is the slowest upload allowed past the fixed budget, in
 	// bytes a second: at the default, a 256Mi entry has about five minutes

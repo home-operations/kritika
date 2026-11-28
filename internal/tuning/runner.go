@@ -12,17 +12,18 @@ import (
 type RunSpec struct {
 	// HeartbeatInterval is how often a runner stamps
 	// runner_runs.heartbeat_at. The worker counts a run stale after
-	// reportRetryWindow + reportTimeout + 2 × heartbeatInterval
-	// (Values.HeartbeatStale), so the report settings dominate it at the
-	// defaults.
+	// reportRetryWindow + reportTimeout + 2 × heartbeatInterval, so the
+	// report settings dominate it at the defaults, and never before 5m30s,
+	// the cutoff from before it was tuned: a runner image of an earlier
+	// release beats every 15s whatever it is handed.
 	HeartbeatInterval time.Duration `env:"KRITIKA_TUNING_RUN_SPEC_HEARTBEAT_INTERVAL" envDefault:"15s" yaml:"heartbeatInterval,omitempty"`
 	// MaxBytes bounds an encoded spec, and it leaves the Secret room for
 	// the git and gateway tokens. It can be lowered and not raised: a runner
 	// of an earlier build, which spec version 1 still reaches, reads no
-	// larger spec.
+	// larger spec. At least 64Ki, for the fields that nothing trims.
 	MaxBytes ByteSize `env:"KRITIKA_TUNING_RUN_SPEC_MAX_BYTES" envDefault:"900Ki" yaml:"maxBytes,omitempty"`
 	// MaxPromptBytes is what an encoded prompt is trimmed to, at least 32Ki
-	// under MaxBytes to leave room for the rest of the spec.
+	// under maxBytes to leave room for the rest of the spec.
 	MaxPromptBytes ByteSize `env:"KRITIKA_TUNING_RUN_SPEC_MAX_PROMPT_BYTES" envDefault:"768Ki" yaml:"maxPromptBytes,omitempty"`
 	// MaxPriorFindings is how many of the last review's findings a spec
 	// carries, and how many dismissed ones.
@@ -56,7 +57,7 @@ type RunSpec struct {
 // Executor holds the tunable values of package executor.
 type Executor struct {
 	// LogTailBytes is how much of a runner's output is kept: enough to
-	// diagnose, small enough to store per run.
+	// diagnose, small enough to store per run. At most logReadBytes.
 	LogTailBytes ByteSize `env:"KRITIKA_TUNING_EXECUTOR_LOG_TAIL_BYTES" envDefault:"64Ki" yaml:"logTailBytes,omitempty"`
 	// LogTailLines and LogReadBytes bound the read of a runner pod's log
 	// for its tail: enough lines to fill logTailBytes many times over, and
@@ -204,14 +205,15 @@ type Runner struct {
 	MaxFailureCause ByteSize `env:"KRITIKA_TUNING_RUNNER_MAX_FAILURE_CAUSE" envDefault:"8Ki" yaml:"maxFailureCause,omitempty"`
 
 	// ReportBackoff is the first wait between attempts at a report, which
-	// doubles up to ReportMaxBackoff.
+	// doubles up to ReportMaxBackoff, at least as long.
 	ReportBackoff    time.Duration `env:"KRITIKA_TUNING_RUNNER_REPORT_BACKOFF" envDefault:"1s" yaml:"reportBackoff,omitempty"`
 	ReportMaxBackoff time.Duration `env:"KRITIKA_TUNING_RUNNER_REPORT_MAX_BACKOFF" envDefault:"15s" yaml:"reportMaxBackoff,omitempty"`
 	// HeartbeatTimeout bounds one heartbeat, as runSpec.reportTimeout does
 	// a report. A heartbeat is tried once: another comes along soon. One
 	// that hangs for all of it, a beat after the last that landed, leaves
 	// the next a beat and as long again before the worker deems the run
-	// dead.
+	// dead. So at most half of runSpec.reportRetryWindow and
+	// runSpec.reportTimeout together.
 	HeartbeatTimeout time.Duration `env:"KRITIKA_TUNING_RUNNER_HEARTBEAT_TIMEOUT" envDefault:"10s" yaml:"heartbeatTimeout,omitempty"`
 	// MaxReportAnswer bounds what the gateway's answer to a report is read
 	// to: the part checkpoints of a run, or an error.

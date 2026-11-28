@@ -235,6 +235,12 @@ provider [`concurrency`](/models/#concurrency) has free slots. A review's
 job timeout allows for the agent's most `parts`, up to
 `jobTimeout.maxJobTimeout`.
 
+A retried split review reuses the parts that an earlier attempt finished
+only while the `agent` values and the `runner` values of `search_code`,
+`fetch_repo` and `fetch_oci` are unchanged, and only while their checkpoints
+together fit `runner.maxReportAnswer` and `store.maxCheckpointRead`.
+Otherwise the parts run again, and are paid for again.
+
 `gateway.maxReportBody` (`64Mi`) must hold two kinds of report, each on its
 own:
 
@@ -309,7 +315,13 @@ kritika refuses these combinations:
   `adapter.recordTimeout` together over `model.gatewaySettle`, or
   `adapter.reservationPad` over it.
 - `worker.confidenceTimeout` (`2m`) or `worker.mergeTimeout` (`100s`)
-  over `jobTimeout.publishHeadroom`.
+  over `jobTimeout.publishHeadroom`, or the two together not under
+  `jobTimeout.leaseWaitHeadroom` plus `jobTimeout.publishHeadroom`.
+- `worker.threadTimeout` (`5m`) over `jobTimeout.maxJobTimeout`.
+- `worker.chatGptRefreshInterval` (`1m`) plus
+  `worker.chatGptRefreshTimeout` (`1m`) not under `chatGpt.refreshLead`
+  (`5m`), or the refresh timeout not over `worker.chatGptHttpTimeout`
+  (`30s`).
 - `configFile.defaultAgentTimeout` over the agent timeout that
   `jobTimeout` leaves, and `jobTimeout.runnerDeadline` over the runner
   deadline that it leaves.
@@ -416,8 +428,12 @@ they are tied to each other:
 - **Runner liveness.** A runner beats every `runSpec.heartbeatInterval`
   (`15s`). It counts as dead after `runSpec.reportRetryWindow` (`3m`) plus
   `runSpec.reportTimeout` (`2m`) plus two beats, 5m30s, which outlasts a
-  gateway restart in a rollout. Shorter values end runs whose answer is
-  still on its way.
+  gateway restart in a rollout. It never counts one dead sooner than that,
+  the cutoff from before it was tuned, since a runner image of an earlier
+  release beats every 15 seconds whatever it is handed: shorter values
+  change nothing, and longer ones wait longer on a wedged runner.
+  `runner.heartbeatTimeout` (`10s`) must be at most half of
+  `runSpec.reportRetryWindow` plus `runSpec.reportTimeout`.
 - **Model slots.** A slot's holder renews it every `store.leaseHeartbeat`
   (`30s`). A slot not renewed for `store.leaseExpiry` (`2m`) is free to
   take, and kritika refuses an expiry that is not longer than the
@@ -465,6 +481,16 @@ a new leader times its wait for a predecessor's refresh by its own
 interval, and a predecessor from before this release takes no refresh
 claim.
 
+This release's migrations add the abandonment window to each job
+heartbeat and a refresh claim to each ChatGPT session. Both are columns
+that earlier replicas ignore, so the two releases can run side by side.
+
+Each attempt of a job also records its replica's rescue horizon,
+`jobTimeout.maxJobTimeout` plus `jobTimeout.rescueGrace`, never under 4
+hours. River's stuck-job rescuer of this release, on whichever replica
+River elected, leaves the attempt alone until that horizon has passed as
+well as its own, a job that a cancel was asked of included.
+
 On the first rollout of this release, keep every job within 4 hours, the
 rescue horizon from before it was tuned, until every serve replica runs
 it: a River leader from before this release judges a running job by its
@@ -499,11 +525,18 @@ applies to the whole instance. Raising it lets password guessing go
 faster. A dashboard session's length is `auth.sessionTTL` in the
 configuration file.
 
+A GitHub or Forgejo sign-in reads the person's organizations and teams up
+to `auth.gitHubMaxPages` (10 pages of 100) or `auth.forgejoMaxPages` (20
+pages of `auth.forgejoPageSize`). A longer list fails the sign-in, rather
+than mapping roles on part of it.
+
 Some values are mirrored where kritika cannot change them. The dashboard's
 token form offers the default `webApi.tokenLifetimes` (never, 7, 30, 90
 and 365 days) and checks the default `webApi.tokenNameMax` of 100
 characters. Some dashboard pages ask for a fixed number of items, which
-`webApi.maxLimit` clamps. The published
+`webApi.maxLimit` clamps. The dashboard's usage periods are fixed, the
+longest 90 days, so `webApi.maxUsageWindow` cannot go under `2184h`.
+Each of `webApi.tokenLifetimes` must be whole days. The published
 [repository schema](https://kritika.home-operations.com/kritika.schema.json)
 states the default `configFile.maxReviewers` (8),
 `configFile.maxReviewerChars` (8000) and `configFile.maxRuleChars` (2000).
@@ -520,17 +553,17 @@ These values bound what untrusted or unchecked input can make kritika do.
 Each default leaves legitimate use its room, so raising one mostly widens
 what a bad input can cost.
 
-| Values                                                                                                                                        | What they guard against                                                                |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `aqua.maxDownloadBytes`, `maxUnpackedBytes`, `maxEntries`, `maxSignatureBytes`, `maxChecksumFileBytes`, `maxReleaseBytes`, `maxRegistryBytes` | a repository tool's download that is too large, or an archive that expands without end |
-| `review.maxIterations`, `review.maxMeasureDepth`, `review.renderTimeout`                                                                      | a repository's comment template that loops, nests or runs without end                  |
-| `prFilter.evalCostLimit`, `roleMap.evalCostLimit`                                                                                             | a CEL expression that costs too much to evaluate                                       |
-| `auth.maxFailedSignIns`, `auth.failedSignInWindow`, `auth.maxTrackedClients`, `auth.maxLocalBody`, `auth.maxApiBody`, `store.maxLoginStates`  | password guessing, and sign-ins that anyone can start without a session                |
-| `webhook.maxBody`                                                                                                                             | an oversized delivery. `kritika_webhooks_total` counts one as `too_large`              |
-| `webhook.gitLabTolerance`                                                                                                                     | a replayed GitLab delivery                                                             |
-| `webApi.maxBodyBytes`                                                                                                                         | an oversized API request                                                               |
-| `gateway.maxConversationBytes`, `maxReportBody`, `maxCheckpointBody`, `maxSmallReport`, `runner.maxReportAnswer`                              | what a runner can make serve hold in memory                                            |
-| `store.refusalsPerRun`                                                                                                                        | a looping agent that fills the egress refusal table                                    |
+| Values                                                                                                                                        | What they guard against                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `aqua.maxDownloadBytes`, `maxUnpackedBytes`, `maxEntries`, `maxSignatureBytes`, `maxChecksumFileBytes`, `maxReleaseBytes`, `maxRegistryBytes` | a repository tool's download that is too large, or an archive that expands without end                    |
+| `review.maxIterations`, `review.maxMeasureDepth`, `review.renderTimeout`                                                                      | a repository's comment template that loops, nests or runs without end                                     |
+| `prFilter.evalCostLimit`, `roleMap.evalCostLimit`                                                                                             | a CEL expression that costs too much to evaluate                                                          |
+| `auth.maxFailedSignIns`, `auth.failedSignInWindow`, `auth.maxTrackedClients`, `auth.maxLocalBody`, `auth.maxApiBody`, `store.maxLoginStates`  | password guessing, and sign-ins that anyone can start without a session                                   |
+| `webhook.maxBody`                                                                                                                             | an oversized delivery. `kritika_webhooks_total` counts one as `too_large`                                 |
+| `webhook.gitLabTolerance`                                                                                                                     | a replayed GitLab delivery                                                                                |
+| `webApi.maxBodyBytes`                                                                                                                         | an oversized API request                                                                                  |
+| `gateway.maxConversationBytes`, `maxReportBody`, `maxCheckpointBody`, `maxSmallReport`, `maxPartsReport`, `runner.maxReportAnswer`            | what a runner can make serve hold in memory. `gateway.maxPartsReport` cannot go under its default, `64Ki` |
+| `store.refusalsPerRun`                                                                                                                        | a looping agent that fills the egress refusal table                                                       |
 
 `aqua.maxDownloadBytes` (`1Gi`) is the one to raise if a tool you need
 ships a larger release. The run logs `tool not installed` with the error.
@@ -543,16 +576,35 @@ kritika refuses these past what the outside limit allows:
   GitHub takes.
 - `runSpec.maxBytes` cannot exceed `900Ki`, its default, the most that a
   runner of spec version 1 reads. That leaves room under the 1 MiB that a
-  Kubernetes Secret holds for the run's credentials.
-  `runSpec.maxPromptBytes` must be less than `runSpec.maxBytes`.
+  Kubernetes Secret holds for the run's credentials. It must be at least
+  `64Ki`, and `runSpec.maxPromptBytes` must leave `32Ki` of it to the rest
+  of the spec.
 - `gitHub.appJwtLifetime` cannot exceed GitHub's 10 minutes, and must
-  exceed `gitHub.tokenRefreshLead`.
+  exceed `gitHub.tokenRefreshLead`. It, `forgejo.tokenTtl` and
+  `forgejo.runnerTokenTtl` must be at least a second.
+- `gitLab.pageSize` cannot exceed 100, the largest page that GitLab serves.
 - `store.keepaliveIdle` and `store.keepaliveInterval` must be at least a
   second, since Postgres counts them in whole seconds.
+  `store.appStatementTimeout` and `store.ownerStatementTimeout` must be
+  from 1ms to `596h31m23.647s`, the longest `statement_timeout` that
+  Postgres takes. `store.ownerPoolMaxConns` must be at least 2, since the
+  leader lock holds one connection.
+- `lexical.maxLexemeBytes` cannot exceed 2047, the longest lexeme of a
+  Postgres `tsvector`.
+- `executor.eventInstanceBytes` and `executor.eventNoteBytes` cannot exceed
+  the 128 bytes and `1Ki` that Kubernetes takes in an Event.
+  `executor.jobTtl` and `jobTimeout.runnerDeadline` must be whole seconds,
+  as a Job's fields are.
+- `runner.maxDirNameBytes` cannot exceed 250, so that a fetch's diff name
+  fits a file system's 255 bytes.
+- `jobs.onboardRetryAfter` cannot exceed `24h`, how long River keeps a
+  finished job.
 
 Others are capped by the service on the other end whatever they say:
 GitHub inlines a file only up to 1 MiB whatever `forge.maxFileBytes` says,
-and GitLab serves at most 100 items a page.
+and a Forgejo instance caps `forgejo.pageSize` at its own largest page.
+A Forgejo listing ends only at an empty page or an answer whose headers say
+there is no next one, so a capped page loses nothing.
 
 ## Changing a value safely
 

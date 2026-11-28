@@ -50,8 +50,8 @@ type WebAPI struct {
 	// MaxUsageWindow is the most that ?from= and ?to= can span. The series
 	// are read from every row in the span, and the analytics page reads
 	// the span before it too. So a span of years scans the account's
-	// history twice on one request. At least DashboardUsageWindow, which the
-	// dashboard's longest period asks for.
+	// history twice on one request. At least 2184h, the 91 days that the
+	// dashboard's 90-day period asks for from a midnight.
 	MaxUsageWindow time.Duration `env:"KRITIKA_TUNING_WEB_API_MAX_USAGE_WINDOW" envDefault:"8784h" yaml:"maxUsageWindow,omitempty"`
 	// TokenNameMax is the longest name that a personal access token can
 	// have, in characters. The dashboard's token form checks the default,
@@ -59,7 +59,7 @@ type WebAPI struct {
 	TokenNameMax int `env:"KRITIKA_TUNING_WEB_API_TOKEN_NAME_MAX" envDefault:"100" yaml:"tokenNameMax,omitempty"`
 	// TokenLifetimes are the lifetimes that a personal access token can be
 	// created with, 0 for one that never expires. A request asks for whole
-	// days, so Validate refuses a lifetime that is not whole days. An empty
+	// days, so each lifetime must be whole days. An empty
 	// list, [] in the file and in the environment alike, turns the creation
 	// of tokens off: an empty variable is unset, and so the default. The
 	// dashboard's token form offers the default lifetimes on its own.

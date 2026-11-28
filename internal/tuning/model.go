@@ -17,7 +17,7 @@ type Model struct {
 	// CatalogTimeout bounds one read of a provider's model catalog.
 	CatalogTimeout time.Duration `env:"KRITIKA_TUNING_MODEL_CATALOG_TIMEOUT" envDefault:"30s" yaml:"catalogTimeout,omitempty"`
 	// CatalogRetry is how long a catalog that failed to refresh stays in use
-	// before the next refresh: shorter than CatalogTTL, so a passing
+	// before the next refresh: at most catalogTtl, so a passing
 	// failure heals soon, and long enough not to hammer a provider that is
 	// down.
 	CatalogRetry time.Duration `env:"KRITIKA_TUNING_MODEL_CATALOG_RETRY" envDefault:"1m" yaml:"catalogRetry,omitempty"`
@@ -36,7 +36,7 @@ type Model struct {
 	// DefaultEmbedMaxItemChars is the most UTF-8 bytes of one text an
 	// embeddings request sends, the rest cut at a rune: the default when the
 	// configuration file does not set embedding.maxItemChars. At least 4, a
-	// whole rune.
+	// whole rune, and at most defaultEmbedMaxBatchChars.
 	DefaultEmbedMaxItemChars int `env:"KRITIKA_TUNING_MODEL_DEFAULT_EMBED_MAX_ITEM_CHARS" envDefault:"16000" yaml:"defaultEmbedMaxItemChars,omitempty"` //nolint:lll // a struct tag does not wrap
 	// EmbedTimeout bounds one embeddings request, a batch of at most
 	// DefaultEmbedMaxBatch (or embedding.maxBatch) short texts.
@@ -59,7 +59,7 @@ type Model struct {
 	DefaultStepTimeout time.Duration `env:"KRITIKA_TUNING_MODEL_DEFAULT_STEP_TIMEOUT" envDefault:"5m" yaml:"defaultStepTimeout,omitempty"`
 	// StepBudgetWaits is what a step's budget (model.StepBudget) adds to its
 	// provider's and its fallback's request timeouts for the waits between
-	// their attempts.
+	// their attempts. With gatewaySettle, at least 1s.
 	StepBudgetWaits time.Duration `env:"KRITIKA_TUNING_MODEL_STEP_BUDGET_WAITS" envDefault:"2m" yaml:"stepBudgetWaits,omitempty"`
 	// GatewaySettle is what the gateway can take to release a fallback's
 	// slot, and charge and record an answered step, before it writes the
@@ -186,7 +186,8 @@ type Agent struct {
 type ChatGPT struct {
 	// RefreshLead is how long before a ChatGPT plan's access token expires
 	// it is renewed. So a step's request never goes out with a token about
-	// to lapse under it.
+	// to lapse under it. Longer than worker.chatGptRefreshInterval and
+	// worker.chatGptRefreshTimeout together.
 	RefreshLead time.Duration `env:"KRITIKA_TUNING_CHATGPT_REFRESH_LEAD" envDefault:"5m" yaml:"refreshLead,omitempty"`
 	// ClientTimeout bounds one request of an HTTP client that the package
 	// makes itself, a sign-in's or a refresh's.

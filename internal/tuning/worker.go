@@ -51,12 +51,15 @@ type Worker struct {
 	// hold the job forever.
 	DetachTimeout time.Duration `env:"KRITIKA_TUNING_WORKER_DETACH_TIMEOUT" envDefault:"2m" yaml:"detachTimeout,omitempty"`
 	// ChatGPTRefreshInterval is how often the leader looks for ChatGPT
-	// sessions whose tokens are due for renewal.
+	// sessions whose tokens are due for renewal. With
+	// chatGptRefreshTimeout, less than chatGpt.refreshLead, or a token can
+	// expire before it is renewed.
 	ChatGPTRefreshInterval time.Duration `env:"KRITIKA_TUNING_WORKER_CHAT_GPT_REFRESH_INTERVAL" envDefault:"1m" yaml:"chatGptRefreshInterval,omitempty"` //nolint:lll // a struct tag does not wrap
 	// ChatGPTRefreshTimeout bounds one session's refresh and the write that
 	// saves it, which run on past the leader's cancellation: once OpenAI
 	// answers, the refresh token it rotated is spent, and only the saved
-	// replacement can renew the session again.
+	// replacement can renew the session again. Longer than
+	// chatGptHttpTimeout, so that the save has time once the exchange ends.
 	ChatGPTRefreshTimeout time.Duration `env:"KRITIKA_TUNING_WORKER_CHAT_GPT_REFRESH_TIMEOUT" envDefault:"1m" yaml:"chatGptRefreshTimeout,omitempty"` //nolint:lll // a struct tag does not wrap
 	// ChatGPTSaveAttempts is how many times a refreshed token set is
 	// written before it is given up.
@@ -70,8 +73,9 @@ type Worker struct {
 	// sleeps between looks at whether the review ended.
 	AwaitInterval time.Duration `env:"KRITIKA_TUNING_WORKER_AWAIT_INTERVAL" envDefault:"15s" yaml:"awaitInterval,omitempty"`
 	// ConfidenceTimeout bounds scoring a review, the wait for a slot on the
-	// confidence model included. With the write-back's own bound it stays
-	// inside JobTimeout.PublishHeadroom, which Validate holds it to.
+	// confidence model included. At most jobTimeout.publishHeadroom, and,
+	// with mergeTimeout, less than jobTimeout.leaseWaitHeadroom and
+	// publishHeadroom together.
 	ConfidenceTimeout time.Duration `env:"KRITIKA_TUNING_WORKER_CONFIDENCE_TIMEOUT" envDefault:"2m" yaml:"confidenceTimeout,omitempty"`
 	// ConfidenceMaxOutputTokens bounds the scorer's answer: a score and a
 	// sentence or two, with room for a reasoning model's thinking.
@@ -125,14 +129,15 @@ type Worker struct {
 	// River's backoff would spend the job's few attempts within seconds and
 	// drop the push that queued it; a snooze spends none.
 	ForgeWaitMin time.Duration `env:"KRITIKA_TUNING_WORKER_FORGE_WAIT_MIN" envDefault:"30s" yaml:"forgeWaitMin,omitempty"`
-	// ForgeWaitMax caps one of those waits.
+	// ForgeWaitMax caps one of those waits. At least forgeWaitMin.
 	ForgeWaitMax time.Duration `env:"KRITIKA_TUNING_WORKER_FORGE_WAIT_MAX" envDefault:"15m" yaml:"forgeWaitMax,omitempty"`
 	// ForgeWaits is how many of those waits a job has before the failure
 	// spends an attempt.
 	ForgeWaits int `env:"KRITIKA_TUNING_WORKER_FORGE_WAITS" envDefault:"8" yaml:"forgeWaits,omitempty"`
 	// MergeTimeout bounds writing a split review's summary, inside the time
-	// publishing reads the agent's run in: Validate holds it within
-	// JobTimeout.PublishHeadroom.
+	// publishing reads the agent's run in: at most
+	// jobTimeout.publishHeadroom, and, with confidenceTimeout, less than
+	// jobTimeout.leaseWaitHeadroom and publishHeadroom together.
 	MergeTimeout time.Duration `env:"KRITIKA_TUNING_WORKER_MERGE_TIMEOUT" envDefault:"100s" yaml:"mergeTimeout,omitempty"`
 	// MergeMaxOutputTokens bounds the merge call's answer: a summary, with
 	// room for the review model's reasoning at its effort.
@@ -171,7 +176,7 @@ type Worker struct {
 	// sooner wakes it; the snooze bounds the wait when none is, as when a
 	// holder died and its lease expired.
 	SnoozeMin time.Duration `env:"KRITIKA_TUNING_WORKER_SNOOZE_MIN" envDefault:"5s" yaml:"snoozeMin,omitempty"`
-	// SnoozeMax caps that snooze.
+	// SnoozeMax caps that snooze. At least snoozeMin.
 	SnoozeMax time.Duration `env:"KRITIKA_TUNING_WORKER_SNOOZE_MAX" envDefault:"1m" yaml:"snoozeMax,omitempty"`
 	// PublishWait is how long a review or thread change whose start found
 	// the pull request's publication lock held waits before it tries again:
@@ -204,7 +209,8 @@ type Jobs struct {
 	// pace, and the dashboard's, which shows where a repository waits for
 	// it. The poller waits as long to look again at the default branch of a
 	// repository whose index job ended without moving its index, which it
-	// reads from the finished job, so at most RiverFinishedJobRetention.
+	// reads from the finished job, so at most 24h, how long River keeps a
+	// finished job.
 	OnboardRetryAfter time.Duration `env:"KRITIKA_TUNING_JOBS_ONBOARD_RETRY_AFTER" envDefault:"1h" yaml:"onboardRetryAfter,omitempty"`
 	// IndexAttempts bounds an index job's tries: transient failures (a
 	// fetch timeout, a runner killed at its deadline) get River's backoff,
@@ -227,12 +233,12 @@ type JobTimeout struct {
 	// River jobs it works.
 	HeartbeatInterval time.Duration `env:"KRITIKA_TUNING_JOB_TIMEOUT_HEARTBEAT_INTERVAL" envDefault:"30s" yaml:"heartbeatInterval,omitempty"`
 	// AbandonedBeats is how many beats a job can miss before it counts as
-	// abandoned by a dead replica (HeartbeatAbandonedAfter), enough to allow
-	// for a slow database. A replica fences its job one beat before that,
-	// so Validate holds it to at least 3: the first renewal is written a
-	// beat after the first beat and needs a beat to be written in. Each beat
-	// carries its replica's HeartbeatAbandonedAfter, which the leader
-	// rescues the job by, so replicas can differ in these during a rollout.
+	// abandoned by a dead replica, enough to allow for a slow database. A
+	// replica fences its job one beat before that, so it must be at least 3:
+	// the first renewal is written a beat after the first beat and needs a
+	// beat to be written in. Each beat carries its replica's window, this
+	// times heartbeatInterval, which the leader rescues the job by, so
+	// replicas can differ in these during a rollout.
 	AbandonedBeats int `env:"KRITIKA_TUNING_JOB_TIMEOUT_ABANDONED_BEATS" envDefault:"6" yaml:"abandonedBeats,omitempty"`
 	// LeaseWaitHeadroom is the time a review or a follow-up can spend
 	// taking its model lease before its runner starts.
@@ -250,7 +256,10 @@ type JobTimeout struct {
 	AgentFetchHeadroom time.Duration `env:"KRITIKA_TUNING_JOB_TIMEOUT_AGENT_FETCH_HEADROOM" envDefault:"5m" yaml:"agentFetchHeadroom,omitempty"` //nolint:lll // a struct tag does not wrap
 	// MaxJobTimeout bounds any review or index job, so that a runner
 	// deadline set absurdly high cannot hold a worker slot for longer than
-	// the stuck-job rescuer waits.
+	// the stuck-job rescuer waits. It must exceed leaseWaitHeadroom and
+	// publishHeadroom together, indexWriteHeadroom, and agentFetchHeadroom,
+	// leaseWaitHeadroom and publishHeadroom together, which leaves a
+	// runner deadline and an agent timeout.
 	MaxJobTimeout time.Duration `env:"KRITIKA_TUNING_JOB_TIMEOUT_MAX_JOB_TIMEOUT" envDefault:"3h" yaml:"maxJobTimeout,omitempty"`
 	// RescueGrace is how much longer than MaxJobTimeout a running job is
 	// left alone before River treats it as abandoned by a dead worker
@@ -259,7 +268,9 @@ type JobTimeout struct {
 	// tuned, whatever the sum.
 	RescueGrace time.Duration `env:"KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE" envDefault:"1h" yaml:"rescueGrace,omitempty"`
 	// RunnerDeadline bounds a runner Job whose jobTemplate sets no
-	// activeDeadlineSeconds. Validate holds it within MaxRunnerDeadline.
+	// activeDeadlineSeconds. A whole number of seconds, and at most
+	// maxJobTimeout less leaseWaitHeadroom and publishHeadroom, and less
+	// indexWriteHeadroom: 2h at the defaults.
 	RunnerDeadline time.Duration `env:"KRITIKA_TUNING_JOB_TIMEOUT_RUNNER_DEADLINE" envDefault:"15m" yaml:"runnerDeadline,omitempty"`
 }
 

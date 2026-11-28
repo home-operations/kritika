@@ -44,7 +44,7 @@ type GitHub struct {
 	// request follows.
 	MaxRedirects int `env:"KRITIKA_TUNING_GITHUB_MAX_REDIRECTS" envDefault:"10" yaml:"maxRedirects,omitempty"`
 	// AppJWTLifetime is how long an App JWT lives. At most GitHub's cap of
-	// ten minutes, and longer than TokenRefreshLead.
+	// ten minutes, at least 1s, and longer than TokenRefreshLead.
 	AppJWTLifetime time.Duration `env:"KRITIKA_TUNING_GITHUB_APP_JWT_LIFETIME" envDefault:"9m" yaml:"appJwtLifetime,omitempty"`
 	// AppJWTBackdate is how far before now an App JWT says it was issued,
 	// to absorb minor clock skew.
@@ -79,11 +79,11 @@ type GitLab struct {
 // Forgejo holds the tunable values of package forge/forgejo.
 type Forgejo struct {
 	// TokenTTL is how long a token that kritika calls the API with lasts.
-	// Longer than TokenReuseMargin.
+	// At least 1s, and longer than TokenReuseMargin.
 	TokenTTL time.Duration `env:"KRITIKA_TUNING_FORGEJO_TOKEN_TTL" envDefault:"10m" yaml:"tokenTtl,omitempty"`
 	// RunnerTokenTTL is how long a token that a runner fetches with lasts.
 	// That token is read once a run starts, but it can wait in a queue
-	// first.
+	// first. At least 1s.
 	RunnerTokenTTL time.Duration `env:"KRITIKA_TUNING_FORGEJO_RUNNER_TOKEN_TTL" envDefault:"1h" yaml:"runnerTokenTtl,omitempty"`
 	// TokenSkew is how far a token's issue and not-before times are set
 	// back. Forgejo refuses a token issued in its future and allows no

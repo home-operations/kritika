@@ -63,8 +63,8 @@ type Review struct {
 	// take and the share that the linked issues can take together:
 	// 1/BodyShare each, which leaves at least half of it to the diff at the
 	// default. A body over its share is cut there, with a note of how much
-	// was left out. Validate refuses less than MinBodyShare, which would
-	// leave the diff no room once both are full.
+	// was left out. At least 3: less would leave the diff no room once both
+	// are full.
 	BodyShare int `env:"KRITIKA_TUNING_REVIEW_BODY_SHARE" envDefault:"4" yaml:"bodyShare,omitempty"`
 	// MinUserBudget is the least a user message is given, in tokens,
 	// whatever the system prompt and what follows the diff take of the
@@ -86,8 +86,8 @@ type Review struct {
 	MaxQuoteRefusals int `env:"KRITIKA_TUNING_REVIEW_MAX_QUOTE_REFUSALS" envDefault:"2" yaml:"maxQuoteRefusals,omitempty"`
 	// MaxRenderBytes bounds a rendered comment, marker included. GitHub
 	// rejects comment bodies over 65,536 characters, and a character is at
-	// least a byte, so Validate refuses more. It refuses less than
-	// MinRenderBytes too, which a comment's marker alone can fill.
+	// least a byte, so it is at most 65536. At least 1Ki, room for a
+	// comment's marker and a body.
 	MaxRenderBytes ByteSize `env:"KRITIKA_TUNING_REVIEW_MAX_RENDER_BYTES" envDefault:"64Ki" yaml:"maxRenderBytes,omitempty"`
 	// RenderTimeout bounds one render of a repository's template, parse
 	// included.

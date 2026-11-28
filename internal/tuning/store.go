@@ -50,12 +50,12 @@ type Store struct {
 	// LeaseHeartbeat is how often a model lease's holder renews it.
 	LeaseHeartbeat time.Duration `env:"KRITIKA_TUNING_STORE_LEASE_HEARTBEAT" envDefault:"30s" yaml:"leaseHeartbeat,omitempty"`
 	// LeaseExpiry is the age past which a lease belongs to a process that
-	// died and is free to take. Validate holds it above LeaseHeartbeat.
+	// died and is free to take. It must exceed leaseHeartbeat.
 	LeaseExpiry time.Duration `env:"KRITIKA_TUNING_STORE_LEASE_EXPIRY" envDefault:"2m" yaml:"leaseExpiry,omitempty"`
 	// LeasePollMin is the first wait between tries for a model slot. Each
 	// try doubles it, up to LeasePollMax.
 	LeasePollMin time.Duration `env:"KRITIKA_TUNING_STORE_LEASE_POLL_MIN" envDefault:"2s" yaml:"leasePollMin,omitempty"`
-	// LeasePollMax caps that wait.
+	// LeasePollMax caps that wait. At least leasePollMin.
 	LeasePollMax time.Duration `env:"KRITIKA_TUNING_STORE_LEASE_POLL_MAX" envDefault:"30s" yaml:"leasePollMax,omitempty"`
 	// IndexWaitSetup bounds setting up the session of an index update's wait
 	// for a slot: its login and its wait lock.
@@ -75,7 +75,7 @@ type Store struct {
 	// jittered so that listeners that one failover disconnected do not all
 	// reconnect in lockstep.
 	ListenBackoffMin time.Duration `env:"KRITIKA_TUNING_STORE_LISTEN_BACKOFF_MIN" envDefault:"1s" yaml:"listenBackoffMin,omitempty"`
-	// ListenBackoffMax caps that delay.
+	// ListenBackoffMax caps that delay. At least listenBackoffMin.
 	ListenBackoffMax time.Duration `env:"KRITIKA_TUNING_STORE_LISTEN_BACKOFF_MAX" envDefault:"30s" yaml:"listenBackoffMax,omitempty"`
 	// MaxCheckpointRead bounds what one read of a run's part checkpoints
 	// holds in memory. What a runner saved decides the number and size of
@@ -105,7 +105,8 @@ type Store struct {
 	// ceiling costs an idle process nothing.
 	AppPoolMaxConns int `env:"KRITIKA_TUNING_STORE_APP_POOL_MAX_CONNS" envDefault:"16" yaml:"appPoolMaxConns,omitempty"`
 	// OwnerPoolMaxConns is the owner pool's, which carries only the
-	// leader's duties.
+	// leader's duties. At least 2: the leader lock holds one connection for
+	// as long as the replica leads.
 	OwnerPoolMaxConns int `env:"KRITIKA_TUNING_STORE_OWNER_POOL_MAX_CONNS" envDefault:"4" yaml:"ownerPoolMaxConns,omitempty"`
 	// KeepaliveIdle is how long a pool connection is idle before Postgres
 	// probes its client, KeepaliveInterval how long it waits between probes,
@@ -113,18 +114,20 @@ type Store struct {
 	// client that died without closing its socket (a node lost, a pod
 	// killed) loses its session, and any advisory lock that it held, within
 	// about a minute at the defaults, rather than the kernel's two hours.
-	// Postgres takes them in whole seconds.
+	// Postgres takes them in whole seconds, so keepaliveIdle and
+	// keepaliveInterval must each be at least 1s.
 	KeepaliveIdle     time.Duration `env:"KRITIKA_TUNING_STORE_KEEPALIVE_IDLE" envDefault:"30s" yaml:"keepaliveIdle,omitempty"`
 	KeepaliveInterval time.Duration `env:"KRITIKA_TUNING_STORE_KEEPALIVE_INTERVAL" envDefault:"10s" yaml:"keepaliveInterval,omitempty"`
 	KeepaliveCount    int           `env:"KRITIKA_TUNING_STORE_KEEPALIVE_COUNT" envDefault:"3" yaml:"keepaliveCount,omitempty"`
 	// AppStatementTimeout bounds every statement on the application pool.
 	// River, webhook ingest, the gateway and the dashboard share the pool,
 	// so an unbounded dashboard query over a large account could hold its
-	// connections and stall the rest.
+	// connections and stall the rest. From 1ms to 596h31m23.647s, the
+	// longest statement_timeout that Postgres takes.
 	AppStatementTimeout time.Duration `env:"KRITIKA_TUNING_STORE_APP_STATEMENT_TIMEOUT" envDefault:"1m" yaml:"appStatementTimeout,omitempty"`
 	// OwnerStatementTimeout bounds every statement on the owner pool.
 	// Migrations can build an index for minutes; anything longer is a hang
-	// worth breaking.
+	// worth breaking. From 1ms to 596h31m23.647s, as appStatementTimeout.
 	OwnerStatementTimeout time.Duration `env:"KRITIKA_TUNING_STORE_OWNER_STATEMENT_TIMEOUT" envDefault:"10m" yaml:"ownerStatementTimeout,omitempty"` //nolint:lll // a struct tag does not wrap
 	// PingTimeout bounds the ping a pool gives an idle connection before it
 	// hands it out. Without it the ping waits on the kernel's TCP
