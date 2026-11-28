@@ -72,6 +72,24 @@ func TestSystemPrompt(t *testing.T) {
 	}
 }
 
+// TestPromptsQualifyCrossReferences: every prompt whose text the forge
+// renders tells the model to name another repository with its references.
+func TestPromptsQualifyCrossReferences(t *testing.T) {
+	for _, tt := range []struct{ name, prompt string }{
+		{"review", SystemPrompt(nil, nil, nil, false, false, false, false)},
+		{"merge", MergeSystemPrompt(true)},
+		{"follow-up", FollowUpSystemPrompt(nil, nil, false, false)},
+		{"reply", ReplySystemPrompt(nil, nil, false, false)},
+		{"confidence", ConfidenceSystemPrompt("")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if !strings.Contains(tt.prompt, crossReference) {
+				t.Fatalf("missing the cross-reference rule in:\n%s", tt.prompt)
+			}
+		})
+	}
+}
+
 // TestSystemPromptRules: the rules end the prompt, each by its id, with a
 // rule over several lines indented under its item. A review's findings are
 // told to cite them, and a follow-up is not.

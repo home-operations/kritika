@@ -77,7 +77,7 @@ the repository, as the PR head has them, that a search of the repository found s
 similarity, or with the names it shares with the change when its names alone found it. Use it to judge the change. A
 similar snippet can be unrelated to the change: rely on it only where it bears on what the change does.
 
-Answer with a summary and findings. ` + summarySpec + `
+Answer with a summary and findings. ` + summarySpec + ` ` + crossReference + `
 Checked is where what you read goes, as the schema says; no comment shows it. Each finding has a severity and a
 category as the schema defines them: pick the category the fix is really about, and never call a style point
 security. Give it a one-line title and an explanation of why it matters. The fix goes in one field: replacement when
@@ -124,6 +124,15 @@ func praiseCount() string {
 	}
 	return strconv.Itoa(n)
 }
+
+// crossReference is how every prompt whose text the forge renders cites
+// another repository's issue or pull request. The forge links a bare #N to
+// the repository under review. RedirectReferences turns owner/repo#N into a
+// link to GitHub, except the slug under review, which the forge links to
+// itself even when the model meant a GitHub repository of the same name.
+const crossReference = `Cite an issue or pull request of another repository as owner/repo#N, such as
+google/go-github#1234, never as #1234 alone: the forge links a bare number to this repository's own issue or pull
+request. Cite it by its URL instead when it is not on GitHub or its owner/repo is the same as this repository's.`
 
 // summaryDiagram follows systemRules when the repository asks for a
 // diagram in the summary, and the merge prompt when its summary carries
