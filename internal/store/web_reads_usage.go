@@ -224,7 +224,7 @@ func jobColumns() string {
 	h.heartbeat_at,
 	coalesce(j.state = 'running' AND j.attempted_at IS NOT NULL
 		AND j.attempted_at < now() - ` + intervalSQL(tuning.Get().JobTimeout.HeartbeatAbandonedAfter()) + `
-		AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - h.abandon_after), false),
+		AND (h.heartbeat_at IS NULL OR h.heartbeat_at < now() - ` + heartbeatWindow + `), false),
 	coalesce(j.state = 'discarded' AND j.finalized_at >= now() - ` + intervalSQL(tuning.Get().Store.RecentFailureWindow) + ` AND NOT EXISTS (
 		SELECT 1 FROM river_job newer WHERE newer.args->>'account_id' = current_setting('app.account_id', true)
 			AND newer.id > j.id AND newer.kind = j.kind

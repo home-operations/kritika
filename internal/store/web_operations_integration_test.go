@@ -173,7 +173,7 @@ func TestQueueAttention(t *testing.T) {
 		if err := s.HeartbeatJob(ctx, id); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - make_interval(secs => $2),
+		if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - make_interval(secs => $2), abandon_after_at = now() - make_interval(secs => $2),
 			abandon_after = make_interval(secs => $3) WHERE job_id = $1`, id, beat.Seconds(), window.Seconds()); err != nil {
 			t.Fatal(err)
 		}

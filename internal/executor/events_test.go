@@ -97,7 +97,7 @@ func TestEventsNoteWithinALoweredLimit(t *testing.T) {
 	if err != nil || len(list.Items) != 1 {
 		t.Fatalf("events = %+v, %v", list, err)
 	}
-	if note := list.Items[0].Note; len(note) > 8 || note == "" {
-		t.Fatalf("note = %q, want at most 8 bytes of it", note)
+	if note := list.Items[0].Note; note != "xxxxxxxx" {
+		t.Fatalf("note = %q, want its first 8 bytes", note)
 	}
 }

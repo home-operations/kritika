@@ -507,7 +507,8 @@ func TestRescueByTheOwnersWindow(t *testing.T) {
 		if err := s.HeartbeatJob(ctx, id); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - make_interval(secs => $2) WHERE job_id = $1`,
+		if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = now() - make_interval(secs => $2),
+			abandon_after_at = now() - make_interval(secs => $2) WHERE job_id = $1`,
 			id, ago.Seconds()); err != nil {
 			t.Fatal(err)
 		}
@@ -527,7 +528,7 @@ func TestRescueByTheOwnersWindow(t *testing.T) {
 	beat(legacy, time.Minute, 6, 2*time.Minute)
 	legacyGone := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
 	beat(legacyGone, time.Minute, 6, 4*time.Minute)
-	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET abandon_after = DEFAULT WHERE job_id = ANY($1)`, []int64{legacy, legacyGone}); err != nil {
+	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET abandon_after = DEFAULT, abandon_after_at = NULL WHERE job_id = ANY($1)`, []int64{legacy, legacyGone}); err != nil {
 		t.Fatal(err)
 	}
 	ours := []int64{slow, fast, legacy, legacyGone}
@@ -563,10 +564,10 @@ func TestRescueByTheOwnersWindow(t *testing.T) {
 	}
 }
 
-// TestRecordJobRescue: the horizon that a replica records on its attempt's
+// TestStartJob: the horizon that a replica records on its attempt's
 // row is the one River's rescuer reads back from the row, whatever the
 // reading replica's settings, and only for that attempt.
-func TestRecordJobRescue(t *testing.T) {
+func TestStartJob(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
 	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{"kept": true}`)
@@ -585,7 +586,7 @@ func TestRecordJobRescue(t *testing.T) {
 	}
 	// The working replica's maxJobTimeout 6h, with its 1h grace.
 	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.MaxJobTimeout = 6 * time.Hour })
-	if err := s.RecordJobRescue(ctx, claimed); err != nil {
+	if err := s.StartJob(ctx, claimed); err != nil {
 		t.Fatal(err)
 	}
 	// The rescuer's own settings are the defaults, a 4h horizon.
@@ -603,5 +604,59 @@ func TestRecordJobRescue(t *testing.T) {
 	}
 	if after, ok := JobRescueAfter(read()); ok {
 		t.Fatalf("JobRescueAfter of a later attempt = %s, want no record", after)
+	}
+}
+
+// TestStartJobOfARescuedAttempt: an attempt that the leader rescued before
+// its replica took it does not start, and stamps no beat.
+func TestStartJobOfARescuedAttempt(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	var claimed rivertype.JobRow
+	claimed.ID = id
+	if err := s.owner.QueryRow(ctx, `SELECT attempted_at, metadata FROM river_job WHERE id = $1`, id).Scan(&claimed.AttemptedAt, &claimed.Metadata); err != nil {
+		t.Fatal(err)
+	}
+	if rescued, err := s.RescueJob(ctx, AbandonedJob{ID: id, Kind: "review", Attempt: 1, MaxAttempts: 25}, time.Minute, "lost"); err != nil || !rescued {
+		t.Fatalf("RescueJob = %v, %v", rescued, err)
+	}
+	if err := s.StartJob(ctx, &claimed); !errors.Is(err, ErrJobNotRunning) {
+		t.Fatalf("StartJob of a rescued attempt = %v, want ErrJobNotRunning", err)
+	}
+	var beats int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM job_heartbeats WHERE job_id = $1`, id).Scan(&beats); err != nil || beats != 0 {
+		t.Fatalf("beats = %d, %v; want none", beats, err)
+	}
+}
+
+// TestLegacyBeatOverATunedWindow: a beat of a replica from before the window
+// was written, which updates heartbeat_at alone, is judged by 180 seconds,
+// not by the window that an earlier attempt's beat left on the row.
+func TestLegacyBeatOverATunedWindow(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	id := insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`)
+	tuning.Override(t, func(v *tuning.Values) { v.JobTimeout.HeartbeatInterval, v.JobTimeout.AbandonedBeats = 4*time.Second, 3 })
+	if err := s.HeartbeatJob(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	// The pre-upgrade upsert, then 30 seconds of silence: past the 12s
+	// window, within the legacy 180s.
+	if _, err := s.app.Exec(ctx, `INSERT INTO job_heartbeats (job_id, heartbeat_at) VALUES ($1, now())
+		ON CONFLICT (job_id) DO UPDATE SET heartbeat_at = now()`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.owner.Exec(ctx, `UPDATE job_heartbeats SET heartbeat_at = heartbeat_at - interval '30 seconds' WHERE job_id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AbandonedJobs(ctx, time.Minute, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range got {
+		if j.ID == id {
+			t.Fatal("a legacy beat 30s old is abandoned by an earlier beat's 12s window")
+		}
 	}
 }

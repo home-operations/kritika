@@ -1,6 +1,7 @@
 package tuning
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -83,7 +84,8 @@ type ConfigFile struct {
 	// of several a few more.
 	DefaultFetches int `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_FETCHES" envDefault:"8" yaml:"defaultFetches,omitempty"`
 	// DefaultCommandTimeout bounds one command of the run tool: the default
-	// when the configuration file does not set agent.commandTimeout.
+	// when the configuration file does not set agent.commandTimeout. Whole
+	// seconds, as a run's spec carries it.
 	DefaultCommandTimeout time.Duration `env:"KRITIKA_TUNING_CONFIG_FILE_DEFAULT_COMMAND_TIMEOUT" envDefault:"30s" yaml:"defaultCommandTimeout,omitempty"` //nolint:lll // a struct tag does not wrap
 	// MinPromptTokens is the least agent.prompt takes: the system prompt,
 	// with its rules and skills, and the pull request's description are
@@ -231,13 +233,11 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			// A run's spec carries whole seconds, and the runner sets no
-			// agent deadline for 0.
-			if d := v.ConfigFile.DefaultAgentTimeout; d < time.Second || d%time.Second != 0 {
-				return fmt.Errorf("%s must be a whole number of seconds, at least 1s: a run's spec carries it so",
-					fieldLabel("configFile.defaultAgentTimeout"))
-			}
-			return nil
+			// A run's spec carries both in whole seconds.
+			return errors.Join(
+				wholeSeconds("configFile.defaultAgentTimeout", v.ConfigFile.DefaultAgentTimeout),
+				wholeSeconds("configFile.defaultCommandTimeout", v.ConfigFile.DefaultCommandTimeout),
+			)
 		},
 		func(v Values) error {
 			return similarity(v.ConfigFile.DefaultSimilarFloor, "configFile.defaultSimilarFloor")

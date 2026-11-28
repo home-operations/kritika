@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -288,11 +289,11 @@ func TestReportAgentEncoding(t *testing.T) {
 	}
 }
 
-// packSection is one file's section of a diff that adds a line of 1000
-// '<', which JSON writes as six bytes each.
-func packSection(name string) string {
+// packSection is one file's section of a diff that adds a line of n '<',
+// which JSON writes as six bytes each.
+func packSection(name string, n int) string {
 	return "diff --git a/" + name + " b/" + name + "\n--- a/" + name + "\n+++ b/" + name + "\n@@ -1 +1 @@\n+" +
-		strings.Repeat("<", 1000) + "\n"
+		strings.Repeat("<", n) + "\n"
 }
 
 // packBase is a context pack without its diffs.
@@ -305,9 +306,9 @@ func packBase() runspec.ContextPack {
 // whole files until the report fits, and its notes name them. The report
 // returned is the pack as it is sent.
 func TestFitPackDiffsToTheEncodedReport(t *testing.T) {
-	diff := packSection("a.go") + packSection("b.go")
+	diff := packSection("a.go", 1000) + packSection("b.go", 1000)
 	fitted := packBase()
-	fitted.Diff, fitted.Notes = packSection("a.go"), []string{fmt.Sprintf(noteDiffNotKept, 1, namePaths([]string{"b.go"}))}
+	fitted.Diff, fitted.Notes = packSection("a.go", 1000), []string{fmt.Sprintf(noteDiffNotKept, 1, namePaths([]string{"b.go"}))}
 	want, err := json.Marshal(runspec.ContextReport{Pack: fitted, Phase: "reviewing"})
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +322,7 @@ func TestFitPackDiffsToTheEncodedReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(encoded, sent) || len(encoded) > len(want) || pack.Diff != packSection("a.go") || len(cut) != 1 || cut[0] != "b.go" ||
+	if !bytes.Equal(encoded, sent) || len(encoded) > len(want) || pack.Diff != packSection("a.go", 1000) || len(cut) != 1 || cut[0] != "b.go" ||
 		len(pack.Notes) != 1 || !strings.Contains(pack.Notes[0], "b.go") {
 		t.Fatalf("report of %d bytes (limit %d), diff %q, cut %q, notes %q", len(encoded), len(want), pack.Diff, cut, pack.Notes)
 	}
@@ -338,8 +339,8 @@ func TestFitPackDiffsToTheEncodedReport(t *testing.T) {
 func TestSendContextFitsTheReplicasLimit(t *testing.T) {
 	fastRetries(t, time.Minute)
 	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxPackDiffBytes, v.Gateway.MaxReportBody = 1<<20, 1<<20 })
-	diff := packSection("a.go") + packSection("b.go")
-	_, small, _, err := fitPackDiffs(packBase(), "reviewing", packSection("a.go"), "", 1<<20)
+	diff := packSection("a.go", 1000) + packSection("b.go", 1000)
+	_, small, _, err := fitPackDiffs(packBase(), "reviewing", packSection("a.go", 1000), "", 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,6 +365,35 @@ func TestSendContextFitsTheReplicasLimit(t *testing.T) {
 	defer mu.Unlock()
 	if err != nil || len(sizes) != 2 || int64(sizes[1]) > limit {
 		t.Fatalf("sendContext = %v after sends of %v bytes, want a second send within %d", err, sizes, limit)
+	}
+}
+
+// TestSendContextFitsALegacyGateway: a gateway that predates
+// runspec.ReportLimitHeader refuses a context report over its fixed limit
+// naming none, and gets it again fitted to that limit.
+func TestSendContextFitsALegacyGateway(t *testing.T) {
+	fastRetries(t, time.Minute)
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxPackDiffBytes, v.Gateway.MaxReportBody = 16<<20, 128<<20 })
+	diff := packSection("a.go", 5<<20) + packSection("b.go", 6<<20)
+	var mu sync.Mutex
+	var sizes []int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n, _ := io.Copy(io.Discard, r.Body)
+		mu.Lock()
+		sizes = append(sizes, int(n))
+		mu.Unlock()
+		if n > legacyReportBody {
+			http.Error(w, "too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	err := sendContext(t.Context(), &reporter{gatewayURL: srv.URL}, packBase(), "reviewing", diff, "", slog.New(slog.DiscardHandler))
+	mu.Lock()
+	defer mu.Unlock()
+	if err != nil || len(sizes) != 2 || sizes[1] > legacyReportBody {
+		t.Fatalf("sendContext = %v after sends of %v bytes, want a second send within %d", err, sizes, legacyReportBody)
 	}
 }
 
@@ -441,5 +471,17 @@ func TestReportFailureFitsTheSmallReport(t *testing.T) {
 	defer mu.Unlock()
 	if got.Cause == "" || !strings.HasPrefix(cause, got.Cause) || !utf8.ValidString(got.Cause) {
 		t.Fatalf("cause = %q, want a valid prefix of the cause", got.Cause)
+	}
+}
+
+// TestIndexFitsStopsWhenCanceled: the measure of an upload stops at its
+// first write once its context ends.
+func TestIndexFitsStopsWhenCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	m := &lineMeter{ctx: ctx, maxLine: 1 << 20, maxTotal: 1 << 30}
+	chunks := make([]runspec.IndexChunk, 1000)
+	if err := encodeIndex(m, runspec.IndexPack{}, chunks); !errors.Is(err, context.Canceled) || m.total != 0 {
+		t.Fatalf("encodeIndex = %v after %d bytes, want it canceled before any", err, m.total)
 	}
 }

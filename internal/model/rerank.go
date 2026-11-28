@@ -119,7 +119,7 @@ func (r *HTTPReranker) Rerank(ctx context.Context, query string, documents []str
 	// One byte past the bound tells an answer cut at it from one that ends
 	// there: the part within the bound can be whole JSON of its own.
 	maxAnswer := int64(tuning.Get().Model.MaxRerankAnswer)
-	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswer+1))
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, min(maxAnswer, math.MaxInt64-1)+1))
 	if err != nil {
 		return nil, computed, fmt.Errorf("model: rerank: read the answer: %w", transportError(err))
 	}

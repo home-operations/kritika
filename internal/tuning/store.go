@@ -215,6 +215,19 @@ func init() {
 			}
 			return errors.Join(errs...)
 		},
+		func(v Values) error {
+			// pgx sizes a pool in an int32.
+			var errs []error
+			for _, f := range []struct {
+				path string
+				n    int
+			}{{"store.appPoolMaxConns", v.Store.AppPoolMaxConns}, {"store.ownerPoolMaxConns", v.Store.OwnerPoolMaxConns}} {
+				if f.n > math.MaxInt32 {
+					errs = append(errs, fmt.Errorf("%s %w %d", fieldLabel(f.path), errMustNotExceed, math.MaxInt32))
+				}
+			}
+			return errors.Join(errs...)
+		},
 	)
 }
 

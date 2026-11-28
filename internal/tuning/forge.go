@@ -1,6 +1,7 @@
 package tuning
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
@@ -129,6 +130,14 @@ func init() {
 		},
 		func(v Values) error {
 			return exceeds("forgejo.tokenTtl", v.Forgejo.TokenTTL, "forgejo.tokenReuseMargin", v.Forgejo.TokenReuseMargin)
+		},
+		func(v Values) error {
+			// A token's expiry is whole seconds, rounded down.
+			return errors.Join(
+				atLeastSecond("gitHub.appJwtLifetime", v.GitHub.AppJWTLifetime),
+				atLeastSecond("forgejo.tokenTtl", v.Forgejo.TokenTTL),
+				atLeastSecond("forgejo.runnerTokenTtl", v.Forgejo.RunnerTokenTTL),
+			)
 		},
 	)
 }

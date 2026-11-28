@@ -611,27 +611,32 @@ func TestSimilarFollowsTuning(t *testing.T) {
 	}
 }
 
-// TestSimilarAnswerFitsTheRunnersRead: an answer of full chunks of escaped
-// text, across files, that would pass runner.maxSimilarAnswerBody loses its
-// lowest ranked chunks until it fits, and decodes whole.
-func TestSimilarAnswerFitsTheRunnersRead(t *testing.T) {
-	chunks := make([]contextpack.Chunk, 0, 4)
+// TestKeepCandidatesFitTheRunnersRead: candidates whose answer would pass
+// runner.maxSimilarAnswerBody, encoded, are kept only while it fits, best
+// first, and those left out count as cut by the limit.
+func TestKeepCandidatesFitTheRunnersRead(t *testing.T) {
+	cands := make([]candidate, 0, 4)
 	for i := range 4 {
-		chunks = append(chunks, contextpack.Chunk{Stage: "similar", Path: fmt.Sprintf("pkg/%d.go", i), StartLine: 1, EndLine: 2,
-			Text: strings.Repeat("<", 1000)})
+		chunk := contextpack.Chunk{Stage: "similar", Path: fmt.Sprintf("pkg/%d.go", i), StartLine: 1, EndLine: 2, Text: strings.Repeat("<", 1000)}
+		score := 1 - float64(i)/10
+		cands = append(cands, candidate{
+			Chunk: chunk, Similarity: 0.9, Query: i, vector: true, close: true, score: score, shared: score,
+		})
 	}
-	two, err := json.Marshal(contextpack.SimilarResponse{Chunks: chunks[:2], Indexed: true})
+	all := keepCandidates(cands, map[hitKey]int{}, 4, 1)
+	two, err := json.Marshal(contextpack.SimilarResponse{Chunks: all[:2]})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxSimilarAnswerBody = tuning.ByteSize(len(two) + 10) })
-	out, err := similarAnswer(chunks, true)
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxSimilarAnswerBody = tuning.ByteSize(len(two)) })
+	counts := map[hitKey]int{}
+	got := keepCandidates(cands, counts, 4, 1)
+	out, err := json.Marshal(contextpack.SimilarResponse{Chunks: got})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got contextpack.SimilarResponse
-	if err := json.Unmarshal(out, &got); err != nil || len(out) > len(two)+10 || len(got.Chunks) != 2 ||
-		got.Chunks[0].Path != "pkg/0.go" || got.Chunks[1].Path != "pkg/1.go" || !got.Indexed {
-		t.Fatalf("answer of %d bytes, %d chunks, %v", len(out), len(got.Chunks), err)
+	if len(out) > len(two) || len(got) != 2 || got[0].Path != "pkg/0.go" || got[1].Path != "pkg/1.go" ||
+		counts[hitKey{hitKept, sourceVector}] != 2 || counts[hitKey{hitLimit, sourceVector}] != 2 {
+		t.Fatalf("kept %d chunks in %d bytes (limit %d), counts %v", len(got), len(out), len(two), counts)
 	}
 }

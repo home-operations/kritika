@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runspec"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/tuning"
 )
 
 func TestPartInputIdentity(t *testing.T) {
@@ -257,5 +259,21 @@ func TestPartsCancellationWhileCheckpointing(t *testing.T) {
 		if res.Stop != agent.StopSubmitted {
 			t.Fatalf("part %d: %+v", i+1, res)
 		}
+	}
+}
+
+// TestLoadPartsOverTheAnswerLimit: checkpoints whose answer is over
+// runner.maxReportAnswer are not reused, and every part runs again, rather
+// than the review failing on an answer cut short.
+func TestLoadPartsOverTheAnswerLimit(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Runner.MaxReportAnswer = 64 })
+	rows := []runspec.PartCheckpoint{{Part: 1, SourceRun: "run", Payload: json.RawMessage(`{"pad":"` + strings.Repeat("x", 200) + `"}`)}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(rows)
+	}))
+	defer srv.Close()
+	saved, err := loadParts(t.Context(), &reporter{gatewayURL: srv.URL}, "hash", make([]reviewPart, 2), slog.New(slog.DiscardHandler))
+	if err != nil || len(saved) != 2 || saved[0].SourceRun != "" || saved[1].SourceRun != "" {
+		t.Fatalf("loadParts = %+v, %v; want no checkpoints and no error", saved, err)
 	}
 }

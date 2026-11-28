@@ -54,7 +54,9 @@ func (f *fakeHeartbeater) HeartbeatJob(ctx context.Context, jobID int64) error {
 	return nil
 }
 
-func (f *fakeHeartbeater) RecordJobRescue(context.Context, *rivertype.JobRow) error { return nil }
+func (f *fakeHeartbeater) StartJob(ctx context.Context, job *rivertype.JobRow) error {
+	return f.HeartbeatJob(ctx, job.ID)
+}
 
 func (f *fakeHeartbeater) count() int {
 	f.mu.Lock()

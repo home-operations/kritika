@@ -557,3 +557,15 @@ func TestUnpackCanceled(t *testing.T) {
 		t.Errorf("unpack error = %v, want it canceled", err)
 	}
 }
+
+// TestGetLimit: a body at the limit is read, and one a byte over it refused.
+func TestGetLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("abcd")) }))
+	defer srv.Close()
+	if body, err := get(t.Context(), srv.Client(), srv.URL, nil, 4); err != nil || string(body) != "abcd" {
+		t.Fatalf("get at the limit = %q, %v", body, err)
+	}
+	if _, err := get(t.Context(), srv.Client(), srv.URL, nil, 3); err == nil || !strings.Contains(err.Error(), "over 3 bytes") {
+		t.Fatalf("get over the limit = %v, want it refused", err)
+	}
+}

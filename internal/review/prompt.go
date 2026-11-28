@@ -187,6 +187,19 @@ func tokenBytes(tokens int) int {
 	return tokens * perToken
 }
 
+// spare is what is left of room once each of used is taken from it, or 0.
+// A reserve as large as an int, taken from a room already spent, would
+// otherwise wrap to a room that holds everything.
+func spare(room int, used ...int) int {
+	for _, u := range used {
+		if u >= room {
+			return 0
+		}
+		room -= u
+	}
+	return room
+}
+
 // Build renders the user message within the budget. When the diff does not
 // fit, it is cut at a file boundary and the message says which files were
 // left out. So the model never sees a truncated hunk as if it were whole.
@@ -225,21 +238,21 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 	b.WriteString(diffLead)
 	references, referencesOmitted := referenceSection(in.References, min(budget/r.BodyShare, budget-b.Len()))
 	budget -= len(references)
-	room := budget - b.Len()
+	room := spare(budget, b.Len())
 	if in.Incremental != nil {
 		// The delta's omission note keeps its room, so the model always
 		// learns the delta existed.
-		room -= len(deltaOmitted)
+		room = spare(room, len(deltaOmitted))
 	}
 	note := diffOmitted
 	if in.Toolless {
 		note = diffNotShown
 	}
-	diff, omitted := FitDiff(in.Diff, room-r.OmissionRoom)
-	earlier := earlierSections(in, room-len(diff)-len(omissionNote(note, omitted)))
-	if kept := earlierSections(in, min(budget/r.BodyShare, room-r.OmissionRoom)); len(kept) > len(earlier) {
+	diff, omitted := FitDiff(in.Diff, spare(room, r.OmissionRoom))
+	earlier := earlierSections(in, spare(room, len(diff), len(omissionNote(note, omitted))))
+	if kept := earlierSections(in, min(budget/r.BodyShare, spare(room, r.OmissionRoom))); len(kept) > len(earlier) {
 		earlier = kept
-		diff, omitted = FitDiff(in.Diff, room-r.OmissionRoom-len(earlier))
+		diff, omitted = FitDiff(in.Diff, spare(room, r.OmissionRoom, len(earlier)))
 	}
 	b.WriteString(diff)
 	b.WriteString(omissionNote(note, omitted))
@@ -395,7 +408,7 @@ func incrementalSections(inc *IncrementalInput, earlier string, room int) string
 		ShortSHA(inc.PriorHeadSHA))
 	delta, omitted := inc.DeltaDiff, []string(nil)
 	if len(header)+len(delta) > room {
-		delta, omitted = FitDiff(inc.DeltaDiff, room-len(header)-tuning.Get().Review.NoteRoom)
+		delta, omitted = FitDiff(inc.DeltaDiff, spare(room, len(header), tuning.Get().Review.NoteRoom))
 	}
 	switch {
 	case inc.DeltaDiff == "":
@@ -478,8 +491,8 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string, referenc
 	budget := tokenBytes(cmp.Or(in.BudgetTokens, r.DefaultBudgetTokens))
 	references, referencesOmitted := referenceSection(in.References, min(budget/r.BodyShare, budget-b.Len()-len(closing)))
 	budget -= len(references)
-	earlier := priorSection(in.PriorHeadSHA, in.Prior, budget-b.Len()-len(closing)-r.OmissionRoom)
-	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(earlier)-len(closing)-r.OmissionRoom)
+	earlier := priorSection(in.PriorHeadSHA, in.Prior, spare(budget, b.Len(), len(closing), r.OmissionRoom))
+	delta, omitted := FitDiff(in.DeltaDiff, spare(budget, b.Len(), len(earlier), len(closing), r.OmissionRoom))
 	b.WriteString(delta)
 	b.WriteString(omissionNote("\n[%d file(s) of the diff since your last review were omitted to fit the prompt budget: %s; "+
 		"read them with your tools]\n", omitted))
@@ -550,7 +563,7 @@ func priorSection(head string, findings []Finding, room int) string {
 	noteRoom := tuning.Get().Review.NoteRoom
 	for i, l := range lines {
 		if b.Len()+len(l) > room-noteRoom {
-			if b.Len()+noteRoom <= room {
+			if noteRoom <= room-b.Len() {
 				fmt.Fprintf(&b, "[%d more finding(s) from the last review omitted to fit the prompt budget]\n", len(lines)-i)
 			}
 			break

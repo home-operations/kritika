@@ -238,8 +238,14 @@ func TestCheckConfig(t *testing.T) {
 			if tt.webURL != "" {
 				t.Setenv("KRITIKA_WEB_URL", tt.webURL)
 			}
-			if tt.similarEnv != "" {
-				t.Setenv("KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY", tt.similarEnv)
+			// Unset, not empty, where the case sets none: a variable that
+			// is present conflicts with the file's setting.
+			const similarKey = "KRITIKA_TUNING_GATEWAY_SIMILAR_PER_QUERY"
+			t.Setenv(similarKey, tt.similarEnv)
+			if tt.similarEnv == "" {
+				if err := os.Unsetenv(similarKey); err != nil {
+					t.Fatal(err)
+				}
 			}
 			// The check sets the process's tuning. Override restores it after.
 			tuning.Override(t, func(*tuning.Values) {})
@@ -322,6 +328,29 @@ func TestRiverConfig(t *testing.T) {
 	}
 	if c.JobStuckThreshold != headroom {
 		t.Errorf("stuck threshold = %s, want the tuned %s", c.JobStuckThreshold, headroom)
+	}
+}
+
+// TestRiverRescueHorizonFloor: River's rescuer waits at least the horizon
+// from before it was tuned, however short the tuned one.
+func TestRiverRescueHorizonFloor(t *testing.T) {
+	for _, tt := range []struct {
+		name                string
+		maxJob, grace, want time.Duration
+	}{
+		{"a shorter tuned horizon", 90 * time.Minute, time.Minute, tuning.LegacyRescueAfter},
+		{"a horizon under a minute", 40 * time.Second, 10 * time.Second, tuning.LegacyRescueAfter},
+		{"a longer one", 6 * time.Hour, time.Hour, 7 * time.Hour},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tuning.Override(t, func(v *tuning.Values) {
+				v.JobTimeout.MaxJobTimeout, v.JobTimeout.RescueGrace = tt.maxJob, tt.grace
+			})
+			c := riverConfig(&config.Config{}, river.NewWorkers(), nil, slog.New(slog.DiscardHandler))
+			if c.RescueStuckJobsAfter != tt.want {
+				t.Fatalf("RescueStuckJobsAfter = %s, want %s", c.RescueStuckJobsAfter, tt.want)
+			}
+		})
 	}
 }
 

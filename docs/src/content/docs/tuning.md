@@ -108,14 +108,14 @@ tuning:
     maxIndexBody: 5Gi
 ```
 
-`gateway.maxIndexBody` must hold the largest upload that the index limits
-allow, as the runner encodes it: the opening line of up to
-`gateway.maxIndexLine`, then each of `indexer.maxChunks` chunks as JSON,
-its text of up to `indexer.maxChunkBytes` and its signature of up to
-`indexer.maxSignatureBytes` each escaped up to sixfold, with room for the
-chunk's other fields. At 300,000 chunks and the other defaults, that is
-4,367,954,432 bytes, past the default `2Gi`, so the example raises it to
-`5Gi`. `kritika config check` names the bound it needs.
+`kritika config check` budgets `gateway.maxIndexBody` for an opening line
+of up to `gateway.maxIndexLine`, then up to `indexer.maxChunks` chunks,
+each allowed twice its text and signature size, `indexer.maxChunkBytes`
+and `indexer.maxSignatureBytes`, plus room for its other fields. At
+300,000 chunks and the other defaults, that is 4,367,954,432 bytes, past
+the default `2Gi`, so the example raises it to `5Gi`. JSON can expand
+some text more than twofold; the runner measures the encoded upload and
+refuses one past the cap.
 
 Reference: [`tuning.indexer`](/configuration/#tuningindexer),
 [`tuning.chunk`](/configuration/#tuningchunk),
@@ -542,11 +542,14 @@ and GitLab serves at most 100 items a page.
    So a change to a limit that a runner and the gateway must agree on,
    such as `gateway.maxIndexBody`, `gateway.maxReportBody`,
    `gateway.similarMax` or a `runner.*` request size, can have an old
-   replica refuse a new Job's request, or a new replica an old Job's. Make
-   such a change in two rollouts that each keep both revisions compatible
-   (raise the gateway's limit, then the runner's; lower the runner's, then
-   the gateway's), or stop new work and let running Jobs finish before
-   rolling it out.
+   replica refuse a new Job's request, or a new replica an old Job's.
+   Where the runner's side has a setting of its own, stage the change in
+   two rollouts that each keep both revisions compatible: raise the
+   gateway's limit, then the runner's; lower the runner's, then the
+   gateway's. A cap that both sides read from one setting has no such
+   step: the runner checks an index upload against `gateway.maxIndexBody`
+   itself, for one. For those, stop new work and let running Jobs finish
+   before rolling the change out.
 6. Check the symptom again. To undo a change, remove the key.
 7. After a change to a value that shapes what an index build stores, as
    [Large repositories and monorepos](#large-repositories-and-monorepos)

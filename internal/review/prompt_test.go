@@ -361,3 +361,27 @@ func TestBuildUnderTheLargestBudget(t *testing.T) {
 		t.Fatalf("merge message:\n%s", merge)
 	}
 }
+
+// TestBuildUnderTheLargestReserves: reserves as large as an int goes, taken
+// from a budget the header already spent, leave no room rather than
+// wrapping to a room that holds the whole diff.
+func TestBuildUnderTheLargestReserves(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) {
+		v.Review.OmissionRoom = math.MaxInt
+		v.Review.NoteRoom = math.MaxInt
+	})
+	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n"
+	_, omitted, _, _ := Build(Input{Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Diff: diff, BudgetTokens: 10})
+	if !slices.Equal(omitted, []string{"a.go"}) {
+		t.Fatalf("omitted %v; want the diff left out and its path reported", omitted)
+	}
+	_, omitted, _, _ = Build(Input{Repository: "a/b", Number: 1, Title: "t", Changed: []string{"a.go"}, Diff: diff, BudgetTokens: 10,
+		Incremental: &IncrementalInput{DeltaDiff: diff, Prior: []Finding{{Path: "a.go", Line: 1, Title: "old"}}}})
+	if !slices.Equal(omitted, []string{"a.go"}) {
+		t.Fatalf("incremental: omitted %v; want the diff left out and its path reported", omitted)
+	}
+	cont, omitted, _ := BuildContinuation(ContinueInput{DeltaDiff: diff, BudgetTokens: 10, Prior: []Finding{{Path: "a.go", Line: 1, Title: "old"}}})
+	if !slices.Equal(omitted, []string{"a.go"}) || strings.Contains(cont, "+y") {
+		t.Fatalf("continuation: omitted %v; want the delta left out and its path reported:\n%s", omitted, cont)
+	}
+}

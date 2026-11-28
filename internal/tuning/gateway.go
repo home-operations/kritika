@@ -1,6 +1,7 @@
 package tuning
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -274,6 +275,24 @@ func (v Values) indexUpload() int64 {
 
 func init() {
 	crossField = append(crossField,
+		func(v Values) error {
+			// Each is read to one byte past it, to tell a body at the limit
+			// from one over it.
+			var errs []error
+			for _, f := range []struct {
+				path string
+				size ByteSize
+			}{
+				{"aqua.maxRegistryBytes", v.Aqua.MaxRegistryBytes}, {"aqua.maxDownloadBytes", v.Aqua.MaxDownloadBytes},
+				{"aqua.maxChecksumFileBytes", v.Aqua.MaxChecksumFileBytes}, {"aqua.maxReleaseBytes", v.Aqua.MaxReleaseBytes},
+				{"aqua.maxUnpackedBytes", v.Aqua.MaxUnpackedBytes}, {"aqua.maxSignatureBytes", v.Aqua.MaxSignatureBytes},
+			} {
+				if f.size == math.MaxInt64 {
+					errs = append(errs, fmt.Errorf("%s (%s) must be less than %d", fieldLabel(f.path), f.size, int64(math.MaxInt64)))
+				}
+			}
+			return errors.Join(errs...)
+		},
 		func(v Values) error {
 			if v.Gateway.SimilarWithin >= v.Runner.SimilarTimeout {
 				return fmt.Errorf("%s (%s) must be less than %s (%s), which a run waits for the answer",

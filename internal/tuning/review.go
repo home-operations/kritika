@@ -138,7 +138,7 @@ type Transcript struct {
 	ToolResultCap ByteSize `env:"KRITIKA_TUNING_TRANSCRIPT_TOOL_RESULT_CAP" envDefault:"64Ki" yaml:"toolResultCap,omitempty"`
 	// RowCap bounds one row's encoded messages. A row over it keeps its
 	// messages' structure with a placeholder for every text, content and
-	// input.
+	// input, and none of its messages when even that is over it.
 	RowCap ByteSize `env:"KRITIKA_TUNING_TRANSCRIPT_ROW_CAP" envDefault:"1Mi" yaml:"rowCap,omitempty"`
 	// RunCap bounds what a run records: once its rows exceed it, later rows
 	// keep only the response and usage.

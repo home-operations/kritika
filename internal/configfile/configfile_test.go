@@ -954,3 +954,16 @@ func TestParseRefusesTuningNotInForce(t *testing.T) {
 		t.Fatalf("parts = %d, want the file's tuned default 3", got)
 	}
 }
+
+// TestParseRefusesDefaultTuningNotInForce: tuning that a file sets to the
+// defaults is refused too under a process tuned otherwise, rather than its
+// policy checked under the process's values.
+func TestParseRefusesDefaultTuningNotInForce(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	tuning.Override(t, func(v *tuning.Values) { v.ConfigFile.MinPromptTokens = 7000 })
+	doc := "tuning: {configFile: {minPromptTokens: 8000}}\nagent: { prompt: 7500 }\n" + minimal
+	if _, err := Parse([]byte(doc)); err == nil {
+		t.Fatal("Parse of a file's default minPromptTokens under a process's 7000 succeeded")
+	}
+}

@@ -212,7 +212,8 @@ type Runner struct {
 	// HeartbeatTimeout bounds one heartbeat, as runSpec.reportTimeout does
 	// a report. A heartbeat is tried once: another comes along soon. One
 	// that hangs for all of it, a beat after the last that landed, leaves
-	// the next a beat before the worker deems the run dead.
+	// the next a beat and as long again before the worker deems the run
+	// dead.
 	HeartbeatTimeout time.Duration `env:"KRITIKA_TUNING_RUNNER_HEARTBEAT_TIMEOUT" envDefault:"10s" yaml:"heartbeatTimeout,omitempty"`
 	// MaxReportAnswer bounds what the gateway's answer to a report is read
 	// to: the part checkpoints of a run, or an error.
@@ -340,11 +341,11 @@ func init() {
 		},
 		func(v Values) error {
 			// A beat that hangs from one beat after the last that landed, and
-			// the next, a beat later, must land within HeartbeatStale.
+			// the next, a beat later and as slow, must land within HeartbeatStale.
 			beats := satMul(2, int64(v.RunSpec.HeartbeatInterval))
-			if satAdd(int64(v.Runner.HeartbeatTimeout), beats) > int64(v.HeartbeatStale()) {
-				return fmt.Errorf("%s (%s) %w %s and %s together (%s), so that a heartbeat that hangs leaves another "+
-					"before the worker deems the run dead",
+			if satAdd(satMul(2, int64(v.Runner.HeartbeatTimeout)), beats) > int64(v.HeartbeatStale()) {
+				return fmt.Errorf("%s (%s) %w half of %s and %s together, %s, so that a heartbeat that hangs leaves "+
+					"another time to land before the worker deems the run dead",
 					fieldLabel("runner.heartbeatTimeout"), v.Runner.HeartbeatTimeout, errMustNotExceed,
 					fieldLabel("runSpec.reportRetryWindow"), fieldLabel("runSpec.reportTimeout"),
 					time.Duration(satAdd(int64(v.RunSpec.ReportRetryWindow), int64(v.RunSpec.ReportTimeout))))

@@ -67,9 +67,14 @@ func partInputHash(p runspec.Spec, parts []reviewPart, tools agentTools) (string
 
 // loadParts reads the parts the run can reuse. A checkpoint that cannot be
 // reused is left out, so its part runs again rather than failing every
-// retry that copies it.
+// retry that copies it. So are all of them when together they are more
+// than the run reads.
 func loadParts(ctx context.Context, report *reporter, hash string, parts []reviewPart, logger *slog.Logger) ([]partCheckpoint, error) {
 	rows, err := report.checkpoints(ctx, hash)
+	if errors.Is(err, errAnswerTooLarge) {
+		logger.Warn("agent part checkpoints not reused", "error", err)
+		rows, err = nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

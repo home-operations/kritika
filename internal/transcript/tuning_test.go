@@ -31,3 +31,20 @@ func TestEncodeFollowsToolResultCap(t *testing.T) {
 		t.Fatalf("at a cap of 100: %d bytes, %d cut; want 100 and 200", len(got.Content), got.TruncatedBytes)
 	}
 }
+
+// TestEncodeDropsMessagesThatPlaceholdersCannotFit: a row whose messages
+// are over tuning's Transcript.RowCap even as placeholders keeps none of
+// them, truncated, and keeps its response.
+func TestEncodeDropsMessagesThatPlaceholdersCannotFit(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Transcript.RowCap = 64 })
+	r := delta(State{}, stepReq("s", user("review"), call("grep", `{"pattern":"b"}`), result("main.go:3"), user("more")))
+	r.Response = Response{Text: "answer", Stop: model.StopEndTurn}
+	e := r.Encode()
+	if string(e.Messages) != "[]" || !e.Truncated {
+		t.Fatalf("messages = %s, truncated %v; want none, truncated", e.Messages, e.Truncated)
+	}
+	got, err := DecodeResponse(e.Response)
+	if err != nil || got.Text != "answer" {
+		t.Fatalf("response = %+v, %v; want it kept", got, err)
+	}
+}

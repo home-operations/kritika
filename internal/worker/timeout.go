@@ -62,7 +62,7 @@ func (w *Thread) Timeout(job *river.Job[jobs.ThreadArgs]) time.Duration {
 // computed: this replica's timeout. River's rescuer can run on another
 // replica, whose settings during a rollout can compute a shorter one. The
 // row it reads carries the rescue horizon that the replica working the job
-// recorded (store.RecordJobRescue), which it gets instead.
+// recorded (store.StartJob), which it gets instead.
 func riverTimeout(row *rivertype.JobRow, computed time.Duration) time.Duration {
 	if after, ok := store.JobRescueAfter(row); ok {
 		return after

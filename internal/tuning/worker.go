@@ -254,7 +254,8 @@ type JobTimeout struct {
 	// RescueGrace is how much longer than MaxJobTimeout a running job is
 	// left alone before River treats it as abandoned by a dead worker
 	// (RescueStuckJobsAfter), so that a job still working never runs a
-	// second time.
+	// second time. River waits at least 4h, the horizon from before it was
+	// tuned, whatever the sum.
 	RescueGrace time.Duration `env:"KRITIKA_TUNING_JOB_TIMEOUT_RESCUE_GRACE" envDefault:"1h" yaml:"rescueGrace,omitempty"`
 	// RunnerDeadline bounds a runner Job whose jobTemplate sets no
 	// activeDeadlineSeconds. Validate holds it within MaxRunnerDeadline.
@@ -276,8 +277,15 @@ func (j JobTimeout) JobFenceAfter() time.Duration {
 }
 
 // RescueStuckJobsAfter is how long a running job is left alone before
-// River treats it as abandoned by a dead worker.
-func (j JobTimeout) RescueStuckJobsAfter() time.Duration { return j.MaxJobTimeout + j.RescueGrace }
+// River treats it as abandoned by a dead worker: never under
+// LegacyRescueAfter, which a job claimed by a replica from before the
+// rescue was tuned needs, since it records no horizon of its own.
+func (j JobTimeout) RescueStuckJobsAfter() time.Duration {
+	return max(j.MaxJobTimeout+j.RescueGrace, LegacyRescueAfter)
+}
+
+// LegacyRescueAfter is the rescue horizon from before it was tuned.
+const LegacyRescueAfter = 4 * time.Hour
 
 // MaxRunnerDeadline is the largest runner.activeDeadlineSeconds that an
 // account can set. Past it, one of two timeouts exceeds MaxJobTimeout: a
@@ -364,13 +372,8 @@ func init() {
 			return nil
 		},
 		func(v Values) error {
-			// Kubernetes takes activeDeadlineSeconds in whole seconds, and
-			// refuses 0.
-			if d := v.JobTimeout.RunnerDeadline; d < time.Second || d%time.Second != 0 {
-				return fmt.Errorf("%s must be a whole number of seconds, at least 1s: Kubernetes takes activeDeadlineSeconds so",
-					fieldLabel("jobTimeout.runnerDeadline"))
-			}
-			return nil
+			// Kubernetes takes activeDeadlineSeconds in whole seconds.
+			return wholeSeconds("jobTimeout.runnerDeadline", v.JobTimeout.RunnerDeadline)
 		},
 		func(v Values) error {
 			// River takes the sum as RescueStuckJobsAfter, and refuses one
@@ -389,6 +392,13 @@ func init() {
 				return fmt.Errorf("%s must be at least 3, so that a job's first renewal has a beat of %s to be written in "+
 					"before its replica fences it, a beat before it counts as abandoned",
 					fieldLabel("jobTimeout.abandonedBeats"), fieldLabel("jobTimeout.heartbeatInterval"))
+			}
+			return nil
+		},
+		func(v Values) error {
+			if j := v.JobTimeout; j.HeartbeatInterval > 0 && int64(j.AbandonedBeats) > math.MaxInt64/int64(j.HeartbeatInterval) {
+				return fmt.Errorf("%s times %s must not exceed %s", fieldLabel("jobTimeout.abandonedBeats"),
+					fieldLabel("jobTimeout.heartbeatInterval"), time.Duration(math.MaxInt64))
 			}
 			return nil
 		},

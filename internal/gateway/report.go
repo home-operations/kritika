@@ -268,7 +268,10 @@ func (g *Server) reportIndex(w http.ResponseWriter, r *http.Request, c runReport
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	batch, size, count := make([]runspec.IndexChunk, 0, t.IndexBatchChunks), 0, 0
+	// The batch grows to what it holds: the byte threshold can flush it far
+	// below IndexBatchChunks.
+	var batch []runspec.IndexChunk
+	size, count := 0, 0
 	flush := func() bool {
 		ok := g.runnerWrite(w, r, c, func(ctx context.Context, tx pgx.Tx) error { return store.StageRunnerChunks(ctx, tx, id, upload, batch) })
 		batch, size = batch[:0], 0

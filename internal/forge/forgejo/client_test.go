@@ -817,3 +817,55 @@ func TestStatus(t *testing.T) {
 		})
 	}
 }
+
+// TestBearerExpiresWithTheToken: a token is replaced by the expiry that it
+// carries, in whole seconds, so a token minted late in a second is not used
+// past it under a sub-second reuse margin.
+func TestBearerExpiresWithTheToken(t *testing.T) {
+	tuning.Override(t, func(v *tuning.Values) { v.Forgejo.TokenReuseMargin = 100 * time.Millisecond })
+	c := newFake(t).client(t)
+	now := time.Date(2026, 10, 22, 12, 0, 0, 900*int(time.Millisecond), time.UTC)
+	c.now = func() time.Time { return now }
+	first, err := c.bearer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 50ms before the token's own expiry, at 12:10:00, but 850ms before
+	// minting time plus its lifetime.
+	now = time.Date(2026, 10, 22, 12, 9, 59, 950*int(time.Millisecond), time.UTC)
+	if again, _ := c.bearer(); again == first {
+		t.Fatal("a token within the margin of its encoded expiry is reused")
+	}
+}
+
+// TestListPagesThatShareTheirFirstItem: a listing that shifts between pages
+// can open a page with the previous page's first item; with the Link that
+// names a next page, or another item after it, the walk goes on.
+func TestListPagesThatShareTheirFirstItem(t *testing.T) {
+	f := newFake(t)
+	pr := func(n int) map[string]any {
+		return map[string]any{"number": n, "updated_at": "2026-10-20T12:00:00Z", "user": map[string]any{"login": "x"}}
+	}
+	f.mux.HandleFunc("GET "+repoAPI+"/pulls", func(w http.ResponseWriter, r *http.Request) {
+		var page []map[string]any
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("Link", `<`+f.srv.URL+`/next>; rel="next"`)
+			page = []map[string]any{pr(5), pr(4)}
+		case "2":
+			w.Header().Set("Link", `<`+f.srv.URL+`/next>; rel="next"`)
+			page = []map[string]any{pr(5), pr(3)}
+		case "3":
+			page = []map[string]any{pr(2)}
+		}
+		_ = json.NewEncoder(w).Encode(page)
+	})
+	all, err := f.client(t).ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{})
+	numbers := make([]int, 0, len(all))
+	for _, p := range all {
+		numbers = append(numbers, p.Number)
+	}
+	if err != nil || !slices.Equal(numbers, []int{5, 4, 5, 3, 2}) {
+		t.Fatalf("ListOpenPullRequests = %v, %v; want every page read", numbers, err)
+	}
+}

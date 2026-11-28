@@ -415,7 +415,8 @@ func (t *appJWTTransport) jwt() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("github: sign App JWT: %w", err)
 	}
-	t.tok, t.exp = tok, now.Add(tuning.Get().GitHub.AppJWTLifetime)
+	// The JWT carries its expiry in whole seconds, rounded down.
+	t.tok, t.exp = tok, now.Add(tuning.Get().GitHub.AppJWTLifetime).Truncate(time.Second)
 	return tok, nil
 }
 

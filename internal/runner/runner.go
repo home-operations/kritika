@@ -12,6 +12,7 @@
 package runner
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -454,11 +455,16 @@ func fail(ctx context.Context, report *reporter, secrets runspec.Secrets, cause 
 	return nil
 }
 
+// legacyReportBody is the fixed limit on a report of a gateway from before
+// tuning.
+const legacyReportBody = 64 << 20
+
 // sendContext reports the context pack base, with diff and delta in it as
 // fitPackDiffs fits them, and phase, the run's next. The replicas of a
 // rollout can take reports of different sizes, so a replica that refuses the
 // report as too large, naming a smaller limit than Gateway.MaxReportBody,
-// gets it again, fitted to that limit.
+// gets it again, fitted to that limit. A replica that names none predates
+// the header, and so has legacyReportBody.
 func sendContext(
 	ctx context.Context, report *reporter, base runspec.ContextPack, phase, diff, delta string, logger *slog.Logger,
 ) error {
@@ -473,11 +479,15 @@ func sendContext(
 		}
 		err = report.context(ctx, encoded)
 		tooLarge, ok := errors.AsType[*tooLargeError](err)
-		if !ok || tooLarge.limit >= int64(len(encoded)) || tooLarge.limit >= limit {
+		if !ok {
 			return err
 		}
-		logger.Warn("context report refused as too large: fitting it to the replica's limit", "bytes", len(encoded), "limit", tooLarge.limit)
-		limit = tooLarge.limit
+		next := cmp.Or(tooLarge.limit, legacyReportBody)
+		if next >= int64(len(encoded)) || next >= limit {
+			return err
+		}
+		logger.Warn("context report refused as too large: fitting it to the replica's limit", "bytes", len(encoded), "limit", next)
+		limit = next
 	}
 }
 

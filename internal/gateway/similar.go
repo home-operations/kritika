@@ -171,7 +171,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		chunks = []contextpack.Chunk{}
 	}
 	indexed := searched != similarNoEmbedder && searched != similarNoIndex
-	out, err := similarAnswer(chunks, indexed)
+	out, err := json.Marshal(contextpack.SimilarResponse{Chunks: chunks, Indexed: indexed})
 	if err != nil {
 		outcome = similarError
 		refuse(w, http.StatusInternalServerError, "server_error", err.Error())
@@ -580,7 +580,9 @@ func addRanks(cands []candidate, found func(candidate) bool, by func(candidate) 
 // declarations take every place. A query's turn is spent only on a chunk it
 // keeps: one that a duplicate or the file cap turns away gives the turn to
 // the query's next candidate, which competes for the same round's places as
-// the other queries' first. It adds what it drops to counts.
+// the other queries' first. It stops at the first chunk past what the
+// answer's encoding can hold within Runner.MaxSimilarAnswerBody, which a
+// runner reads it to. It adds what it drops to counts.
 func keepCandidates(cands []candidate, counts map[hitKey]int, limit, queryMax int) []contextpack.Chunk {
 	queues := map[int][]candidate{}
 	for _, c := range cands {
@@ -595,6 +597,7 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit, queryMax in
 	seen := map[string]bool{}
 	perFile, perQuery := map[string]int{}, map[int]int{}
 	chunks := make([]contextpack.Chunk, 0, min(len(cands), limit))
+	room := int(tuning.Get().Runner.MaxSimilarAnswerBody) - len(emptyAnswer)
 	for len(chunks) < limit {
 		pick := -1
 		for _, q := range queries {
@@ -622,11 +625,21 @@ func keepCandidates(cands []candidate, counts map[hitKey]int, limit, queryMax in
 			break
 		}
 		c := queues[pick][0]
+		c.Chunk.Ref = similarRef(c)
+		// A chunk of strings and numbers always encodes.
+		encoded, _ := json.Marshal(c.Chunk)
+		need := len(encoded)
+		if len(chunks) > 0 {
+			need++ // the comma before it
+		}
+		if need > room {
+			break
+		}
+		room -= need
 		queues[pick] = queues[pick][1:]
 		seen[key(c)] = true
 		perFile[c.Chunk.Path]++
 		perQuery[pick]++
-		c.Chunk.Ref = similarRef(c)
 		chunks = append(chunks, c.Chunk)
 		counts[hitKey{hitKept, c.source()}]++
 	}
@@ -681,17 +694,6 @@ func similarRef(c candidate) string {
 	return strings.Join(parts, "; ")
 }
 
-// similarAnswer is the encoded answer of chunks, ranked best first, cut to
-// fit Runner.MaxSimilarAnswerBody, which a runner reads it to: the
-// lowest ranked are left out until it fits, so that the runner gets fewer
-// whole chunks, not a document cut short that it cannot decode.
-func similarAnswer(chunks []contextpack.Chunk, indexed bool) ([]byte, error) {
-	most := int(tuning.Get().Runner.MaxSimilarAnswerBody)
-	for {
-		out, err := json.Marshal(contextpack.SimilarResponse{Chunks: chunks, Indexed: indexed})
-		if err != nil || len(out) <= most || len(chunks) == 0 {
-			return out, err
-		}
-		chunks = chunks[:len(chunks)-1]
-	}
-}
+// emptyAnswer is the longest encoding of an answer without chunks: an
+// unindexed one.
+var emptyAnswer, _ = json.Marshal(contextpack.SimilarResponse{Chunks: []contextpack.Chunk{}})

@@ -2,6 +2,7 @@ package tuning
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -57,10 +58,11 @@ type Model struct {
 	// provider's and its fallback's request timeouts for the waits between
 	// their attempts.
 	StepBudgetWaits time.Duration `env:"KRITIKA_TUNING_MODEL_STEP_BUDGET_WAITS" envDefault:"2m" yaml:"stepBudgetWaits,omitempty"`
-	// GatewaySettle is what the gateway can take to charge and record an
-	// answered step before it writes the answer, which the runner's request
-	// to the gateway waits for on top of the step's budget. It covers
-	// adapter.chargeTimeout, adapter.recordTimeout and
+	// GatewaySettle is what the gateway can take to release a fallback's
+	// slot, and charge and record an answered step, before it writes the
+	// answer, which the runner's request to the gateway waits for on top of
+	// the step's budget. It covers adapter.leaseReleaseTimeout,
+	// adapter.chargeTimeout and adapter.recordTimeout together, and
 	// adapter.reservationPad.
 	GatewaySettle time.Duration `env:"KRITIKA_TUNING_MODEL_GATEWAY_SETTLE" envDefault:"5m" yaml:"gatewaySettle,omitempty"`
 	// RetryWaitCeiling bounds the wait a provider asks for before it becomes
@@ -208,7 +210,8 @@ type Adapter struct {
 	ReservationPad time.Duration `env:"KRITIKA_TUNING_ADAPTER_RESERVATION_PAD" envDefault:"2m" yaml:"reservationPad,omitempty"`
 	// ChargeTimeout bounds saving an answered step's usage and settling it,
 	// on a context of its own, so a step whose caller is gone is still
-	// accounted for. With RecordTimeout, at most model.gatewaySettle.
+	// accounted for. With RecordTimeout and LeaseReleaseTimeout, at most
+	// model.gatewaySettle.
 	ChargeTimeout time.Duration `env:"KRITIKA_TUNING_ADAPTER_CHARGE_TIMEOUT" envDefault:"2m" yaml:"chargeTimeout,omitempty"`
 	// RecordTimeout bounds recording one model call. Recording is best
 	// effort: the transcript view loses a turn rather than a review, or a
@@ -247,9 +250,26 @@ func init() {
 			return notAbove("adapter.reservationPad", v.Adapter.ReservationPad, "model.gatewaySettle", v.Model.GatewaySettle)
 		},
 		func(v Values) error {
-			if a := v.Adapter; a.ChargeTimeout+a.RecordTimeout > v.Model.GatewaySettle {
-				return fmt.Errorf("%s and %s together %w %s", fieldLabel("adapter.chargeTimeout"), fieldLabel("adapter.recordTimeout"),
-					errMustNotExceed, fieldLabel("model.gatewaySettle"))
+			// A fallback's slot is let go before the step is charged and
+			// recorded, all before the answer is written.
+			a := v.Adapter
+			if satAdd(satAdd(int64(a.LeaseReleaseTimeout), int64(a.ChargeTimeout)), int64(a.RecordTimeout)) > int64(v.Model.GatewaySettle) {
+				return fmt.Errorf("%s, %s and %s together %w %s", fieldLabel("adapter.leaseReleaseTimeout"), fieldLabel("adapter.chargeTimeout"),
+					fieldLabel("adapter.recordTimeout"), errMustNotExceed, fieldLabel("model.gatewaySettle"))
+			}
+			return nil
+		},
+		func(v Values) error {
+			// A runner sends the gateway its wait for a step,
+			// model.GatewayRequestTimeout, in whole seconds that the gateway
+			// reads as an int32.
+			m := v.Model
+			least := satAdd(int64(m.StepBudgetWaits), int64(m.GatewaySettle))
+			most := satAdd(satMul(2, int64(v.ConfigFile.MaxProviderTimeout)), least)
+			if least < int64(time.Second) || most > int64(math.MaxInt32)*int64(time.Second) {
+				return fmt.Errorf("%s twice, %s and %s together must be from 1s to %ds, the wait a runner sends the gateway",
+					fieldLabel("configFile.maxProviderTimeout"), fieldLabel("model.stepBudgetWaits"), fieldLabel("model.gatewaySettle"),
+					math.MaxInt32)
 			}
 			return nil
 		},

@@ -3,6 +3,7 @@ package webapi
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
@@ -132,7 +133,7 @@ func (s *Server) listIndexChunks(w http.ResponseWriter, r *http.Request, t *acco
 		if err != nil || runID == "" {
 			return err
 		}
-		rows, err = store.ListIndexChunks(ctx, tx, runID, path, limit+1)
+		rows, err = store.ListIndexChunks(ctx, tx, runID, path, min(limit, math.MaxInt-1)+1)
 		return err
 	})
 	if err != nil {

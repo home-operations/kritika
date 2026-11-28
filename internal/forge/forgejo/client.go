@@ -203,7 +203,8 @@ func (c *Client) bearer() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	c.token, c.expires = token, now.Add(t.TokenTTL)
+	// The token carries its expiry in whole seconds, rounded down.
+	c.token, c.expires = token, now.Add(t.TokenTTL).Truncate(time.Second)
 	return token, nil
 }
 
@@ -292,9 +293,10 @@ func (c *Client) list[T any](ctx context.Context, path string, query url.Values,
 		if err != nil {
 			return nil, err
 		}
-		// An endpoint that does not page answers every page with the first:
-		// a page that opens as the last one did is that again, not more.
-		if len(batch) > 0 && len(last) > 0 && reflect.DeepEqual(batch[0], last[0]) {
+		// An endpoint that does not page answers every page alike, and with
+		// no header that says how many pages there are.
+		headerless := len(header.Values("Link")) == 0 && header.Get("X-Total-Count") == ""
+		if headerless && len(batch) > 0 && reflect.DeepEqual(batch, last) {
 			return out, nil
 		}
 		last = batch

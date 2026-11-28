@@ -82,6 +82,10 @@ func (r Row) Encode() Encoded {
 	e.Messages = marshalMessages(msgs)
 	if len(e.Messages) > int(t.RowCap) {
 		e.Messages, e.Truncated = marshalMessages(placeholders(msgs)), true
+		if len(e.Messages) > int(t.RowCap) {
+			// As a row past the run's cap does, it keeps no messages.
+			e.Messages = marshalMessages(nil)
+		}
 	}
 	e.Response, _ = json.Marshal(r.Response) // cannot fail: every RawMessage is valid JSON
 	replaceJSONNUL(e.Messages)

@@ -87,9 +87,12 @@ func FromConfig(cfg *config.Config) (*File, error) {
 
 func parse(input config.Document, settings config.Settings) (*File, error) {
 	// The policy is checked, and the File's defaults read, under the
-	// process's tuning. A file whose tuning was not tuning.Set first would
-	// be checked under values it does not set, so it is refused.
-	if !reflect.DeepEqual(settings.Tuning, tuning.Defaults()) && !reflect.DeepEqual(settings.Tuning, *tuning.Get()) {
+	// process's tuning. Settings that supply no tuning take the process's;
+	// ones whose tuning was not tuning.Set first would be checked under
+	// values they do not set, so they are refused.
+	if !settings.TuningSupplied() {
+		settings.Tuning = *tuning.Get()
+	} else if !reflect.DeepEqual(settings.Tuning, *tuning.Get()) {
 		return nil, errors.New("configfile: the file's tuning is not the process's: tuning.Set it before the file is parsed, " +
 			"so that its policy is checked under it")
 	}

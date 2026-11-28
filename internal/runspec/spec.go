@@ -385,8 +385,9 @@ func (s Spec) Validate() error {
 // keeps the first in the order the worker read them. A prompt that is over
 // with no findings left, as JSON's escaping can make a body six times as
 // long, has its longest linked issue's body shortened, at a rune boundary,
-// and then the pull request's, until it fits or they are empty. Encode
-// refuses what is over even then.
+// and then the pull request's, until it fits or they are empty. The
+// prompt's budget is a target: Encode refuses only a spec over
+// RunSpec.MaxBytes, which is what a runner reads.
 func (p *Prompt) Trim() {
 	t := tuning.Get().RunSpec
 	p.PullRequest.Body = textcut.Prefix(p.PullRequest.Body, int(t.MaxBodyBytes))

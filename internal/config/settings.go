@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/home-operations/kritika/internal/tuning"
@@ -243,3 +245,20 @@ func (o *jsonObject) UnmarshalText(b []byte) error { return json.Unmarshal(b, (*
 // ByteSize is a size in bytes, a whole number of them or one with a
 // binary suffix as Kubernetes writes a quantity: Ki, Mi, Gi or Ti.
 type ByteSize = tuning.ByteSize
+
+// TuningSupplied reports whether any of s's tuning came from the file or a
+// KRITIKA_TUNING_* variable, rather than from the defaults alone.
+func (s Settings) TuningSupplied() bool {
+	const prefix = "KRITIKA_TUNING_"
+	for name := range s.fileEnv {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, prefix) {
+			return true
+		}
+	}
+	return false
+}

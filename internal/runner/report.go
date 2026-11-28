@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -89,7 +90,7 @@ func (r *reporter) agent(ctx context.Context, rec runspec.AgentRecord, phase str
 // is sent again whole. One that the gateway would refuse as too large is not
 // sent: see indexFits.
 func (r *reporter) index(ctx context.Context, pack runspec.IndexPack, chunks []runspec.IndexChunk) error {
-	if err := indexFits(pack, chunks); err != nil {
+	if err := indexFits(ctx, pack, chunks); err != nil {
 		return err
 	}
 	body := func() io.Reader {
@@ -119,40 +120,47 @@ func encodeIndex(w io.Writer, pack runspec.IndexPack, chunks []runspec.IndexChun
 // gateway.maxIndexLine and gateway.maxIndexBody to the indexer's limits, but
 // only so far as source text grows in JSON: control bytes and invalid UTF-8
 // grow more, and the changed paths of the opening line have no limit. The
-// upload is measured, not kept, so an upload of any size costs no memory.
-func indexFits(pack runspec.IndexPack, chunks []runspec.IndexChunk) error {
+// upload is measured, not kept, and the measure stops at the first limit it
+// passes, or when ctx ends.
+func indexFits(ctx context.Context, pack runspec.IndexPack, chunks []runspec.IndexChunk) error {
 	t := tuning.Get().Gateway
-	m := &lineMeter{}
+	m := &lineMeter{ctx: ctx, maxLine: int64(t.MaxIndexLine), maxTotal: int64(t.MaxIndexBody)}
 	if err := encodeIndex(m, pack, chunks); err != nil {
 		return fmt.Errorf("runner: index upload: %w", err)
-	}
-	switch {
-	case m.longest > int64(t.MaxIndexLine):
-		return fmt.Errorf("runner: index upload: a line of %d bytes is over tuning.gateway.maxIndexLine, %d", m.longest, t.MaxIndexLine)
-	case m.total > int64(t.MaxIndexBody):
-		return fmt.Errorf("runner: index upload: %d bytes are over tuning.gateway.maxIndexBody, %d", m.total, t.MaxIndexBody)
 	}
 	return nil
 }
 
-// lineMeter counts what is written to it: in all, and in its longest line,
-// newline included.
+// lineMeter counts what is written to it, in all and in each line, newline
+// included, and fails a write that takes either past its limit.
 type lineMeter struct {
-	total, line, longest int64
+	ctx               context.Context
+	maxLine, maxTotal int64
+	total, line       int64
 }
 
 func (m *lineMeter) Write(p []byte) (int, error) {
+	if err := m.ctx.Err(); err != nil {
+		return 0, err
+	}
 	for rest := p; len(rest) > 0; {
 		i := bytes.IndexByte(rest, '\n')
+		n := i + 1
 		if i < 0 {
-			m.line += int64(len(rest))
-			break
+			n = len(rest)
 		}
-		m.longest = max(m.longest, m.line+int64(i)+1)
-		m.line, rest = 0, rest[i+1:]
+		m.line += int64(n)
+		if m.line > m.maxLine {
+			return 0, fmt.Errorf("a line is over tuning.gateway.maxIndexLine, %d", m.maxLine)
+		}
+		if i >= 0 {
+			m.line = 0
+		}
+		rest = rest[n:]
 	}
-	m.longest = max(m.longest, m.line)
-	m.total += int64(len(p))
+	if m.total += int64(len(p)); m.total > m.maxTotal {
+		return 0, fmt.Errorf("the upload is over tuning.gateway.maxIndexBody, %d", m.maxTotal)
+	}
 	return len(p), nil
 }
 
@@ -187,8 +195,13 @@ func (r *reporter) postEncoded(ctx context.Context, path string, body []byte, ou
 	return r.send(ctx, tuning.Get().RunSpec.ReportTimeout, http.MethodPost, path, func() io.Reader { return bytes.NewReader(body) }, out)
 }
 
+// errAnswerTooLarge is a gateway's answer to a report that is over
+// Runner.MaxReportAnswer.
+var errAnswerTooLarge = errors.New("the answer is over tuning.runner.maxReportAnswer")
+
 // tooLargeError is a report that the gateway refused as too large, and the
-// limit, in bytes, of the replica that refused it.
+// limit, in bytes, of the replica that refused it, 0 when the replica
+// predates runspec.ReportLimitHeader.
 type tooLargeError struct {
 	limit int64
 	err   error
@@ -255,17 +268,23 @@ func (r *reporter) attempt(
 		return true, fmt.Errorf("runner: report %s: %w", path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	answer, err := io.ReadAll(io.LimitReader(resp.Body, int64(tuning.Get().Runner.MaxReportAnswer)))
+	most := int64(tuning.Get().Runner.MaxReportAnswer)
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, most))
 	if err != nil {
 		return true, fmt.Errorf("runner: report %s: %w", path, err)
 	}
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		err := fmt.Errorf("runner: report %s: %s: %s", path, resp.Status, bytes.TrimSpace(answer))
-		limit, perr := strconv.ParseInt(resp.Header.Get(runspec.ReportLimitHeader), 10, 64)
-		if resp.StatusCode == http.StatusRequestEntityTooLarge && perr == nil && limit > 0 {
-			err = &tooLargeError{limit: limit, err: err}
+		if resp.StatusCode == http.StatusRequestEntityTooLarge {
+			limit, _ := strconv.ParseInt(resp.Header.Get(runspec.ReportLimitHeader), 10, 64)
+			err = &tooLargeError{limit: max(limit, 0), err: err}
 		}
 		return reportRetryable(resp.StatusCode, answer), err
+	}
+	if int64(len(answer)) == most {
+		if n, _ := io.ReadFull(resp.Body, make([]byte, 1)); n == 1 {
+			return false, fmt.Errorf("runner: report %s: %w", path, errAnswerTooLarge)
+		}
 	}
 	if out != nil {
 		if err := json.Unmarshal(answer, out); err != nil {

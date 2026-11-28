@@ -108,7 +108,11 @@ func (e *Events) record(ctx context.Context, regarding corev1.ObjectReference, w
 	}
 	// A limit with no room for Truncate's note gets a plain prefix.
 	most := int(tuning.Get().Executor.EventNoteBytes)
-	note = textcut.Prefix(textcut.Truncate(note, most), most)
+	if cut := textcut.Truncate(note, most); len(cut) <= most {
+		note = cut
+	} else {
+		note = textcut.Prefix(note, most)
+	}
 	now := time.Now()
 	event := &eventsv1.Event{
 		Name: recordutil.GenerateEventName(regarding.Name, now.UnixNano()), Namespace: e.namespace,

@@ -107,3 +107,20 @@ func exceeds[T int | ByteSize | time.Duration](a string, x T, b string, y T) err
 	}
 	return fmt.Errorf("%s %w %s", fieldLabel(a), errMustExceed, fieldLabel(b))
 }
+
+// atLeastSecond is the error of a field under a second, or nil.
+func atLeastSecond(path string, d time.Duration) error {
+	if d >= time.Second {
+		return nil
+	}
+	return fmt.Errorf("%s must be at least 1s", fieldLabel(path))
+}
+
+// wholeSeconds is the error of a field that is not a whole number of
+// seconds, at least one, or nil.
+func wholeSeconds(path string, d time.Duration) error {
+	if d >= time.Second && d%time.Second == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s must be a whole number of seconds, at least 1s", fieldLabel(path))
+}

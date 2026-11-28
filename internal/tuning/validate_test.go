@@ -119,10 +119,18 @@ func TestCrossFieldEdges(t *testing.T) {
 		},
 		{
 			"heartbeat timeout leaves another beat",
-			func(v *Values) { v.Runner.HeartbeatTimeout = 6 * time.Minute },
-			func(v *Values) { v.Runner.HeartbeatTimeout = v.RunSpec.ReportRetryWindow + v.RunSpec.ReportTimeout },
+			func(v *Values) { v.Runner.HeartbeatTimeout = 5 * time.Minute },
+			func(v *Values) {
+				v.Runner.HeartbeatTimeout = (v.RunSpec.ReportRetryWindow + v.RunSpec.ReportTimeout) / 2
+			},
 			[]string{"tuning.runner.heartbeatTimeout: KRITIKA_TUNING_RUNNER_HEARTBEAT_TIMEOUT", "tuning.runSpec.reportRetryWindow",
 				"tuning.runSpec.reportTimeout"},
+		},
+		{
+			"download cap leaves room to read past it",
+			func(v *Values) { v.Aqua.MaxDownloadBytes = math.MaxInt64 },
+			func(v *Values) { v.Aqua.MaxDownloadBytes = math.MaxInt64 - 1 },
+			[]string{"tuning.aqua.maxDownloadBytes: KRITIKA_TUNING_AQUA_MAX_DOWNLOAD_BYTES"},
 		},
 		{
 			"similar limit covers the default answer",
@@ -221,12 +229,15 @@ func TestCrossFieldEdges(t *testing.T) {
 			[]string{"tuning.adapter.reservationPad: KRITIKA_TUNING_ADAPTER_RESERVATION_PAD", "tuning.model.gatewaySettle: KRITIKA_TUNING_MODEL_GATEWAY_SETTLE"},
 		},
 		{
-			"charge and record within the gateway's settling",
+			"release, charge and record within the gateway's settling",
 			func(v *Values) {
-				v.Adapter.ChargeTimeout = v.Model.GatewaySettle - v.Adapter.RecordTimeout + time.Millisecond
+				v.Adapter.ChargeTimeout = v.Model.GatewaySettle - v.Adapter.RecordTimeout - v.Adapter.LeaseReleaseTimeout + time.Millisecond
 			},
-			func(v *Values) { v.Adapter.ChargeTimeout = v.Model.GatewaySettle - v.Adapter.RecordTimeout },
-			[]string{"tuning.adapter.chargeTimeout: KRITIKA_TUNING_ADAPTER_CHARGE_TIMEOUT", "tuning.adapter.recordTimeout: KRITIKA_TUNING_ADAPTER_RECORD_TIMEOUT",
+			func(v *Values) {
+				v.Adapter.ChargeTimeout = v.Model.GatewaySettle - v.Adapter.RecordTimeout - v.Adapter.LeaseReleaseTimeout
+			},
+			[]string{"tuning.adapter.leaseReleaseTimeout: KRITIKA_TUNING_ADAPTER_LEASE_RELEASE_TIMEOUT",
+				"tuning.adapter.chargeTimeout: KRITIKA_TUNING_ADAPTER_CHARGE_TIMEOUT", "tuning.adapter.recordTimeout: KRITIKA_TUNING_ADAPTER_RECORD_TIMEOUT",
 				"tuning.model.gatewaySettle"},
 		},
 		{
@@ -515,6 +526,85 @@ func TestCrossFieldMessages(t *testing.T) {
 			},
 		},
 		{name: "a default agent timeout of a second", change: func(v *Values) { v.ConfigFile.DefaultAgentTimeout = time.Second }},
+		{
+			name:   "a default command timeout of fractional seconds",
+			change: func(v *Values) { v.ConfigFile.DefaultCommandTimeout = 1500 * time.Millisecond },
+			want: []string{
+				"tuning.configFile.defaultCommandTimeout: KRITIKA_TUNING_CONFIG_FILE_DEFAULT_COMMAND_TIMEOUT must be a whole number of seconds",
+			},
+		},
+		{
+			name:   "a default command timeout under a second",
+			change: func(v *Values) { v.ConfigFile.DefaultCommandTimeout = 500 * time.Millisecond },
+			want: []string{
+				"tuning.configFile.defaultCommandTimeout: KRITIKA_TUNING_CONFIG_FILE_DEFAULT_COMMAND_TIMEOUT must be a whole number of seconds",
+			},
+		},
+		{name: "a default command timeout of a second", change: func(v *Values) { v.ConfigFile.DefaultCommandTimeout = time.Second }},
+		{
+			name: "a heartbeat window past the longest duration",
+			change: func(v *Values) {
+				v.JobTimeout.AbandonedBeats = int(math.MaxInt64/int64(v.JobTimeout.HeartbeatInterval)) + 1
+			},
+			want: []string{
+				"tuning.jobTimeout.abandonedBeats: KRITIKA_TUNING_JOB_TIMEOUT_ABANDONED_BEATS times " +
+					"tuning.jobTimeout.heartbeatInterval: KRITIKA_TUNING_JOB_TIMEOUT_HEARTBEAT_INTERVAL must not exceed",
+			},
+		},
+		{
+			name: "a heartbeat window at the longest duration",
+			change: func(v *Values) {
+				v.JobTimeout.AbandonedBeats = int(math.MaxInt64 / int64(v.JobTimeout.HeartbeatInterval))
+			},
+		},
+		{
+			name:   "a pool past what pgx sizes",
+			change: func(v *Values) { v.Store.AppPoolMaxConns, v.Store.OwnerPoolMaxConns = math.MaxInt32+1, math.MaxInt32+1 },
+			want: []string{
+				"tuning.store.appPoolMaxConns: KRITIKA_TUNING_STORE_APP_POOL_MAX_CONNS must not exceed 2147483647",
+				"tuning.store.ownerPoolMaxConns: KRITIKA_TUNING_STORE_OWNER_POOL_MAX_CONNS must not exceed 2147483647",
+			},
+		},
+		{
+			name:   "pools at what pgx sizes",
+			change: func(v *Values) { v.Store.AppPoolMaxConns, v.Store.OwnerPoolMaxConns = math.MaxInt32, math.MaxInt32 },
+		},
+		{
+			name:   "a step wait past what a runner sends",
+			change: func(v *Values) { v.Model.StepBudgetWaits = 2500000 * time.Hour },
+			want:   []string{"tuning.model.stepBudgetWaits: KRITIKA_TUNING_MODEL_STEP_BUDGET_WAITS and", "must be from 1s to 2147483647s"},
+		},
+		{
+			name:   "a step wait past a duration",
+			change: func(v *Values) { v.Model.StepBudgetWaits = time.Duration(math.MaxInt64) },
+			want:   []string{"must be from 1s to 2147483647s"},
+		},
+		{
+			name: "a step wait under a second",
+			change: func(v *Values) {
+				v.Model.StepBudgetWaits, v.Model.GatewaySettle = 400*time.Millisecond, 500*time.Millisecond
+				v.Adapter.ReservationPad, v.Adapter.ChargeTimeout, v.Adapter.RecordTimeout, v.Adapter.LeaseReleaseTimeout = 1, 1, 1, 1
+			},
+			want: []string{"must be from 1s to 2147483647s"},
+		},
+		{
+			name: "a step wait at what a runner sends",
+			change: func(v *Values) {
+				v.Model.StepBudgetWaits = time.Duration(math.MaxInt32)*time.Second - 2*v.ConfigFile.MaxProviderTimeout - v.Model.GatewaySettle
+			},
+		},
+		{
+			name: "token lifetimes under a second",
+			change: func(v *Values) {
+				v.GitHub.AppJWTLifetime, v.GitHub.TokenRefreshLead = 900*time.Millisecond, 100*time.Millisecond
+				v.Forgejo.TokenTTL, v.Forgejo.TokenReuseMargin, v.Forgejo.RunnerTokenTTL = 900*time.Millisecond, 100*time.Millisecond, 900*time.Millisecond
+			},
+			want: []string{
+				"tuning.gitHub.appJwtLifetime: KRITIKA_TUNING_GITHUB_APP_JWT_LIFETIME must be at least 1s",
+				"tuning.forgejo.tokenTtl: KRITIKA_TUNING_FORGEJO_TOKEN_TTL must be at least 1s",
+				"tuning.forgejo.runnerTokenTtl: KRITIKA_TUNING_FORGEJO_RUNNER_TOKEN_TTL must be at least 1s",
+			},
+		},
 		{
 			name:   "a similar-code floor past 1",
 			change: func(v *Values) { v.ConfigFile.DefaultSimilarFloor = 1.1 },
